@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -228,10 +228,10 @@ recommended terminal on Linux is <strong>Kitty</strong>, which has full protocol
 AZUREAL has also been tested in <strong>Ghostty</strong>, <strong>Alacritty</strong>, <strong>WezTerm</strong>, and
 <strong>Konsole</strong>. Other terminals with protocol support include Foot.</p>
 <p>Terminal emulators that do not support the protocol (e.g., GNOME Terminal, older
-xterm, Konsole) fall back to standard key reporting with no loss of
-functionality. The only difference is that certain ambiguous key combinations
-(like Tab vs Ctrl+I) may not be distinguishable without the protocol – AZUREAL
-provides <code>Alt+</code> fallback bindings for these cases.</p>
+xterm) fall back to standard key reporting with no loss of functionality. The
+only difference is that certain ambiguous key combinations (like Tab vs Ctrl+I)
+may not be distinguishable without the protocol – AZUREAL provides <code>Alt+</code>
+fallback bindings for these cases.</p>
 <hr>
 <h2 id="file-watcher"><a class="header" href="#file-watcher">File Watcher</a></h2>
 <p>The file watcher uses <strong>inotify</strong> on Linux. This is efficient and event-driven
@@ -258,9 +258,12 @@ All terminal features – color support, click-to-position, mouse drag selection
 auto-scroll, and mouse wheel scrolling – work identically to macOS.</p>
 <hr>
 <h2 id="notifications"><a class="header" href="#notifications">Notifications</a></h2>
-<p>System notifications are not currently implemented on Linux. Agent completion
-events are reflected in the status bar and session list but do not produce
-desktop notifications. This is a planned feature.</p>
+<p>System notifications are delivered via the <strong>notify-rust</strong> crate, which uses
+the system’s D-Bus notification service (e.g., <code>notify-send</code>). When an agent
+session completes while AZUREAL is not the focused application, a desktop
+notification appears with the session name and completion status. Most Linux
+desktop environments and notification daemons (GNOME, KDE, dunst, mako) support
+this out of the box.</p>
 <hr>
 <h2 id="distribution-notes"><a class="header" href="#distribution-notes">Distribution Notes</a></h2>
 <p>AZUREAL is tested on Ubuntu 22.04+ and Fedora 38+. It should work on any modern

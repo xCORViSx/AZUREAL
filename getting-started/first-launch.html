@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -213,7 +213,7 @@ AZUREAL displays a welcome modal with the following options:</p>
 </thead>
 <tbody>
 <tr><td><code>M</code></td><td>Browse the main branch – opens the file browser and session pane on <code>main</code></td></tr>
-<tr><td><code>w</code></td><td>Create a new worktree – prompts for a branch name and sets up an isolated working directory</td></tr>
+<tr><td><code>Wn</code></td><td>Create a new worktree – <code>W</code> leader sequence followed by <code>n</code> to open the branch dialog</td></tr>
 <tr><td><code>P</code></td><td>Open the Projects panel – switch to a different project or register a new one</td></tr>
 <tr><td><code>Ctrl+Q</code></td><td>Quit AZUREAL</td></tr>
 </tbody>
@@ -237,8 +237,9 @@ This file is shared across all projects.</p>
 directories, project-local run commands, preset prompts, and git settings like
 per-branch auto-rebase rules and auto-resolve file lists.</p>
 <p>This file lives at the <strong>main worktree root</strong> (the original clone directory) and
-is shared by all worktrees in the project. It is gitignored by default since it
-contains machine-specific paths.</p>
+is shared by all worktrees in the project. The entire <code>.azureal/</code> directory is
+<strong>gitignored by default</strong> to prevent the session store and runtime files from
+causing rebase conflicts.</p>
 <h2 id="session-store"><a class="header" href="#session-store">Session Store</a></h2>
 <p>The session store file is <strong>not</strong> created at first launch. It is created lazily:</p>
 <pre><code>&lt;project-root&gt;/.azureal/sessions.azs
@@ -252,8 +253,8 @@ manually.</p>
 <p>After the splash screen and project detection complete, you are ready to start
 working:</p>
 <ol>
-<li><strong>Create a worktree</strong> (<code>w</code> from the welcome modal, or the <code>w</code> key in normal
-mode) to start an isolated feature branch.</li>
+<li><strong>Create a worktree</strong> (<code>Wn</code> from the welcome modal – <code>W</code> leader followed by
+<code>n</code>) to start an isolated feature branch.</li>
 <li><strong>Send a prompt</strong> to an agent by typing in the session pane input area and
 pressing Enter.</li>
 <li><strong>Browse the file tree</strong> to review changes the agent has made.</li>

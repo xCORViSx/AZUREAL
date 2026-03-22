@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -192,9 +192,9 @@ project-specific run commands and preset prompts.</p>
   src/
   ...
 </code></pre>
-<p>The <code>.azureal/</code> directory is gitignored. The project config lives alongside the
-session store and is local to the machine – it is not committed to the
-repository.</p>
+<p>The <code>.azureal/</code> directory is <strong>gitignored by default</strong> – AZUREAL automatically
+adds <code>.azureal/</code> to <code>.gitignore</code> on first load to prevent the session store and
+runtime files from causing rebase conflicts.</p>
 <p>Because git worktrees share a common working tree root, the project config file
 at the main worktree root is shared by all worktrees in the project. You do not
 maintain separate configs per worktree.</p>
@@ -211,7 +211,7 @@ hidden = ["worktrees", ".git", "target", "node_modules", ".DS_Store"]
 <tr><th>Key</th><th>Description</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>hidden</code></td><td>Array of file/directory names to hide from the file tree.</td><td><code>[]</code></td></tr>
+<tr><td><code>hidden</code></td><td>Array of file/directory names to hide from the file tree.</td><td><code>["worktrees", ".git", ".claude", ".azureal", ".DS_Store", "target", "node_modules"]</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -223,7 +223,7 @@ disk and are accessible via the embedded terminal.</p>
 <p>Directories included in health panel scans. Also aliased as <code>[godfilescope]</code> for
 backward compatibility.</p>
 <pre><code class="language-toml">[healthscope]
-directories = ["src", "crates", "lib"]
+dirs = ["src", "crates", "lib"]
 </code></pre>
 <div class="table-wrapper">
 <table>
@@ -231,7 +231,7 @@ directories = ["src", "crates", "lib"]
 <tr><th>Key</th><th>Description</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>directories</code></td><td>Array of directory names to include when scanning for god files and documentation coverage.</td><td>(scans entire project)</td></tr>
+<tr><td><code>dirs</code></td><td>Array of directory paths to include when scanning for god files and documentation coverage.</td><td><code>[]</code> (scans entire project)</td></tr>
 </tbody>
 </table>
 </div>
@@ -259,30 +259,34 @@ section.</p>
 <p>Project-local preset prompts appear alongside global ones in the preset prompts
 menu and are only visible when this project is active.</p>
 <h3 id="git"><a class="header" href="#git"><code>[git]</code></a></h3>
-<p>Git automation settings, organized into subsections.</p>
-<h4 id="gitauto-rebase"><a class="header" href="#gitauto-rebase"><code>[git.auto-rebase]</code></a></h4>
-<p>Per-branch auto-rebase settings. When enabled for a branch, AZUREAL
-automatically rebases the branch onto <code>main</code> after each agent session completes.</p>
-<pre><code class="language-toml">[git.auto-rebase]
-feat-auth = "true"
-fix-parser = "true"
+<p>Git automation settings. This section uses a flat key-value map. Auto-rebase
+and auto-resolve settings are stored <strong>per-worktree</strong> – each worktree has its
+own <code>.azureal/azufig.toml</code> with its own <code>[git]</code> section. They are not stored
+in the project-level config with per-branch keys.</p>
+<h4 id="auto-rebase"><a class="header" href="#auto-rebase">Auto-Rebase</a></h4>
+<p>When enabled for a worktree, AZUREAL automatically rebases the worktree’s
+branch onto <code>main</code> every 2 seconds (when idle).</p>
+<pre><code class="language-toml">[git]
+auto-rebase = "true"
 </code></pre>
-<p>Keys are branch names. Values are <code>"true"</code> to enable auto-rebase or <code>"false"</code>
-(or absent) to disable it. Auto-rebase is deferred while an agent is actively
-streaming to avoid interrupting work in progress.</p>
+<p>The key <code>auto-rebase</code> is set to <code>"true"</code> to enable or removed to disable.
+Auto-rebase is deferred while an agent is actively streaming to avoid
+interrupting work in progress.</p>
 <p>See <a href="../git-panel/rebase.html">Rebase &amp; Auto-Rebase</a> for how auto-rebase
 integrates with the git panel.</p>
-<h4 id="gitauto-resolve"><a class="header" href="#gitauto-resolve"><code>[git.auto-resolve]</code></a></h4>
+<h4 id="auto-resolve"><a class="header" href="#auto-resolve">Auto-Resolve</a></h4>
 <p>Per-file auto-resolve settings for merge conflicts. When enabled for a file,
 AZUREAL automatically resolves conflicts in that file during rebase operations
-without prompting.</p>
-<pre><code class="language-toml">[git.auto-resolve]
-Cargo.lock = "true"
-package-lock.json = "true"
+using a union merge strategy (keeping both sides’ changes).</p>
+<pre><code class="language-toml">[git]
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
+"auto-resolve/README.md" = "true"
+"auto-resolve/CLAUDE.md" = "true"
 </code></pre>
-<p>Keys are filenames (not paths). Values are <code>"true"</code> to enable auto-resolve. This
-is most useful for lock files and generated files that will be regenerated after
-the rebase completes.</p>
+<p>Keys follow the pattern <code>auto-resolve/&lt;filename&gt;</code>. Values are <code>"true"</code> to
+enable auto-resolve. The default list includes <code>AGENTS.md</code>, <code>CHANGELOG.md</code>,
+<code>README.md</code>, and <code>CLAUDE.md</code>.</p>
 <p>See <a href="../git-panel/auto-resolve.html">Auto-Resolve Settings</a> for details.</p>
 <hr>
 <h2 id="example-file"><a class="header" href="#example-file">Example File</a></h2>
@@ -291,7 +295,7 @@ the rebase completes.</p>
 hidden = ["worktrees", ".git", "target", "node_modules", ".DS_Store", ".azureal"]
 
 [healthscope]
-directories = ["src", "crates"]
+dirs = ["src", "crates"]
 
 [runcmds]
 1_Dev = "cargo run"
@@ -302,12 +306,10 @@ directories = ["src", "crates"]
 1_Modularize = "Break this file into smaller modules, one feature per file."
 2_Optimize = "Profile and optimize the hot path in this function."
 
-[git.auto-rebase]
-feat-session-store = "true"
-feat-render-pipeline = "true"
-
-[git.auto-resolve]
-Cargo.lock = "true"
+[git]
+auto-rebase = "true"
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
 </code></pre>
 
                     </main>

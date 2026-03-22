@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -392,13 +392,18 @@ build.</p>
 <pre><code class="language-sh">sudo apt install libclang-dev cmake
 </code></pre>
 <p><strong>Windows:</strong></p>
-<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake
+<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja
 </code></pre>
 <p>After installing LLVM on Windows, set the <code>LIBCLANG_PATH</code> environment variable
 to the LLVM <code>bin</code> directory (e.g., <code>C:\Program Files\LLVM\bin</code>).</p>
+<p>The Ninja build system is required because CMake’s default Visual Studio
+generator uses MSBuild, which prevents CUDA from inheriting the Windows SDK
+include paths. Set <code>CMAKE_GENERATOR=Ninja</code> in your environment, or build from
+a VS Developer Command Prompt with Ninja in PATH.</p>
 <h3 id="nvidia-cuda-toolkit-windows"><a class="header" href="#nvidia-cuda-toolkit-windows">NVIDIA CUDA Toolkit (Windows)</a></h3>
-<p>Required on Windows for GPU-accelerated Whisper inference. Without CUDA, Whisper
-falls back to CPU-only mode which is significantly slower.</p>
+<p>Required on Windows for GPU-accelerated Whisper inference. The Windows build
+compiles Whisper with CUDA support, so the CUDA Toolkit must be present at
+build time.</p>
 <pre><code class="language-powershell">winget install Nvidia.CUDA
 </code></pre>
 <p>Restart your terminal after installation so the <code>CUDA_PATH</code> environment variable
@@ -528,7 +533,7 @@ AZUREAL displays a welcome modal with the following options:</p>
 </thead>
 <tbody>
 <tr><td><code>M</code></td><td>Browse the main branch – opens the file browser and session pane on <code>main</code></td></tr>
-<tr><td><code>w</code></td><td>Create a new worktree – prompts for a branch name and sets up an isolated working directory</td></tr>
+<tr><td><code>Wn</code></td><td>Create a new worktree – <code>W</code> leader sequence followed by <code>n</code> to open the branch dialog</td></tr>
 <tr><td><code>P</code></td><td>Open the Projects panel – switch to a different project or register a new one</td></tr>
 <tr><td><code>Ctrl+Q</code></td><td>Quit AZUREAL</td></tr>
 </tbody>
@@ -552,8 +557,9 @@ This file is shared across all projects.</p>
 directories, project-local run commands, preset prompts, and git settings like
 per-branch auto-rebase rules and auto-resolve file lists.</p>
 <p>This file lives at the <strong>main worktree root</strong> (the original clone directory) and
-is shared by all worktrees in the project. It is gitignored by default since it
-contains machine-specific paths.</p>
+is shared by all worktrees in the project. The entire <code>.azureal/</code> directory is
+<strong>gitignored by default</strong> to prevent the session store and runtime files from
+causing rebase conflicts.</p>
 <h2 id="session-store"><a class="header" href="#session-store">Session Store</a></h2>
 <p>The session store file is <strong>not</strong> created at first launch. It is created lazily:</p>
 <pre><code>&lt;project-root&gt;/.azureal/sessions.azs
@@ -567,8 +573,8 @@ manually.</p>
 <p>After the splash screen and project detection complete, you are ready to start
 working:</p>
 <ol>
-<li><strong>Create a worktree</strong> (<code>w</code> from the welcome modal, or the <code>w</code> key in normal
-mode) to start an isolated feature branch.</li>
+<li><strong>Create a worktree</strong> (<code>Wn</code> from the welcome modal – <code>W</code> leader followed by
+<code>n</code>) to start an isolated feature branch.</li>
 <li><strong>Send a prompt</strong> to an agent by typing in the session pane input area and
 pressing Enter.</li>
 <li><strong>Browse the file tree</strong> to review changes the agent has made.</li>
@@ -744,8 +750,8 @@ diff detail with syntax highlighting.</li>
 <p><strong>Viewer Tabs:</strong></p>
 <ul>
 <li>Up to 12 tabs across 2 rows (6 per row, fixed-width).</li>
-<li><code>t</code> saves the current file to a tab; <code>⌥t</code> opens the tab dialog.</li>
-<li><code>[</code> / <code>]</code> navigate between tabs; <code>x</code> closes the active tab.</li>
+<li><code>t</code> saves the current file to a tab; <code>Alt+T</code> opens the tab dialog.</li>
+<li><code>x</code> closes the active tab.</li>
 <li>The tab bar renders inside the Viewer border at rows 1-2, overlaying empty
 padding so content shifts down accordingly.</li>
 </ul>
@@ -876,8 +882,9 @@ tab in yellow).</li>
 <h2 id="git-mode-navigation"><a class="header" href="#git-mode-navigation">Git Mode Navigation</a></h2>
 <p>In Git Mode (Shift+G), the focus cycle changes to match the git panel layout:</p>
 <ul>
-<li><strong>Tab</strong> / <strong>Shift+Tab</strong> cycles through the git-specific panes (Actions,
-Files, Viewer, Commits).</li>
+<li><strong>Tab</strong> / <strong>Shift+Tab</strong> cycles through the three git-specific panes
+(Actions, Files, Commits). The Viewer always shows the diff for the
+selected file or commit but is not a separate focus target.</li>
 <li>The bottom bar shows <code>Tab/⇧Tab:cycle | Enter</code> as a reminder.</li>
 <li><strong>Shift+G</strong> or <strong>Esc</strong> exits Git Mode and returns to the normal focus
 cycle.</li>
@@ -890,9 +897,9 @@ cycle.</li>
 <tr><th>Pane</th><th>Navigation</th></tr>
 </thead>
 <tbody>
-<tr><td>FileTree</td><td><code>j/k</code> to move, <code>Enter</code> to open, <code>h/l</code> or arrows to collapse/expand</td></tr>
-<tr><td>Viewer</td><td><code>j/k</code> or arrows to scroll, <code>g/G</code> for top/bottom, <code>/</code> to search</td></tr>
-<tr><td>Session</td><td><code>j/k</code> or arrows to scroll, <code>s</code> for session list, <code>g/G</code> for top/bottom</td></tr>
+<tr><td>FileTree</td><td><code>j/k</code> to move, <code>Enter</code> to open, <code>h/l</code> to collapse/expand</td></tr>
+<tr><td>Viewer</td><td><code>j/k</code> to scroll, <code>Alt+Up</code>/<code>Alt+Down</code> for top/bottom</td></tr>
+<tr><td>Session</td><td><code>j/k</code> to scroll, <code>s</code> for session list, <code>Alt+Up</code>/<code>Alt+Down</code> for top/bottom</td></tr>
 <tr><td>Input</td><td>Standard text editing, <code>Enter</code> to send prompt</td></tr>
 </tbody>
 </table>
@@ -1212,7 +1219,7 @@ Command ───────────&gt; Prompt
 </table>
 </div>
 <hr>
-<h2 id="scrolling"><a class="header" href="#scrolling">Scrolling</a></h2>
+<h2 id="scrolling-per-pane"><a class="header" href="#scrolling-per-pane">Scrolling (Per-Pane)</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1226,7 +1233,7 @@ Command ───────────&gt; Prompt
 </tbody>
 </table>
 </div>
-<p>Scroll targets the currently focused pane. In the session pane, this scrolls the conversation. In the file viewer, this scrolls the file content.</p>
+<p>These are defined per-pane (FileTree, Viewer, Session, Terminal) rather than as global bindings, but they behave consistently across all scrollable panes. The scroll targets whichever pane currently has focus.</p>
 <hr>
 <h2 id="pane-focus"><a class="header" href="#pane-focus">Pane Focus</a></h2>
 <div class="table-wrapper">
@@ -1240,7 +1247,7 @@ Command ───────────&gt; Prompt
 </tbody>
 </table>
 </div>
-<p>Focus cycles through the visible panes: file tree, file viewer, and session pane. Hidden panes (e.g., when the file tree is toggled off) are skipped.</p>
+<p>Focus cycles through the four panes: FileTree, Viewer, Session, and Input.</p>
 <hr>
 <h2 id="panels--overlays"><a class="header" href="#panels--overlays">Panels &amp; Overlays</a></h2>
 <div class="table-wrapper">
@@ -1272,32 +1279,6 @@ Command ───────────&gt; Prompt
 </table>
 </div>
 <p>These keys cycle through the worktree tab row at the top of the interface. The active worktree determines which branch, session, and terminal are shown.</p>
-<hr>
-<h2 id="toggles"><a class="header" href="#toggles">Toggles</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>f</code></td><td>Toggle file tree visibility</td></tr>
-<tr><td><code>s</code></td><td>Toggle session list visibility</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="search"><a class="header" href="#search">Search</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>/</code></td><td>Activate search / filter</td></tr>
-</tbody>
-</table>
-</div>
-<p>The behavior of <code>/</code> depends on the focused pane. In the session pane, it opens the session search. In the file tree, it opens the file filter. Once a search/filter is active, letter keys type into the filter field – global bindings are suppressed until <code>Esc</code> dismisses the filter.</p>
 <hr>
 <h2 id="run-commands"><a class="header" href="#run-commands">Run Commands</a></h2>
 <div class="table-wrapper">
@@ -1339,9 +1320,7 @@ Command ───────────&gt; Prompt
 <tbody>
 <tr><td><code>p</code></td><td>Enter prompt mode</td></tr>
 <tr><td><code>T</code></td><td>Toggle terminal</td></tr>
-<tr><td><code>Esc</code></td><td>Return to command mode</td></tr>
-<tr><td><code>j</code> / <code>k</code></td><td>Scroll line down / up</td></tr>
-<tr><td><code>J</code> / <code>K</code></td><td>Page scroll down / up</td></tr>
+<tr><td><code>Esc</code></td><td>Return to command mode (per-pane)</td></tr>
 <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle pane focus</td></tr>
 <tr><td><code>G</code></td><td>GitView panel</td></tr>
 <tr><td><code>H</code></td><td>Health panel</td></tr>
@@ -1350,9 +1329,6 @@ Command ───────────&gt; Prompt
 <tr><td><code>r</code></td><td>Run command</td></tr>
 <tr><td><code>R</code></td><td>Add run command</td></tr>
 <tr><td><code>[</code> / <code>]</code></td><td>Switch worktree tab</td></tr>
-<tr><td><code>f</code></td><td>Toggle file tree</td></tr>
-<tr><td><code>s</code></td><td>Toggle session list</td></tr>
-<tr><td><code>/</code></td><td>Search / filter</td></tr>
 <tr><td><code>?</code></td><td>Help overlay</td></tr>
 <tr><td><code>Cmd+C</code> / <code>Ctrl+C</code></td><td>Copy selection</td></tr>
 <tr><td><code>Ctrl+C</code> / <code>Alt+C</code></td><td>Cancel agent</td></tr>
@@ -1381,19 +1357,19 @@ Command ───────────&gt; Prompt
 <tr><th>Sequence</th><th>Action</th></tr>
 </thead>
 <tbody>
-<tr><td><code>W</code> then <code>a</code></td><td>Create a new worktree</td></tr>
+<tr><td><code>W</code> then <code>n</code></td><td>Create a new worktree</td></tr>
 <tr><td><code>W</code> then <code>r</code></td><td>Rename the active worktree</td></tr>
-<tr><td><code>W</code> then <code>x</code></td><td>Archive the active worktree</td></tr>
+<tr><td><code>W</code> then <code>a</code></td><td>Archive the active worktree</td></tr>
 <tr><td><code>W</code> then <code>d</code></td><td>Delete a worktree</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="create-wa"><a class="header" href="#create-wa">Create (Wa)</a></h3>
+<h3 id="create-wn"><a class="header" href="#create-wn">Create (Wn)</a></h3>
 <p>Opens the worktree creation dialog. You provide a branch name, and AZUREAL creates a new git worktree with that branch, adds it to the tab row, and switches to it.</p>
 <h3 id="rename-wr"><a class="header" href="#rename-wr">Rename (Wr)</a></h3>
-<p>Opens a rename prompt for the active worktree’s display label. The underlying git branch is not renamed – this only changes the label shown in the tab row.</p>
-<h3 id="archive-wx"><a class="header" href="#archive-wx">Archive (Wx)</a></h3>
-<p>Archives the active worktree. Archived worktrees are removed from the tab row but not deleted from disk. They can be restored from the worktree management interface.</p>
+<p>Opens a rename dialog pre-filled with the current branch suffix. On confirm, the underlying git branch is renamed (<code>git branch -m</code>), the new branch is pushed to the remote, and the old remote branch is deleted. All branch-keyed app state is migrated to the new name.</p>
+<h3 id="archive-wa"><a class="header" href="#archive-wa">Archive (Wa)</a></h3>
+<p>Archives the active worktree. The worktree directory is removed, but the git branch is preserved. Archived worktrees remain visible in the tab row with a dim <code>◇</code> prefix and can be unarchived with <code>u</code> to recreate the worktree from the preserved branch.</p>
 <h3 id="delete-wd"><a class="header" href="#delete-wd">Delete (Wd)</a></h3>
 <p>Deletes a worktree from disk. This runs <code>git worktree remove</code> and is destructive – uncommitted changes in the worktree are lost. A confirmation prompt is shown before deletion.</p>
 <hr>
@@ -1405,15 +1381,15 @@ Command ───────────&gt; Prompt
 <tr><th>Key</th><th>Action</th></tr>
 </thead>
 <tbody>
-<tr><td><code>a</code></td><td>Create a new worktree</td></tr>
+<tr><td><code>n</code></td><td>Create a new worktree</td></tr>
 <tr><td><code>r</code></td><td>Rename worktree</td></tr>
-<tr><td><code>x</code></td><td>Archive worktree</td></tr>
+<tr><td><code>a</code></td><td>Archive worktree</td></tr>
 <tr><td><code>d</code></td><td>Delete worktree</td></tr>
 </tbody>
 </table>
 </div>
 <p>This shortcut exists because when you are already looking at the worktrees list, the <code>W</code> prefix is redundant. The direct keys are faster and more natural in that context.</p>
-<p>Outside the Worktrees pane, these single keys have other meanings (e.g., <code>r</code> runs a command, <code>d</code> may be unbound), so the <code>W</code> leader prefix is required to disambiguate.</p>
+<p>Outside the Worktrees pane, these single keys have other meanings (e.g., <code>r</code> runs a command, <code>n</code> may be unbound), so the <code>W</code> leader prefix is required to disambiguate.</p>
 <hr>
 <h2 id="status-bar-feedback"><a class="header" href="#status-bar-feedback">Status Bar Feedback</a></h2>
 <p>The status bar provides real-time feedback during leader sequences:</p>
@@ -1462,10 +1438,10 @@ Command ───────────&gt; Prompt
 <tr><th>Symbol</th><th>Modifier</th></tr>
 </thead>
 <tbody>
-<tr><td><code>^</code></td><td>Control</td></tr>
-<tr><td><code>Option</code></td><td>Option</td></tr>
-<tr><td><code>Shift</code></td><td>Shift</td></tr>
-<tr><td><code>Cmd</code></td><td>Command</td></tr>
+<tr><td><code>⌃</code></td><td>Control</td></tr>
+<tr><td><code>⌥</code></td><td>Option</td></tr>
+<tr><td><code>⇧</code></td><td>Shift</td></tr>
+<tr><td><code>⌘</code></td><td>Command</td></tr>
 </tbody>
 </table>
 </div>
@@ -1560,10 +1536,11 @@ worktree through AZUREAL, three things happen:</p>
 <ol>
 <li><strong>A git worktree is created</strong> under <code>&lt;repo&gt;/worktrees/&lt;name&gt;</code>, giving you a
 full working directory on a new branch named <code>azureal/&lt;name&gt;</code>.</li>
-<li><strong>A session slot is allocated</strong> in the SQLite session store, ready to hold
-agent conversations for that branch.</li>
 <li><strong>The tab row updates</strong> to show the new worktree alongside your existing
 ones.</li>
+<li><strong>A session is created on demand</strong> when you send your first prompt or
+explicitly create one via the session dialog – the SQLite store is not
+pre-populated at worktree creation time.</li>
 </ol>
 <p>From that point on, the worktree is a self-contained development environment.
 Switching between worktrees (with <code>[</code>/<code>]</code> or by clicking tabs) swaps the file
@@ -1572,7 +1549,7 @@ tree, viewer, session history, terminal, and git state all at once.</p>
 <h2 id="main-branch"><a class="header" href="#main-branch">Main Branch</a></h2>
 <p>The main branch (typically <code>main</code> or <code>master</code>) is not a worktree in the
 traditional sense – it is the original repository checkout. AZUREAL treats it
-specially: it always appears as the first tab (<code>[* main]</code>), it cannot be
+specially: it always appears as the first tab (<code>[★ main]</code>), it cannot be
 deleted or archived, and its git panel offers pull/commit/push instead of
 squash/rebase. You can browse and work on main at any time via <code>Shift+M</code>.</p>
 <p>See <a href="#main-branch-browse">Main Branch Browse</a> for the full details.</p>
@@ -1735,14 +1712,10 @@ status icons, pagination, unread indicators, and visual states.</li>
 <p>The Codex backend wraps the <strong>OpenAI Codex CLI</strong> (<code>codex</code> command) to execute prompts against OpenAI’s GPT models. Like the Claude backend, AZUREAL uses a non-interactive execution mode that exits after producing a response.</p>
 <hr>
 <h2 id="command-structure-1"><a class="header" href="#command-structure-1">Command Structure</a></h2>
-<p>Codex invocations differ depending on whether the session is new or being resumed.</p>
-<h3 id="new-session"><a class="header" href="#new-session">New Session</a></h3>
+<p>Every Codex invocation follows this pattern:</p>
 <pre><code class="language-sh">codex exec --json "&lt;prompt&gt;"
 </code></pre>
-<h3 id="resume-session"><a class="header" href="#resume-session">Resume Session</a></h3>
-<pre><code class="language-sh">codex exec --json resume &lt;UUID&gt; "&lt;prompt&gt;"
-</code></pre>
-<p>When a Codex session has a thread ID from a previous exchange, AZUREAL passes it via the <code>resume &lt;UUID&gt;</code> argument. This tells the Codex CLI to continue an existing conversation thread. Unlike the Claude backend (which uses context injection exclusively), the Codex backend uses the CLI’s native resume mechanism for thread continuity.</p>
+<p>Like the Claude backend, AZUREAL does <strong>not</strong> use the Codex CLI’s native <code>resume</code> mechanism. Conversation continuity is handled entirely through context injection from the SQLite session store. Each prompt spawns a fresh process with the full context prepended.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1751,14 +1724,13 @@ status icons, pagination, unread indicators, and visual states.</li>
 <tbody>
 <tr><td><code>exec</code></td><td>Non-interactive execution mode.</td></tr>
 <tr><td><code>--json</code></td><td>Emits structured JSON output for machine parsing.</td></tr>
-<tr><td><code>resume &lt;UUID&gt;</code></td><td>Continues an existing conversation thread (optional, omitted for the first prompt).</td></tr>
 </tbody>
 </table>
 </div>
 <hr>
 <h2 id="session-id-capture-1"><a class="header" href="#session-id-capture-1">Session ID Capture</a></h2>
-<p>When a Codex process starts a new thread, it emits a <code>thread.started</code> event containing a <code>thread_id</code> field. AZUREAL captures this ID and stores it for use in subsequent <code>resume</code> commands within the same session.</p>
-<p>The thread ID persists across prompts, enabling the Codex CLI to maintain its own conversation state. This is in addition to AZUREAL’s own context injection – both mechanisms contribute to continuity.</p>
+<p>When a Codex process starts a new thread, it emits a <code>thread.started</code> event containing a <code>thread_id</code> field. AZUREAL captures this ID and associates it with the active session slot.</p>
+<p>The thread ID is used for display and diagnostics. It is not used for resumption – context injection replaces that role, just as with the Claude backend.</p>
 <hr>
 <h2 id="permission-modes-1"><a class="header" href="#permission-modes-1">Permission Modes</a></h2>
 <p>Codex CLI supports two permission modes:</p>
@@ -1793,7 +1765,7 @@ status icons, pagination, unread indicators, and visual states.</li>
 <h2 id="streaming-and-event-parsing-1"><a class="header" href="#streaming-and-event-parsing-1">Streaming and Event Parsing</a></h2>
 <p>The <code>--json</code> flag causes Codex CLI to emit structured JSON events. AZUREAL reads these events from the process output and converts them into the same <code>AgentEvent</code> and <code>DisplayEvent</code> types used by the Claude backend. The key events include:</p>
 <ul>
-<li><strong>thread.started</strong> – thread creation, carrying the <code>thread_id</code> used for subsequent resume commands.</li>
+<li><strong>thread.started</strong> – thread creation, carrying the <code>thread_id</code> for session identification.</li>
 <li><strong>Assistant text</strong> – incremental response text from the model.</li>
 <li><strong>Tool calls and results</strong> – file operations, command execution, and their outcomes.</li>
 <li><strong>Error</strong> – error conditions reported by the CLI.</li>
@@ -1803,7 +1775,7 @@ status icons, pagination, unread indicators, and visual states.</li>
 <h2 id="process-lifecycle-1"><a class="header" href="#process-lifecycle-1">Process Lifecycle</a></h2>
 <p>Each Codex process follows the same lifecycle as Claude:</p>
 <ol>
-<li><strong>Spawn</strong>: A new <code>codex exec</code> process is started with the prompt and, if available, a thread ID for resumption.</li>
+<li><strong>Spawn</strong>: A new <code>codex exec</code> process is started with the context-injected prompt.</li>
 <li><strong>Stream</strong>: JSON events are read and parsed in real time.</li>
 <li><strong>Exit</strong>: The process exits when the response is complete.</li>
 <li><strong>Ingest</strong>: Events are appended to the SQLite store and temporary output files are cleaned up.</li>
@@ -1949,12 +1921,12 @@ status icons, pagination, unread indicators, and visual states.</li>
 <li>Any compaction summaries that replaced older events.</li>
 </ul>
 <p>The context is formatted as structured text and wrapped in <code>&lt;azureal-session-context&gt;</code> XML tags. This tagged context is prepended to the user’s prompt, giving the agent full conversational history without relying on the CLI’s own session management.</p>
-<p>For the Codex backend, the native <code>resume &lt;UUID&gt;</code> mechanism supplements (but does not replace) context injection.</p>
+<p>Both backends receive context injection identically – neither uses a CLI-native resume flag.</p>
 <h3 id="3-agent-process-is-spawned"><a class="header" href="#3-agent-process-is-spawned">3. Agent Process Is Spawned</a></h3>
 <p>A new CLI process is spawned based on the active backend:</p>
 <ul>
 <li><strong>Claude</strong>: <code>claude -p "&lt;context + prompt&gt;" --verbose --output-format stream-json</code></li>
-<li><strong>Codex</strong>: <code>codex exec --json "&lt;prompt&gt;"</code> (or <code>codex exec --json resume &lt;UUID&gt; "&lt;prompt&gt;"</code> if a thread ID exists)</li>
+<li><strong>Codex</strong>: <code>codex exec --json "&lt;context + prompt&gt;"</code></li>
 </ul>
 <p>The process runs in the worktree’s directory, so all file operations performed by the agent are scoped to the correct working tree. The process’s PID is registered as a new session slot (see <a href="#multi-agent-concurrency">Multi-Agent Concurrency</a>).</p>
 <h3 id="4-streaming-json-events-are-received-and-parsed"><a class="header" href="#4-streaming-json-events-are-received-and-parsed">4. Streaming JSON Events Are Received and Parsed</a></h3>
@@ -2034,7 +2006,8 @@ fine, but the intent is that AZUREAL owns this file.</p>
 <h3 id="lazy-initialization"><a class="header" href="#lazy-initialization">Lazy Initialization</a></h3>
 <p>The store is <strong>not</strong> created when you load a project. It is opened (and the
 file created, if absent) only when you create your first session. Projects
-that have never had a session have no <code>.azureal/</code> directory at all.</p>
+that have never had a session will not have a <code>sessions.azs</code> file (though
+the <code>.azureal/</code> directory may exist for configuration).</p>
 <h3 id="backend-agnostic"><a class="header" href="#backend-agnostic">Backend-Agnostic</a></h3>
 <p>A single session can span prompts sent to both Claude and Codex backends.
 The store does not partition by backend – it records events in the order they
@@ -2099,9 +2072,9 @@ and schema.</p>
 <h2 id="lazy-creation"><a class="header" href="#lazy-creation">Lazy Creation</a></h2>
 <p>The store file is <strong>not</strong> created when you open a project. It is created
 lazily on first use – specifically, when you create your first session.
-Projects that have never had a session will not have a <code>.azureal/</code> directory.
-This keeps the filesystem clean and avoids polluting repositories with empty
-database files.</p>
+Projects that have never had a session will not have a <code>sessions.azs</code> file
+(though the <code>.azureal/</code> directory may still exist for configuration files
+like <code>azufig.toml</code>).</p>
 <hr>
 <h2 id="session-numbering"><a class="header" href="#session-numbering">Session Numbering</a></h2>
 <p>Sessions are numbered sequentially: <strong>S1</strong>, <strong>S2</strong>, <strong>S3</strong>, and so on. These
@@ -2122,9 +2095,10 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 <tr><td><code>name</code></td><td>TEXT</td><td>User-assigned session name (or default “S<em>n</em>”)</td></tr>
 <tr><td><code>worktree</code></td><td>TEXT</td><td>Path to the git worktree this session belongs to</td></tr>
 <tr><td><code>created</code></td><td>TEXT</td><td>ISO 8601 timestamp of session creation</td></tr>
-<tr><td><code>completed</code></td><td>TEXT</td><td>ISO 8601 timestamp of completion (NULL if still active)</td></tr>
+<tr><td><code>completed</code></td><td>INTEGER</td><td>Boolean success flag (1 = success, 0 = failure, NULL if still active)</td></tr>
 <tr><td><code>duration_ms</code></td><td>INTEGER</td><td>Total session duration in milliseconds</td></tr>
 <tr><td><code>cost_usd</code></td><td>REAL</td><td>Accumulated cost in USD (populated on completion)</td></tr>
+<tr><td><code>last_claude_uuid</code></td><td>TEXT</td><td>UUID of the last Claude JSONL session file (for orphan recovery)</td></tr>
 </tbody>
 </table>
 </div>
@@ -2136,14 +2110,16 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 <tr><th>Column</th><th>Type</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code></td></tr>
+<tr><td><code>id</code></td><td>INTEGER</td><td>Primary key, auto-incremented</td></tr>
+<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code> (with cascade delete)</td></tr>
 <tr><td><code>seq</code></td><td>INTEGER</td><td>Sequence number within the session (monotonically increasing)</td></tr>
-<tr><td><code>kind</code></td><td>TEXT</td><td>Event type (e.g., <code>UserPrompt</code>, <code>AssistantResponse</code>, <code>ToolCall</code>, <code>ToolResult</code>, <code>Complete</code>)</td></tr>
-<tr><td><code>data</code></td><td>TEXT</td><td>JSON-encoded event payload</td></tr>
-<tr><td><code>char_len</code></td><td>INTEGER</td><td>Character length of the serialized data</td></tr>
+<tr><td><code>kind</code></td><td>TEXT</td><td>Event type (e.g., <code>UserMessage</code>, <code>AssistantText</code>, <code>ToolCall</code>, <code>ToolResult</code>, <code>Complete</code>)</td></tr>
+<tr><td><code>data</code></td><td>TEXT</td><td>Zstd-compressed JSON event payload (stored as blob despite TEXT type)</td></tr>
+<tr><td><code>char_len</code></td><td>INTEGER</td><td>Character length of the original (uncompressed) event data</td></tr>
 </tbody>
 </table>
 </div>
+<p>A unique constraint on <code>(session_id, seq)</code> prevents duplicate events.</p>
 <h3 id="compactions"><a class="header" href="#compactions"><code>compactions</code></a></h3>
 <p>Compaction summaries that replace older event ranges.</p>
 <div class="table-wrapper">
@@ -2152,9 +2128,11 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 <tr><th>Column</th><th>Type</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code></td></tr>
+<tr><td><code>id</code></td><td>INTEGER</td><td>Primary key, auto-incremented</td></tr>
+<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code> (with cascade delete)</td></tr>
 <tr><td><code>after_seq</code></td><td>INTEGER</td><td>The sequence number after which events were compacted</td></tr>
 <tr><td><code>summary</code></td><td>TEXT</td><td>The 2000–4000 character compaction summary</td></tr>
+<tr><td><code>created</code></td><td>TEXT</td><td>ISO 8601 timestamp of when the compaction was stored</td></tr>
 </tbody>
 </table>
 </div>
@@ -2171,13 +2149,10 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 </tbody>
 </table>
 </div>
-<p>Notable keys include:</p>
-<ul>
-<li><code>current_session_id</code> – tracks which session is currently active in the UI.</li>
-<li><code>pid_session_target</code> – maps PIDs to <code>(session_id, worktree_path)</code> tuples,
-recorded at agent spawn time so that AZUREAL can associate a running process
-with the correct session and worktree even after restarts.</li>
-</ul>
+<p>The primary key stored here is <code>schema_version</code>, which tracks the database
+schema version for migrations. Other runtime state such as the active session
+ID and PID-to-session mappings are held in memory on the App struct, not
+persisted to the database.</p>
 <hr>
 <h2 id="event-storage-and-compaction"><a class="header" href="#event-storage-and-compaction">Event Storage and Compaction</a></h2>
 <p>Events are not stored verbatim from the agent’s JSONL output. Before
@@ -2410,7 +2385,7 @@ close the current session is to the compaction threshold:</p>
 <p>The meter updates in real-time during streaming, giving continuous visibility
 into context consumption.</p>
 <h3 id="inactivity-watcher"><a class="header" href="#inactivity-watcher">Inactivity Watcher</a></h3>
-<p>When the meter reaches <strong>90% or higher</strong> and no new events arrive for <strong>30
+<p>When the meter reaches <strong>90% or higher</strong> and no new events arrive for <strong>20
 seconds</strong>, a yellow banner appears in the session pane:</p>
 <blockquote>
 <p>Session may be compacting…</p>
@@ -2444,8 +2419,8 @@ worktree associations, creation timestamps, and completion status.</li>
 already in their compacted form.</li>
 <li><strong>All compaction summaries</strong> – the full text of every compaction summary
 generated during the project’s lifetime.</li>
-<li><strong>Runtime metadata</strong> – the active session ID, PID-to-session mappings, and
-schema version.</li>
+<li><strong>Runtime metadata</strong> – the schema version (active session ID and
+PID-to-session mappings are held in memory, not persisted to the store).</li>
 </ul>
 <p>There are no external files that the store depends on. The temporary JSONL
 files produced by agent processes during streaming are ingested into the store
@@ -2474,14 +2449,12 @@ the correct worktrees on the target machine as long as the worktree names
 match.</p>
 <hr>
 <h2 id="version-control-considerations"><a class="header" href="#version-control-considerations">Version Control Considerations</a></h2>
-<p>The <code>.azureal/</code> directory is typically added to <code>.gitignore</code> because session
-data is personal to each developer. In a team setting, each developer
-maintains their own session store with their own conversation history.</p>
-<p>If you want to share session data (e.g., for onboarding or debugging), copy
-the <code>.azs</code> file directly rather than committing it to the repository. Session
-files can grow to several megabytes in active projects, and conversation
-content may contain sensitive information (API keys in tool results, file
-contents from private repositories, etc.).</p>
+<p>The <code>.azureal/</code> directory is <strong>gitignored by default</strong>. AZUREAL automatically
+adds <code>.azureal/</code> to <code>.gitignore</code> (alongside <code>worktrees/</code>) on first load. This
+prevents the session store, worktree-level configs, and other runtime files from
+causing rebase conflicts during multi-worktree development.</p>
+<p>To share session history across machines, copy the <code>.azureal/sessions.azs</code> file
+manually or use a separate sync mechanism.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="the-session-pane"><a class="header" href="#the-session-pane">The Session Pane</a></h1>
 <p>The session pane occupies the rightmost 35% of the terminal, spanning the full
@@ -2530,6 +2503,7 @@ family:</p>
 <tr><td>GPT-5.4</td><td>Green</td></tr>
 <tr><td>GPT-5.3-codex</td><td>Light green</td></tr>
 <tr><td>GPT-5.2-codex</td><td>Teal</td></tr>
+<tr><td>GPT-5.2</td><td>Light cyan</td></tr>
 <tr><td>GPT-5.1-codex-max</td><td>Blue</td></tr>
 <tr><td>GPT-5.1-codex-mini</td><td>Light blue</td></tr>
 </tbody>
@@ -2580,16 +2554,18 @@ arrived for 20 seconds.</li>
 <p>Hooks (permission checks, tool validations) are captured from multiple sources
 in the event stream (<code>hook_progress</code>, <code>system-reminder</code> tags,
 <code>hook_response</code>). They render as dim gray lines near their corresponding tool
-calls, prefixed with <code>&gt;</code>. Consecutive duplicate hooks are deduplicated to
+calls, prefixed with <code>›</code>. Consecutive duplicate hooks are deduplicated to
 prevent visual clutter.</p>
 <h2 id="scrolling-and-navigation"><a class="header" href="#scrolling-and-navigation">Scrolling and Navigation</a></h2>
 <ul>
-<li><code>j</code> / <code>k</code> or arrow keys scroll one line at a time.</li>
-<li><code>g</code> jumps to the top of the session; <code>G</code> jumps to the bottom.</li>
+<li><code>j</code> / <code>k</code> scroll one line at a time.</li>
+<li><code>Up</code> / <code>Down</code> arrows jump to the previous / next message bubble.</li>
+<li><code>J</code> / <code>K</code> page scroll (viewport height minus 2 lines of overlap).</li>
+<li><code>Alt+Up</code> / <code>Alt+Down</code> jump to the top / bottom of the session.</li>
 <li>Mouse wheel scrolling works regardless of keyboard focus.</li>
 <li>The session pane auto-follows new content (pinned to bottom) until the user
-scrolls up. Scrolling up detaches from the bottom; pressing <code>G</code> or scrolling
-back to the end re-attaches.</li>
+scrolls up. Scrolling up detaches from the bottom; scrolling back to the end
+re-attaches.</li>
 </ul>
 <h2 id="session-find"><a class="header" href="#session-find">Session Find</a></h2>
 <p>Press <code>/</code> to open an in-session search bar at the bottom of the session pane.
@@ -2863,7 +2839,7 @@ to visually group the result with its tool call.</p>
 <h2 id="hook-lines"><a class="header" href="#hook-lines">Hook Lines</a></h2>
 <p>When a tool call triggers permission hooks or validation checks, the hook
 output appears as dim gray lines near the tool call. Hooks are prefixed with
-<code>&gt;</code> and show the hook name followed by its output. Consecutive duplicate hook
+<code>›</code> and show the hook name followed by its output. Consecutive duplicate hook
 lines are deduplicated.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="tool-result-formats"><a class="header" href="#tool-result-formats">Tool Result Formats</a></h1>
@@ -2901,7 +2877,7 @@ treated identically to <code>Bash</code>. Output wrapped in the Codex execution 
 automatically unwrapped to show only the actual output.</p>
 <h3 id="edit"><a class="header" href="#edit">Edit</a></h3>
 <p>The file path is a clickable link. Beneath the tool call, an inline diff
-preview shows the last 20 edit hunks:</p>
+preview shows the changes:</p>
 <ul>
 <li><strong>Removed lines</strong> are styled with gray text on a dim red background.</li>
 <li><strong>Added lines</strong> are syntax-highlighted on a dim green background.</li>
@@ -2996,6 +2972,7 @@ text. The session name on the selected row renders bold.</p>
 <tr><td><code>K</code></td><td>Page up (jump by viewport height)</td></tr>
 <tr><td><code>Enter</code></td><td>Load the selected session</td></tr>
 <tr><td><code>a</code></td><td>Start a new session</td></tr>
+<tr><td><code>r</code></td><td>Rename the selected session</td></tr>
 <tr><td><code>s</code> / <code>Esc</code></td><td>Close the session list and return to conversation</td></tr>
 </tbody>
 </table>
@@ -3006,12 +2983,11 @@ text. The session name on the selected row renders bold.</p>
 <ol>
 <li><strong>Immediate:</strong> A centered “Loading sessions…” dialog appears on the first
 frame after <code>s</code> is pressed.</li>
-<li><strong>Background:</strong> Message counts are computed and the full list renders once
-counting is complete.</li>
+<li><strong>Background:</strong> Message counts are loaded from the SQLite session store and
+the full list renders once data is available.</li>
 </ol>
-<p>Message counts are computed via fast string scanning of session files – no
-JSON parsing is performed. This keeps the count computation fast even for large
-session files.</p>
+<p>Message counts are pre-computed in the session store, so loading the list
+requires no event file parsing.</p>
 <hr>
 <h2 id="name-filter"><a class="header" href="#name-filter">Name Filter</a></h2>
 <p>Pressing <code>/</code> activates a filter bar at the top of the session list. Typing
@@ -3022,11 +2998,11 @@ the filter input (the filter text persists and continues filtering). Press
 <hr>
 <h2 id="content-search"><a class="header" href="#content-search">Content Search</a></h2>
 <p>Typing <code>//</code> (two slashes) switches from name filtering to content search mode.
-Content search looks inside session file contents rather than matching names:</p>
+Content search looks inside session event data (stored in the SQLite session
+store) rather than matching names:</p>
 <ul>
 <li><strong>Minimum query length:</strong> 3 characters (no search runs below this).</li>
 <li><strong>Result cap:</strong> 100 results maximum.</li>
-<li><strong>File size limit:</strong> Files larger than 5 MB are skipped.</li>
 </ul>
 <p>The filter bar shows the search mode prefix (<code>//</code>) and a result count badge
 on the right side (e.g., <code>42 results</code>).</p>
@@ -3253,7 +3229,7 @@ ensures the badge stays accurate without adding I/O overhead to the hot path.</p
 <hr>
 <h2 id="compaction-inactivity-watcher"><a class="header" href="#compaction-inactivity-watcher">Compaction Inactivity Watcher</a></h2>
 <p>When the context percentage reaches 90% or above, AZUREAL starts monitoring
-for inactivity. If no session events arrive for 20 seconds while the context
+for inactivity. If no session events arrive for 30 seconds while the context
 is at or above 90%, a yellow warning banner is injected into the conversation:</p>
 <pre><code class="language-text">       Session may be compacting...
 </code></pre>
@@ -3290,8 +3266,6 @@ what the agent changed without navigating to the file manually.</p>
 column, the file path string, and (for Edit tools) the old/new edit strings.
 When a path wraps across multiple lines, the <code>wrap_line_count</code> field tells the
 click handler how many cache lines to check.</p>
-<p><strong>Hover highlight:</strong> When the mouse hovers over a clickable file path, the
-path region is highlighted to indicate it is interactive.</p>
 <hr>
 <h2 id="assistant-markdown-file-links"><a class="header" href="#assistant-markdown-file-links">Assistant Markdown File Links</a></h2>
 <p>When the assistant mentions file paths in its prose text (outside of tool
@@ -3321,9 +3295,9 @@ precise hit-testing for the click.</p>
 <p>All clickable regions are tracked through typed tuples stored alongside the
 render cache:</p>
 <ul>
-<li><strong><code>ClickablePath</code>:</strong> <code>(line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)</code> – identifies a clickable file path with
+<li><strong><code>ClickablePath</code>:</strong> <code>(line_idx, start_col, end_col, file_path, old_string,  new_string, wrap_line_count)</code> – identifies a clickable file path with
 optional Edit diff context.</li>
-<li><strong><code>ClickableTable</code>:</strong> <code>(cache_line_start, cache_line_end, raw_markdown_text)</code> – identifies a clickable table region.</li>
+<li><strong><code>ClickableTable</code>:</strong> <code>(cache_line_start, cache_line_end,  raw_markdown_text)</code> – identifies a clickable table region.</li>
 </ul>
 <p>On a mouse click, the event handler translates the screen coordinates to cache
 line and column positions (accounting for scroll offset), then checks against
@@ -3362,7 +3336,7 @@ default state for that worktree.</p>
 </thead>
 <tbody>
 <tr><td><strong>File Tree</strong></td><td>Directory browser with Nerd Font icons, expand/collapse, filtering options</td></tr>
-<tr><td><strong>Syntax Highlighting</strong></td><td>Tree-sitter based highlighting for 25 languages</td></tr>
+<tr><td><strong>Syntax Highlighting</strong></td><td>Tree-sitter based highlighting for 24 languages</td></tr>
 <tr><td><strong>Markdown Preview</strong></td><td>Prettified rendering of <code>.md</code> files with styled headers, tables, and code blocks</td></tr>
 <tr><td><strong>Image Viewer</strong></td><td>Terminal graphics protocol rendering for PNG, JPG, GIF, BMP, WebP, and ICO</td></tr>
 <tr><td><strong>Diff Viewer</strong></td><td>Inline diffs from agent Edit tool calls with syntax highlighting</td></tr>
@@ -3471,8 +3445,8 @@ application launch.</p>
 <tr><td><code>Enter</code></td><td>Open file in Viewer, or expand/collapse directory</td></tr>
 <tr><td><code>l</code> / Right</td><td>Expand directory</td></tr>
 <tr><td><code>h</code> / Left</td><td>Collapse directory</td></tr>
-<tr><td><code>g</code></td><td>Jump to first entry</td></tr>
-<tr><td><code>G</code></td><td>Jump to last entry</td></tr>
+<tr><td><code>Alt+Up</code></td><td>Jump to first sibling in current folder</td></tr>
+<tr><td><code>Alt+Down</code></td><td>Jump to last sibling in current folder</td></tr>
 </tbody>
 </table>
 </div>
@@ -3495,11 +3469,13 @@ tree.</p>
 <tr><td><code>.claude</code></td><td>Hidden</td></tr>
 <tr><td><code>.azureal</code></td><td>Hidden</td></tr>
 <tr><td><code>.DS_Store</code></td><td>Hidden</td></tr>
+<tr><td><code>target</code></td><td>Hidden</td></tr>
+<tr><td><code>node_modules</code></td><td>Hidden</td></tr>
 </tbody>
 </table>
 </div>
-<p>Each entry is a toggle. Checked entries are visible; unchecked entries are
-filtered out of the tree. Navigate the list with <code>j</code>/<code>k</code> and toggle with
+<p>Each entry is a “Hide” toggle. Checked entries are hidden from the tree;
+unchecked entries are visible. Navigate the list with <code>j</code>/<code>k</code> and toggle with
 <code>Space</code> or <code>Enter</code>. Press <code>Esc</code> or <code>O</code> again to close the overlay.</p>
 <h3 id="persistence"><a class="header" href="#persistence">Persistence</a></h3>
 <p>Filter settings are persisted to the project’s <code>azufig.toml</code> configuration
@@ -3529,7 +3505,7 @@ highlighters, tree-sitter parses source code into a full abstract syntax tree
 multi-line strings, and language-specific edge cases.</p>
 <hr>
 <h2 id="supported-languages"><a class="header" href="#supported-languages">Supported Languages</a></h2>
-<p>Twenty-five language grammars are bundled:</p>
+<p>Twenty-four language grammars are bundled:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -3537,15 +3513,15 @@ multi-line strings, and language-specific edge cases.</p>
 </thead>
 <tbody>
 <tr><td>Rust</td><td><code>.rs</code></td></tr>
-<tr><td>Python</td><td><code>.py</code>, <code>.pyw</code></td></tr>
-<tr><td>JavaScript</td><td><code>.js</code>, <code>.mjs</code>, <code>.cjs</code></td></tr>
-<tr><td>TypeScript</td><td><code>.ts</code></td></tr>
+<tr><td>Python</td><td><code>.py</code>, <code>.pyw</code>, <code>.pyi</code></td></tr>
+<tr><td>JavaScript</td><td><code>.js</code>, <code>.mjs</code>, <code>.cjs</code>, <code>.jsx</code></td></tr>
+<tr><td>TypeScript</td><td><code>.ts</code>, <code>.mts</code>, <code>.cts</code></td></tr>
 <tr><td>TSX</td><td><code>.tsx</code></td></tr>
-<tr><td>JSON</td><td><code>.json</code></td></tr>
+<tr><td>JSON</td><td><code>.json</code>, <code>.jsonc</code></td></tr>
 <tr><td>TOML</td><td><code>.toml</code></td></tr>
-<tr><td>Bash</td><td><code>.sh</code>, <code>.bash</code></td></tr>
+<tr><td>Bash</td><td><code>.sh</code>, <code>.bash</code>, <code>.zsh</code></td></tr>
 <tr><td>C</td><td><code>.c</code>, <code>.h</code></td></tr>
-<tr><td>C++</td><td><code>.cpp</code>, <code>.hpp</code>, <code>.cc</code>, <code>.cxx</code></td></tr>
+<tr><td>C++</td><td><code>.cpp</code>, <code>.hpp</code>, <code>.cc</code>, <code>.cxx</code>, <code>.hxx</code>, <code>.hh</code></td></tr>
 <tr><td>Go</td><td><code>.go</code></td></tr>
 <tr><td>HTML</td><td><code>.html</code>, <code>.htm</code></td></tr>
 <tr><td>CSS</td><td><code>.css</code></td></tr>
@@ -3554,7 +3530,7 @@ multi-line strings, and language-specific edge cases.</p>
 <tr><td>Lua</td><td><code>.lua</code></td></tr>
 <tr><td>YAML</td><td><code>.yml</code>, <code>.yaml</code></td></tr>
 <tr><td>Markdown</td><td><code>.md</code>, <code>.markdown</code></td></tr>
-<tr><td>Scala</td><td><code>.scala</code></td></tr>
+<tr><td>Scala</td><td><code>.scala</code>, <code>.sc</code></td></tr>
 <tr><td>R</td><td><code>.r</code>, <code>.R</code></td></tr>
 <tr><td>Haskell</td><td><code>.hs</code></td></tr>
 <tr><td>PHP</td><td><code>.php</code></td></tr>
@@ -3563,6 +3539,8 @@ multi-line strings, and language-specific edge cases.</p>
 </tbody>
 </table>
 </div>
+<p>Perl is registered with an empty highlight query, so <code>.pl</code> and <code>.pm</code> files are
+recognized but rendered as plain text without syntax coloring.</p>
 <p>Files with unrecognized extensions are displayed as plain text without
 highlighting.</p>
 <hr>
@@ -3587,35 +3565,35 @@ colors:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Capture</th><th>Typical Color</th></tr>
+<tr><th>Capture</th><th>Color</th></tr>
 </thead>
 <tbody>
-<tr><td><code>keyword</code></td><td>Magenta / Purple</td></tr>
-<tr><td><code>string</code></td><td>Green</td></tr>
+<tr><td><code>attribute</code></td><td>Light blue / Lavender</td></tr>
 <tr><td><code>comment</code></td><td>Gray (dim)</td></tr>
+<tr><td><code>constant</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>constant.builtin</code></td><td>Yellow</td></tr>
+<tr><td><code>constructor</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>embedded</code></td><td>White</td></tr>
+<tr><td><code>escape</code></td><td>Magenta</td></tr>
 <tr><td><code>function</code></td><td>Blue</td></tr>
-<tr><td><code>type</code></td><td>Yellow</td></tr>
-<tr><td><code>variable</code></td><td>White</td></tr>
-<tr><td><code>constant</code></td><td>Orange</td></tr>
-<tr><td><code>number</code></td><td>Orange</td></tr>
+<tr><td><code>function.builtin</code></td><td>Blue</td></tr>
+<tr><td><code>function.method</code></td><td>Blue</td></tr>
+<tr><td><code>keyword</code></td><td>Magenta</td></tr>
+<tr><td><code>label</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>number</code></td><td>Yellow</td></tr>
 <tr><td><code>operator</code></td><td>White</td></tr>
-<tr><td><code>punctuation</code></td><td>Gray</td></tr>
-<tr><td><code>property</code></td><td>Cyan</td></tr>
-<tr><td><code>attribute</code></td><td>Yellow</td></tr>
-<tr><td><code>tag</code></td><td>Red</td></tr>
-<tr><td><code>namespace</code></td><td>Yellow</td></tr>
-<tr><td><code>label</code></td><td>Cyan</td></tr>
-<tr><td><code>boolean</code></td><td>Orange</td></tr>
-<tr><td><code>builtin</code></td><td>Cyan</td></tr>
-<tr><td><code>constructor</code></td><td>Yellow</td></tr>
-<tr><td><code>escape</code></td><td>Orange</td></tr>
-<tr><td><code>field</code></td><td>Cyan</td></tr>
-<tr><td><code>parameter</code></td><td>White (italic)</td></tr>
-<tr><td><code>include</code></td><td>Magenta</td></tr>
-<tr><td><code>conditional</code></td><td>Magenta</td></tr>
-<tr><td><code>repeat</code></td><td>Magenta</td></tr>
-<tr><td><code>exception</code></td><td>Magenta</td></tr>
-<tr><td><code>module</code></td><td>Yellow</td></tr>
+<tr><td><code>property</code></td><td>White</td></tr>
+<tr><td><code>punctuation</code></td><td>White</td></tr>
+<tr><td><code>punctuation.bracket</code></td><td>White</td></tr>
+<tr><td><code>punctuation.delimiter</code></td><td>White</td></tr>
+<tr><td><code>string</code></td><td>Green</td></tr>
+<tr><td><code>string.special</code></td><td>Green</td></tr>
+<tr><td><code>tag</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>type</code></td><td>Yellow</td></tr>
+<tr><td><code>type.builtin</code></td><td>Yellow</td></tr>
+<tr><td><code>variable</code></td><td>White</td></tr>
+<tr><td><code>variable.builtin</code></td><td>Magenta</td></tr>
+<tr><td><code>variable.parameter</code></td><td>Orange</td></tr>
 </tbody>
 </table>
 </div>
@@ -3659,17 +3637,15 @@ readable without leaving the terminal.</p>
 <hr>
 <h2 id="rendered-elements"><a class="header" href="#rendered-elements">Rendered Elements</a></h2>
 <h3 id="headers-1"><a class="header" href="#headers-1">Headers</a></h3>
-<p>Headers are rendered with a gradient block prefix that varies by level:</p>
-<pre><code class="language-text">████ H1 Heading
-▓▓▓░ H2 Heading
-▒▒░  H3 Heading
-░░   H4 Heading
-░    H5 Heading
-     H6 Heading
+<p>Headers are rendered with a single block prefix character that varies by level:</p>
+<pre><code class="language-text">█ H1 Heading       (AZURE, bold, underlined)
+▓ H2 Heading       (AZURE, bold)
+▒ H3 Heading       (Green, bold)
+░ H4-H6 Heading    (Green)
 </code></pre>
-<p>The <code>BLOCK FULL</code> / <code>DARK SHADE</code> / <code>MEDIUM SHADE</code> / <code>LIGHT SHADE</code> characters
-create a visual weight that distinguishes heading levels at a glance. Header
-text is rendered bold.</p>
+<p>The descending block density (<code>FULL</code> &gt; <code>DARK SHADE</code> &gt; <code>MEDIUM SHADE</code> &gt;
+<code>LIGHT SHADE</code>) creates visual weight that distinguishes heading levels at a
+glance. Header text is rendered bold (H1-H3) with H1 additionally underlined.</p>
 <h3 id="bullets-and-lists"><a class="header" href="#bullets-and-lists">Bullets and Lists</a></h3>
 <ul>
 <li><strong>Unordered lists</strong> render with standard bullet characters, indented per
@@ -3889,8 +3865,6 @@ content area.</p>
 <tbody>
 <tr><td><code>t</code></td><td>Save current file to a new tab</td></tr>
 <tr><td><code>Alt+t</code></td><td>Open tab dialog</td></tr>
-<tr><td><code>[</code></td><td>Switch to previous tab</td></tr>
-<tr><td><code>]</code></td><td>Switch to next tab</td></tr>
 <tr><td><code>x</code></td><td>Close current tab</td></tr>
 </tbody>
 </table>
@@ -3901,15 +3875,9 @@ appears at the next available slot. If the file is already tabbed, no duplicate
 is created.</p>
 <h3 id="tab-dialog"><a class="header" href="#tab-dialog">Tab Dialog</a></h3>
 <p><code>Alt+t</code> opens a tab dialog overlay that shows all current tabs in a navigable
-list. You can select a tab from the dialog to switch to it, or manage tabs from
-within the overlay.</p>
-<h3 id="navigating-tabs"><a class="header" href="#navigating-tabs">Navigating Tabs</a></h3>
-<p><code>[</code> and <code>]</code> cycle through open tabs in order. Navigation wraps at both ends –
-pressing <code>]</code> on the last tab moves to the first, and pressing <code>[</code> on the first
-tab moves to the last.</p>
-<p>When you navigate to a tab, the Viewer loads that file’s content immediately.
-The file tree cursor does not move – tabs provide an independent navigation
-path from the tree.</p>
+list. Navigate with <code>j</code>/<code>k</code>, select with <code>Enter</code>, or jump directly to a tab
+with number keys <code>1</code>-<code>9</code>. You can also close tabs with <code>x</code> from within the
+dialog.</p>
 <h3 id="closing-tabs"><a class="header" href="#closing-tabs">Closing Tabs</a></h3>
 <p><code>x</code> closes the currently active tab. If the closed tab was the one being
 viewed, the Viewer switches to the next available tab. If no tabs remain, the
@@ -3981,8 +3949,8 @@ means:</p>
 <li><strong>Up/Down</strong> moves through wrapped visual lines, not source lines. If a single
 source line wraps into three visual rows, pressing Down three times moves
 through all three rows before reaching the next source line.</li>
-<li><strong>Home</strong> moves to the start of the current visual line. <strong>End</strong> moves to the
-end of the current visual line.</li>
+<li><strong>Home</strong> moves to the start of the current source line. <strong>End</strong> moves to the
+end of the current source line.</li>
 </ul>
 <p>The wrap-aware cursor ensures that navigation feels natural regardless of line
 length.</p>
@@ -4240,10 +4208,10 @@ the normal layout is restored exactly as you left it.</p>
 <hr>
 <h2 id="context-aware-actions"><a class="header" href="#context-aware-actions">Context-Aware Actions</a></h2>
 <p>The actions available in the git panel depend on which branch is active. On
-main, you get pull/commit/push. On feature branches, you get squash
-merge/rebase/commit/push. A few actions are always available regardless of
-branch.</p>
-<h3 id="on-main-branch"><a class="header" href="#on-main-branch">On Main Branch</a></h3>
+main, you get pull/commit/push/stash/stash pop. On feature branches, you get
+squash merge/rebase/commit/push/stash/stash pop. A few actions are always
+available regardless of branch.</p>
+<h3 id="on-main-branch-5-actions"><a class="header" href="#on-main-branch-5-actions">On Main Branch (5 actions)</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -4253,10 +4221,12 @@ branch.</p>
 <tr><td><code>l</code></td><td>Pull</td></tr>
 <tr><td><code>c</code></td><td>Commit</td></tr>
 <tr><td><code>Shift+P</code></td><td>Push</td></tr>
+<tr><td><code>z</code></td><td>Stash</td></tr>
+<tr><td><code>Shift+Z</code></td><td>Stash pop</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="on-feature-branch"><a class="header" href="#on-feature-branch">On Feature Branch</a></h3>
+<h3 id="on-feature-branch-6-actions"><a class="header" href="#on-feature-branch-6-actions">On Feature Branch (6 actions)</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -4267,6 +4237,8 @@ branch.</p>
 <tr><td><code>Shift+R</code></td><td>Rebase onto main</td></tr>
 <tr><td><code>c</code></td><td>Commit</td></tr>
 <tr><td><code>Shift+P</code></td><td>Push</td></tr>
+<tr><td><code>z</code></td><td>Stash</td></tr>
+<tr><td><code>Shift+Z</code></td><td>Stash pop</td></tr>
 </tbody>
 </table>
 </div>
@@ -4274,12 +4246,12 @@ branch.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Key</th><th>Action</th></tr>
+<tr><th>Key</th><th>Context</th><th>Action</th></tr>
 </thead>
 <tbody>
-<tr><td><code>r</code></td><td>Refresh git state</td></tr>
-<tr><td><code>a</code></td><td>Toggle auto-rebase</td></tr>
-<tr><td><code>s</code></td><td>Auto-resolve settings</td></tr>
+<tr><td><code>r</code></td><td>Any pane</td><td>Refresh git state</td></tr>
+<tr><td><code>a</code></td><td>Actions focused, feature branch only</td><td>Toggle auto-rebase</td></tr>
+<tr><td><code>s</code></td><td>Actions focused</td><td>Auto-resolve settings</td></tr>
 </tbody>
 </table>
 </div>
@@ -4350,14 +4322,15 @@ full history. Unpushed commits render in green; pushed commits render dimmed.</p
 far the branch has diverged from main and from its remote tracking branch:</p>
 <pre><code class="language-text"> ↑2 ↓0 main  ↑1 ↓3 remote
 </code></pre>
-<p>These badges are color-coded: green for ahead, yellow for behind.</p>
-<h3 id="bottom-status-bar"><a class="header" href="#bottom-status-bar">Bottom: Status Bar</a></h3>
-<p>A full-width status bar replaces the normal status bar. It displays:</p>
-<ul>
-<li>The current branch name</li>
-<li>Navigation hints (Tab/Shift+Tab to cycle panes, Enter to act)</li>
-<li>Operation progress messages during long-running actions</li>
-</ul>
+<p>These badges are color-coded: the main badge uses red when behind and green
+when only ahead; the remote badge uses yellow when behind and cyan when only
+ahead.</p>
+<h3 id="bottom-git-status-box"><a class="header" href="#bottom-git-status-box">Bottom: Git Status Box</a></h3>
+<p>A full-width git status box (3 rows, GIT_ORANGE double border) sits below the
+three panes. Its title bar contains keybinding hints in the same style as the
+prompt title bar. The content area shows operation result messages (green for
+success, red for errors). A minimal 1-row status bar sits beneath it, showing
+<code>Git: &lt;worktree&gt;</code> on the left and CPU/PID badge on the right.</p>
 <hr>
 <h2 id="focus-cycling"><a class="header" href="#focus-cycling">Focus Cycling</a></h2>
 <p>Three panes participate in the focus cycle:</p>
@@ -4486,8 +4459,9 @@ files are unstaged, it stages all; if all are staged, it unstages all.</p>
 </table>
 </div>
 <p>Pressing <code>x</code> prompts for inline confirmation directly in the file list entry.
-The prompt displays <code>y/n</code> next to the file name. Pressing <code>y</code> confirms the
-discard; pressing <code>n</code> or any other key cancels.</p>
+The prompt displays <code>Discard &lt;path&gt;? [y/n]</code> in the file’s row. Pressing <code>y</code>
+confirms the discard; pressing <code>n</code> or <code>Esc</code> cancels. Other keys are ignored
+while the confirmation is active.</p>
 <p>The discard mechanism depends on the file type:</p>
 <div class="table-wrapper">
 <table>
@@ -4534,7 +4508,7 @@ panel.</p>
 <ol>
 <li><strong>Stage</strong> – All files marked as staged in the UI are staged in the git
 index.</li>
-<li><strong>Diff</strong> – AZUREAL captures the staged diff (<code>git diff --cached</code>).</li>
+<li><strong>Diff</strong> – AZUREAL captures the staged diff (<code>git diff --staged</code>).</li>
 <li><strong>Generate</strong> – A background thread spawns to send the diff to the selected
 AI model with instructions to produce a conventional commit message.</li>
 <li><strong>Display</strong> – The generated message fills an editable text area in the
@@ -4586,7 +4560,7 @@ message entirely, tweak a word, or accept it as-is.</p>
 </thead>
 <tbody>
 <tr><td><code>Enter</code></td><td>Commit with the current message</td></tr>
-<tr><td><code>Cmd+P</code></td><td>Commit and push in one action</td></tr>
+<tr><td><code>Cmd+P</code> / <code>Ctrl+P</code></td><td>Commit and push in one action</td></tr>
 <tr><td><code>Shift+Enter</code></td><td>Insert a newline (for multi-line messages)</td></tr>
 <tr><td><code>Esc</code></td><td>Cancel the commit</td></tr>
 </tbody>
@@ -4648,8 +4622,9 @@ sequence to ensure a clean, linear history on main:</p>
 operation.</p>
 <h3 id="step-2-stash-dirty-working-tree"><a class="header" href="#step-2-stash-dirty-working-tree">Step 2: Stash Dirty Working Tree</a></h3>
 <p>If the working tree has uncommitted changes, they are stashed automatically.
-The stash is popped on all exit paths (success, failure, conflict) so your
-uncommitted work is never lost.</p>
+The stash is popped on success and failure exit paths. On conflict, the stash
+remains until the conflict is resolved (popped after RCR accept or abort) so
+your uncommitted work is never lost.</p>
 <h3 id="step-3-rebase-feature-onto-main"><a class="header" href="#step-3-rebase-feature-onto-main">Step 3: Rebase Feature onto Main</a></h3>
 <p>The feature branch is rebased onto main using <code>exec_rebase_inner</code>. This ensures
 that any upstream changes on main are incorporated before the merge, avoiding
@@ -4766,7 +4741,9 @@ actions.</p>
 </tbody>
 </table>
 </div>
-<p>The setting is persisted in <code>azufig.toml</code>, so it survives restarts.</p>
+<p>The setting is persisted per-worktree in
+<code>&lt;worktree_path&gt;/.azureal/azufig.toml</code> under the <code>[git]</code> section as
+<code>auto-rebase = "true"</code>, so it survives restarts.</p>
 <h3 id="how-it-works-2"><a class="header" href="#how-it-works-2">How It Works</a></h3>
 <p>When auto-rebase is enabled, AZUREAL checks all worktrees every <strong>2 seconds</strong>.
 For each worktree, it evaluates whether a rebase is appropriate. A worktree is
@@ -5019,17 +4996,16 @@ results in the vast majority of cases.</p>
 <p>Changes are saved immediately on close.</p>
 <hr>
 <h2 id="persistence-1"><a class="header" href="#persistence-1">Persistence</a></h2>
-<p>The auto-resolve file list is stored in <code>azufig.toml</code> under the <code>[git]</code>
-section:</p>
+<p>The auto-resolve file list is stored per-worktree in
+<code>&lt;worktree_path&gt;/.azureal/azufig.toml</code> under the <code>[git]</code> section. Each file is
+a separate key with an <code>auto-resolve/</code> prefix:</p>
 <pre><code class="language-toml">[git]
-auto_resolve_files = [
-    "AGENTS.md",
-    "CHANGELOG.md",
-    "README.md",
-    "CLAUDE.md",
-]
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
+"auto-resolve/README.md" = "true"
+"auto-resolve/CLAUDE.md" = "true"
 </code></pre>
-<p>This configuration is per-project, so different projects can have different
+<p>This configuration is per-worktree, so different worktrees can have different
 auto-resolve lists. Editing the TOML file directly has the same effect as using
 the settings overlay.</p>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -5068,17 +5044,23 @@ automatically to reflect any new changes.</p>
 </table>
 </div>
 <p>Push works on any branch – main or feature. The behavior adapts based on the
-branch state:</p>
+branch state.</p>
+<h3 id="pre-push-pull-main-only"><a class="header" href="#pre-push-pull-main-only">Pre-Push Pull (Main Only)</a></h3>
+<p>On main/master branches, AZUREAL runs <code>git pull --rebase</code> before pushing to
+incorporate any upstream changes. This is skipped on feature branches – they
+are kept in sync with main via the auto-rebase system, and pulling on a feature
+branch whose remote was already squash-merged could corrupt HEAD state.</p>
 <h3 id="regular-push"><a class="header" href="#regular-push">Regular Push</a></h3>
 <p>If the local branch is ahead of its remote tracking branch and has not
-diverged (no rewritten history), AZUREAL runs a standard push:</p>
-<pre><code class="language-sh">git push
+diverged (no rewritten history), AZUREAL runs:</p>
+<pre><code class="language-sh">git push -u origin &lt;branch&gt;
 </code></pre>
+<p>The <code>-u</code> flag sets the upstream tracking reference on first push.</p>
 <h3 id="force-push-with-lease"><a class="header" href="#force-push-with-lease">Force Push with Lease</a></h3>
 <p>If the local branch has <strong>diverged</strong> from its remote tracking branch – which
 happens after a rebase rewrites commit history – a regular push would be
 rejected. AZUREAL detects this condition and automatically uses:</p>
-<pre><code class="language-sh">git push --force-with-lease
+<pre><code class="language-sh">git push --force-with-lease -u origin &lt;branch&gt;
 </code></pre>
 <p>The status bar appends <strong>(force-pushed)</strong> to confirm that a force push was
 performed rather than a regular push.</p>
@@ -5518,10 +5500,10 @@ initializing new repos, and removing entries.</p>
 <li><strong>Validation</strong> – The target directory is checked to confirm it is still a
 valid git repository. If it is not, the entry is pruned and an error message
 appears.</li>
-<li><strong>Process cleanup</strong> – All Claude processes for the current project are
-killed. This ensures clean separation between projects.</li>
 <li><strong>State snapshot</strong> – The current project’s full state is captured (see
-<a href="#parallel-projects">Parallel Projects</a> for what is included in the snapshot).</li>
+<a href="#parallel-projects">Parallel Projects</a> for what is included in the snapshot).
+Agent processes continue running in the background – their output is
+captured to session files and handled via the background exit flow.</li>
 <li><strong>Reload</strong> – AZUREAL reloads with the target project’s repository,
 restoring its snapshot if one exists.</li>
 </ol>
@@ -5673,21 +5655,15 @@ applies – the session pane updates, the tab row status icon changes, and the
 status bar reflects the result. No snapshot manipulation is needed because the
 active project’s state is live.</p>
 <hr>
-<h2 id="process-isolation"><a class="header" href="#process-isolation">Process Isolation</a></h2>
-<p>Each project switch kills all Claude processes for the project being left.
-However, this only applies to the switch action itself – processes that were
-started in a project and are still running when you switch away are the
-“background processes” described above. The distinction is:</p>
-<ul>
-<li><strong>Switching projects</strong> triggers <code>kill all Claude processes</code> for the departing
-project’s active sessions that you explicitly want to stop.</li>
-<li><strong>Background processes</strong> are sessions that were already running and are
-allowed to continue. They were started before the switch and their output
-continues to be captured to disk.</li>
-</ul>
+<h2 id="process-continuity"><a class="header" href="#process-continuity">Process Continuity</a></h2>
+<p>Agent processes are <strong>not</strong> killed when you switch projects. All running
+sessions continue executing in the background. Their output is captured to
+session files on disk and handled via the background exit flow (see above).
+When you switch back, the project snapshot is restored and includes any output
+that was produced while the project was backgrounded.</p>
 <blockquote>
-<p><strong>Note:</strong> The key fact here is that session file capture ensures no output is
-ever lost, even though the background project’s display is not being updated.</p>
+<p><strong>Note:</strong> Session file capture ensures no output is ever lost, even though
+the background project’s display is not being updated in real time.</p>
 </blockquote>
 <hr>
 <h2 id="monitoring-background-activity"><a class="header" href="#monitoring-background-activity">Monitoring Background Activity</a></h2>
@@ -5735,13 +5711,13 @@ prompt or edit buffer. No audio ever leaves your machine.</p>
 <p>The speech pipeline runs through four stages:</p>
 <ol>
 <li><strong>Capture</strong> – Audio is recorded from the default input device via the <code>cpal</code>
-library (CoreAudio on macOS). Raw samples arrive as f32 at the device’s native
-sample rate and channel count.</li>
+library (CoreAudio on macOS, WASAPI on Windows). Raw samples arrive as f32 at
+the device’s native sample rate and channel count.</li>
 <li><strong>Preprocessing</strong> – Multi-channel audio is mixed down to mono, then
 resampled to 16kHz (Whisper’s expected input rate).</li>
 <li><strong>Transcription</strong> – The accumulated audio buffer is fed to whisper.cpp with
 <code>Greedy { best_of: 1 }</code> decoding. On macOS, Metal GPU acceleration is used
-automatically.</li>
+automatically; on Windows, CUDA GPU acceleration is used.</li>
 <li><strong>Insertion</strong> – The transcribed text is inserted at the current cursor
 position with smart spacing: a space is prepended if the cursor is not at the
 start of a line or immediately after a space.</li>
@@ -5750,6 +5726,9 @@ start of a line or immediately after a space.</li>
 <h2 id="toggle-recording"><a class="header" href="#toggle-recording">Toggle Recording</a></h2>
 <p>Press <strong><code>Ctrl+S</code></strong> while in prompt mode or edit mode to start recording. Press
 <strong><code>Ctrl+S</code></strong> again to stop recording and trigger transcription.</p>
+<p>On <strong>Windows and Linux</strong>, the edit mode binding is <strong><code>Alt+S</code></strong> instead of
+<code>Ctrl+S</code> (because <code>Ctrl+S</code> is used for file save in edit mode on those
+platforms). The prompt mode binding remains <code>Ctrl+S</code> on all platforms.</p>
 <p>The stop keybinding resolves from <strong>any</strong> focus state or mode while recording is
 active. You do not need to navigate back to the prompt to stop – <code>Ctrl+S</code> will
 always stop an active recording regardless of where focus currently sits.</p>
@@ -5782,12 +5761,18 @@ session to avoid repeated model load times.</p>
 <p>AZUREAL uses the <code>ggml-small.en</code> Whisper model, stored at:</p>
 <pre><code class="language-text">~/.azureal/speech/ggml-small.en.bin
 </code></pre>
-<p>This file is approximately <strong>466 MB</strong>. It is downloaded automatically on first
-use if not already present. The <code>small.en</code> model provides a good balance between
-transcription accuracy and speed for English-language input.</p>
+<p>This file is approximately <strong>466 MB</strong>. If the model file is missing, AZUREAL
+shows an error with download instructions. You must download the model manually
+before first use:</p>
+<pre><code class="language-bash">mkdir -p ~/.azureal/speech &amp;&amp; curl -L -o ~/.azureal/speech/ggml-small.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+</code></pre>
+<p>The <code>small.en</code> model provides a good balance between transcription accuracy and
+speed for English-language input.</p>
 <hr>
 <h2 id="quick-reference-3"><a class="header" href="#quick-reference-3">Quick Reference</a></h2>
-<pre><code class="language-text">Ctrl+S    Toggle recording on/off (prompt mode or edit mode)
+<pre><code class="language-text">Ctrl+S    Toggle recording on/off (prompt mode, or edit mode on macOS)
+Alt+S     Toggle recording on/off (edit mode on Windows/Linux)
 Ctrl+S    Stop recording from ANY focus/mode (always resolves)
 </code></pre>
 <div class="table-wrapper">
@@ -5796,8 +5781,8 @@ Ctrl+S    Stop recording from ANY focus/mode (always resolves)
 <tr><th>Detail</th><th>Value</th></tr>
 </thead>
 <tbody>
-<tr><td>Audio library</td><td>cpal (CoreAudio on macOS)</td></tr>
-<tr><td>Transcription engine</td><td>whisper.cpp (Metal GPU on macOS)</td></tr>
+<tr><td>Audio library</td><td>cpal (CoreAudio on macOS, WASAPI on Windows)</td></tr>
+<tr><td>Transcription engine</td><td>whisper.cpp (Metal GPU on macOS, CUDA GPU on Windows)</td></tr>
 <tr><td>Sample pipeline</td><td>f32 -&gt; mono mixdown -&gt; 16kHz resample</td></tr>
 <tr><td>Decoding strategy</td><td>Greedy { best_of: 1 }</td></tr>
 <tr><td>Model file</td><td><code>~/.azureal/speech/ggml-small.en.bin</code> (~466 MB)</td></tr>
@@ -5816,11 +5801,12 @@ project).</p>
 <h2 id="opening-the-picker"><a class="header" href="#opening-the-picker">Opening the Picker</a></h2>
 <p>Press <strong><code>r</code></strong> (global keybinding) to open the run command picker. If only one
 command is defined, it executes immediately without showing the picker.</p>
-<p>Press <strong><code>Alt+r</code></strong> to open the new command dialog directly, bypassing the picker.</p>
+<p>Press <strong><code>Shift+R</code></strong> to open the new command dialog directly, bypassing the
+picker.</p>
 <hr>
 <h2 id="the-picker"><a class="header" href="#the-picker">The Picker</a></h2>
-<p>The picker lists all defined run commands for the current scope. Each entry shows
-its position number and name.</p>
+<p>The picker lists all defined run commands. Each entry shows its position number,
+name, and a <strong>G</strong> (global) or <strong>P</strong> (project) scope badge.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -5838,7 +5824,7 @@ its position number and name.</p>
 </div>
 <hr>
 <h2 id="creating-a-command"><a class="header" href="#creating-a-command">Creating a Command</a></h2>
-<p>The new command dialog (opened via <code>Alt+r</code> or <code>a</code> from the picker) has two
+<p>The new command dialog (opened via <code>Shift+R</code> or <code>a</code> from the picker) has two
 fields:</p>
 <ol>
 <li><strong>Name</strong> – A short label for the command (e.g., “Build”, “Test”, “Deploy”).</li>
@@ -5872,8 +5858,9 @@ automatically reloaded into your run command list.</li>
 </table>
 </div>
 <p>Press <strong><code>Ctrl+S</code></strong> in the dialog to toggle between global and project scope.</p>
-<p>Both scopes are merged in the picker, with project-local commands taking
-precedence if names collide.</p>
+<p>Both scopes are merged in the picker – global commands appear first, followed
+by project-local commands. Each command shows a <strong>G</strong> (global) or <strong>P</strong>
+(project) scope badge.</p>
 <hr>
 <h2 id="storage-format"><a class="header" href="#storage-format">Storage Format</a></h2>
 <p>Commands are stored under the <code>[runcmds]</code> table in the respective <code>azufig.toml</code>
@@ -5889,7 +5876,7 @@ picker:</p>
 <hr>
 <h2 id="quick-reference-4"><a class="header" href="#quick-reference-4">Quick Reference</a></h2>
 <pre><code class="language-text">r          Open run command picker (or execute if only 1 defined)
-Alt+r      Open new command dialog
+Shift+R    Open new command dialog
 Ctrl+S     Toggle global/project scope (in dialog)
 Tab        Cycle fields / toggle Command vs Prompt mode (in dialog)
 1-9        Quick-select in picker
@@ -5955,7 +5942,7 @@ indicating its scope.</p>
 </tbody>
 </table>
 </div>
-<p>Press <strong><code>Ctrl+G</code></strong> in the preset dialog to toggle between global and project
+<p>Press <strong><code>Ctrl+S</code></strong> in the preset dialog to toggle between global and project
 scope.</p>
 <p>Global presets are available everywhere. Project-local presets are specific to
 the current project and override global presets at the same position number.</p>
@@ -5969,7 +5956,7 @@ to memorize the keybinding.</p>
 <pre><code class="language-text">Alt+P         Open preset prompt picker (prompt mode only)
 Alt+1 - Alt+9 Quick-select preset 1-9 (prompt mode only)
 Alt+0         Quick-select preset 10 (prompt mode only)
-Ctrl+G        Toggle global/project scope (in dialog)
+Ctrl+S        Toggle global/project scope (in dialog)
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="health-panel-1"><a class="header" href="#health-panel-1">Health Panel</a></h1>
@@ -6038,16 +6025,16 @@ production lines and does not appear in the results.</p>
 <p>For all other languages, the entire file length is counted.</p>
 <h3 id="source-root-detection"><a class="header" href="#source-root-detection">Source Root Detection</a></h3>
 <p>The scanner looks for well-known source directories at the project root:</p>
-<pre><code class="language-text">src/  lib/  crates/  packages/  app/  ...
+<pre><code class="language-text">src/  lib/  crates/  packages/  app/  cmd/  pkg/  internal/  ...
 </code></pre>
-<p>Approximately 55 directory names are recognized. If none are found, the scanner
+<p>Approximately 16 directory names are recognized. If none are found, the scanner
 falls back to scanning the entire project root.</p>
 <h3 id="excluded-directories"><a class="header" href="#excluded-directories">Excluded Directories</a></h3>
-<p>Approximately 60 directories are automatically skipped during scanning. These
+<p>Approximately 75 directories are automatically skipped during scanning. These
 include build output directories (<code>target/</code>, <code>node_modules/</code>, <code>dist/</code>, <code>.git/</code>,
 etc.) and other non-source paths that would produce false positives.</p>
 <h3 id="recognized-extensions"><a class="header" href="#recognized-extensions">Recognized Extensions</a></h3>
-<p>The scanner recognizes approximately 60 source file extensions (<code>.rs</code>, <code>.py</code>,
+<p>The scanner recognizes approximately 75 source file extensions (<code>.rs</code>, <code>.py</code>,
 <code>.ts</code>, <code>.js</code>, <code>.go</code>, <code>.java</code>, <code>.c</code>, <code>.cpp</code>, and many more). Files with
 unrecognized extensions are ignored.</p>
 <hr>
@@ -6065,9 +6052,10 @@ the project root and its production line count.</p>
 <tbody>
 <tr><td><code>j</code> / <code>k</code></td><td>Navigate up / down one entry</td></tr>
 <tr><td><code>J</code> / <code>K</code></td><td>Page down / page up</td></tr>
+<tr><td><code>Alt+Up</code> / <code>Alt+Down</code></td><td>Jump to top / bottom</td></tr>
 <tr><td><code>Space</code></td><td>Toggle checkbox on the highlighted file</td></tr>
 <tr><td><code>a</code></td><td>Toggle all checkboxes (select all / deselect all)</td></tr>
-<tr><td><code>v</code></td><td>View the highlighted file in the file viewer (opens as tabs)</td></tr>
+<tr><td><code>v</code></td><td>View all checked files as Viewer tabs (up to 12)</td></tr>
 <tr><td><code>Enter</code> or <code>m</code></td><td>Modularize all checked files</td></tr>
 </tbody>
 </table>
@@ -6105,9 +6093,10 @@ a separate conversation.</p>
 Tab           Switch to Documentation tab
 j/k           Navigate results
 J/K           Page down / page up
+Alt+Up/Down   Jump to top / bottom
 Space         Toggle checkbox
 a             Toggle all checkboxes
-v             View file in viewer
+v             View checked files as tabs
 Enter / m     Modularize checked files
 s             Enter Scope Mode
 </code></pre>
@@ -6176,9 +6165,11 @@ is most needed.</p>
 </thead>
 <tbody>
 <tr><td><code>j</code> / <code>k</code></td><td>Navigate up / down one entry</td></tr>
+<tr><td><code>J</code> / <code>K</code></td><td>Page down / page up</td></tr>
+<tr><td><code>Alt+Up</code> / <code>Alt+Down</code></td><td>Jump to top / bottom</td></tr>
 <tr><td><code>Space</code></td><td>Toggle checkbox on the highlighted file</td></tr>
 <tr><td><code>a</code></td><td>Check all files that are not already at 100% coverage</td></tr>
-<tr><td><code>v</code></td><td>View the highlighted file in the file viewer</td></tr>
+<tr><td><code>v</code></td><td>View all checked files as Viewer tabs (up to 12)</td></tr>
 <tr><td><code>Enter</code></td><td>Spawn documentation sessions for all checked files</td></tr>
 </tbody>
 </table>
@@ -6199,9 +6190,11 @@ a separate conversation.</p>
 <pre><code class="language-text">Shift+H       Open Health Panel
 Tab           Switch to God Files tab
 j/k           Navigate results
+J/K           Page down / page up
+Alt+Up/Down   Jump to top / bottom
 Space         Toggle checkbox
 a             Check all non-100% files
-v             View file in viewer
+v             View checked files as tabs
 Enter         Spawn [DH] sessions for checked files
 s             Enter Scope Mode
 </code></pre>
@@ -6266,9 +6259,9 @@ j/k           Navigate file tree
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="completion-notifications"><a class="header" href="#completion-notifications">Completion Notifications</a></h1>
-<p>AZUREAL sends native macOS notifications when agent sessions complete. This lets
-you work in other applications while agents run and get notified the moment a
-response is ready – without polling the terminal.</p>
+<p>AZUREAL sends native desktop notifications when agent sessions complete. This
+lets you work in other applications while agents run and get notified the moment
+a response is ready – without polling the terminal.</p>
 <hr>
 <h2 id="what-triggers-a-notification"><a class="header" href="#what-triggers-a-notification">What Triggers a Notification</a></h2>
 <p>A notification fires for <strong>every session exit</strong>, not just the currently focused
@@ -6281,6 +6274,7 @@ you receive a notification when each one finishes.</p>
 <tr><th>Condition</th><th>Body Text</th></tr>
 </thead>
 <tbody>
+<tr><td>Context compaction</td><td>“Compacting context”</td></tr>
 <tr><td>Normal completion</td><td>“Response complete”</td></tr>
 <tr><td>Error exit</td><td>“Exited with error”</td></tr>
 <tr><td>Process terminated</td><td>“Process terminated”</td></tr>
@@ -6291,35 +6285,45 @@ you receive a notification when each one finishes.</p>
 making it easy to identify which agent finished from the notification banner
 alone.</p>
 <hr>
-<h2 id="branding"><a class="header" href="#branding">Branding</a></h2>
-<p>Notifications display the AZUREAL icon. The icon infrastructure is set up
-automatically:</p>
+<h2 id="platform-details"><a class="header" href="#platform-details">Platform Details</a></h2>
+<h3 id="macos"><a class="header" href="#macos">macOS</a></h3>
 <ul>
+<li>Notifications sent via the <code>notify-rust</code> crate.</li>
 <li>An <code>.icns</code> icon file is <strong>embedded in the binary</strong> at compile time via
 <code>include_bytes!()</code>.</li>
 <li>On first launch, AZUREAL creates a minimal <code>.app</code> bundle at
 <strong><code>~/.azureal/AZUREAL.app</code></strong> containing the extracted icon. This bundle is
 what macOS associates with the notification, allowing the branded icon to
 appear.</li>
+<li>Notification permissions are automatically enabled by writing to the
+<code>ncprefs.plist</code> file, avoiding the need for users to manually grant
+permissions through System Settings on first use.</li>
+<li>The <code>.app</code> bundle is created once and reused on subsequent launches.</li>
+<li>Notification sound: “Glass”.</li>
 </ul>
-<p>The <code>.app</code> bundle is created once and reused on subsequent launches.</p>
-<hr>
-<h2 id="notification-permissions"><a class="header" href="#notification-permissions">Notification Permissions</a></h2>
-<p>AZUREAL automatically enables notification permissions by writing to the
-<code>ncprefs.plist</code> file. This avoids the need for users to manually grant
-notification permissions through System Settings on first use.</p>
+<h3 id="windows-1"><a class="header" href="#windows-1">Windows</a></h3>
+<ul>
+<li>Notifications are sent via <strong>PowerShell WinRT toast APIs</strong>. The <code>notify-rust</code>
+crate is not used on Windows because its custom <code>.app_id()</code> requires a
+registered AppUserModelID (AUMID), which silently drops toasts when
+unregistered.</li>
+<li>PowerShell’s own pre-registered AUMID is used instead, ensuring reliable
+delivery.</li>
+<li><code>CREATE_NO_WINDOW</code> (<code>0x08000000</code>) prevents a console window from flashing
+when the PowerShell process spawns.</li>
+<li>Toast XML uses <code>appLogoOverride</code> with <code>~/.azureal/AZUREAL_toast.png</code> for a
+crisp branded icon (PNG renders clearly in toasts; <code>.ico</code> renders blurry).</li>
+</ul>
+<h3 id="linux"><a class="header" href="#linux">Linux</a></h3>
+<ul>
+<li>Notifications sent via the <code>notify-rust</code> crate (same as macOS).</li>
+</ul>
 <hr>
 <h2 id="implementation"><a class="header" href="#implementation">Implementation</a></h2>
-<p>Notifications are sent via the <code>notify-rust</code> crate. Each notification is
-dispatched on a <strong>fire-and-forget background thread</strong> that never blocks the
-event loop. If the notification system is unavailable or the send fails, the
-failure is silently ignored – notifications are a convenience feature and must
-never interfere with the core TUI experience.</p>
-<hr>
-<h2 id="platform-note"><a class="header" href="#platform-note">Platform Note</a></h2>
-<p>Completion notifications currently target <strong>macOS only</strong>. The <code>.app</code> bundle
-mechanism and <code>ncprefs.plist</code> integration are macOS-specific. On other platforms,
-notifications are not sent.</p>
+<p>Each notification is dispatched on a <strong>fire-and-forget background thread</strong> that
+never blocks the event loop. If the notification system is unavailable or the
+send fails, the failure is silently ignored – notifications are a convenience
+feature and must never interfere with the core TUI experience.</p>
 <hr>
 <h2 id="quick-reference-9"><a class="header" href="#quick-reference-9">Quick Reference</a></h2>
 <div class="table-wrapper">
@@ -6330,11 +6334,11 @@ notifications are not sent.</p>
 <tbody>
 <tr><td>Trigger</td><td>Every session exit (all sessions, not just focused)</td></tr>
 <tr><td>Title format</td><td><code>worktree:session_name</code></td></tr>
-<tr><td>Notification library</td><td>notify-rust</td></tr>
-<tr><td>Icon delivery</td><td><code>include_bytes!()</code> embedded <code>.icns</code></td></tr>
-<tr><td>App bundle</td><td><code>~/.azureal/AZUREAL.app</code> (auto-created on first launch)</td></tr>
+<tr><td>macOS</td><td><code>notify-rust</code> + <code>.app</code> bundle + Glass sound</td></tr>
+<tr><td>Windows</td><td>PowerShell WinRT toast + PNG icon</td></tr>
+<tr><td>Linux</td><td><code>notify-rust</code></td></tr>
 <tr><td>Threading</td><td>Fire-and-forget background thread</td></tr>
-<tr><td>Platform</td><td>macOS only</td></tr>
+<tr><td>Platform</td><td>macOS, Windows, and Linux</td></tr>
 </tbody>
 </table>
 </div>
@@ -6356,10 +6360,13 @@ identifier (e.g., “broken-render”, “missing-tool-result”) and press
 closes. This ensures the dialog itself does not appear in the captured state.</li>
 </ol>
 <p>The output file is saved to:</p>
-<pre><code class="language-text">.azureal/debug-output-{name}.txt
+<pre><code class="language-text">.azureal/debug-output_{name}
 </code></pre>
 <p>For example, entering “broken-render” produces
-<code>.azureal/debug-output-broken-render.txt</code> in the project root.</p>
+<code>.azureal/debug-output_broken-render</code> in the project root. Entering an empty
+name produces <code>.azureal/debug-output</code>.</p>
+<p>The name is used directly in the filename, so short hyphenated identifiers are
+usually the easiest to search for and share.</p>
 <hr>
 <h2 id="contents"><a class="header" href="#contents">Contents</a></h2>
 <p>The dump file includes the following sections:</p>
@@ -6407,7 +6414,7 @@ Esc           Cancel
 <tr><th>Detail</th><th>Value</th></tr>
 </thead>
 <tbody>
-<tr><td>Output path</td><td><code>.azureal/debug-output-{name}.txt</code></td></tr>
+<tr><td>Output path</td><td><code>.azureal/debug-output_{name}</code> (no extension)</td></tr>
 <tr><td>Execution timing</td><td>Next frame after dialog close</td></tr>
 <tr><td>Obfuscation</td><td>Deterministic word replacement</td></tr>
 <tr><td>Preserved verbatim</td><td>Tool names, event types, parsing stats, structure</td></tr>
@@ -6447,8 +6454,8 @@ from their respective files independently.</p>
 <h2 id="format-conventions"><a class="header" href="#format-conventions">Format Conventions</a></h2>
 <p>Both files follow the same TOML conventions:</p>
 <ul>
-<li><strong>Section headers</strong> use <code>[section]</code> notation. Subsections use
-<code>[section.subsection]</code> (e.g., <code>[git.auto-rebase]</code>).</li>
+<li><strong>Section headers</strong> use single-bracket <code>[section]</code> notation (e.g., <code>[config]</code>,
+<code>[git]</code>, <code>[filetree]</code>).</li>
 <li><strong>Key-value pairs</strong> use <code>key = "value"</code> format. Keys that qualify as TOML bare
 keys (alphanumeric, dashes, underscores) are written unquoted. Values are
 always quoted strings.</li>
@@ -6473,8 +6480,10 @@ process is interrupted.</p>
 inside <code>.azureal/</code>. Because git worktrees share a common <code>.git</code> directory, the
 project config is effectively shared by all worktrees in the project. You do not
 create separate configs per worktree.</p>
-<p>The <code>.azureal/</code> directory is gitignored. Configuration is local to the machine
-and is not committed to the repository.</p>
+<p>The <code>.azureal/</code> directory is <strong>gitignored by default</strong> – AZUREAL automatically
+adds <code>.azureal/</code> to <code>.gitignore</code> (alongside <code>worktrees/</code>) on first load. This
+prevents the session store, worktree-level configs, and other runtime files from
+causing rebase conflicts.</p>
 <hr>
 <h2 id="chapter-contents-9"><a class="header" href="#chapter-contents-9">Chapter Contents</a></h2>
 <ul>
@@ -6507,9 +6516,9 @@ save a setting through the UI.</p>
 <h3 id="config"><a class="header" href="#config"><code>[config]</code></a></h3>
 <p>Core application settings.</p>
 <pre><code class="language-toml">[config]
-api_key = "sk-ant-..."
-claude_path = "/usr/local/bin/claude"
-permission_mode = "plan"
+anthropic_api_key = "sk-ant-..."
+claude_executable = "/usr/local/bin/claude"
+default_permission_mode = "ignore"
 </code></pre>
 <div class="table-wrapper">
 <table>
@@ -6517,17 +6526,19 @@ permission_mode = "plan"
 <tr><th>Key</th><th>Description</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>api_key</code></td><td>Anthropic API key. Used by Claude Code CLI for authentication.</td><td>(none)</td></tr>
-<tr><td><code>claude_path</code></td><td>Absolute path to the Claude Code CLI binary. AZUREAL uses this to spawn agent processes.</td><td>Auto-detected from <code>$PATH</code></td></tr>
-<tr><td><code>permission_mode</code></td><td>Permission mode passed to Claude Code via <code>--permission-mode</code>. Valid values: <code>"default"</code>, <code>"plan"</code>, <code>"bypasstool"</code>.</td><td><code>"default"</code></td></tr>
+<tr><td><code>anthropic_api_key</code></td><td>Anthropic API key. Used by Claude Code CLI for authentication.</td><td>(none)</td></tr>
+<tr><td><code>claude_executable</code></td><td>Absolute path to the Claude Code CLI binary. AZUREAL uses this to spawn agent processes.</td><td>Auto-detected from <code>$PATH</code></td></tr>
+<tr><td><code>codex_executable</code></td><td>Absolute path to the Codex CLI binary.</td><td>Auto-detected from <code>$PATH</code></td></tr>
+<tr><td><code>default_permission_mode</code></td><td>Permission mode for agent sessions. Valid values: <code>"approve"</code>, <code>"ignore"</code>, <code>"ask"</code>.</td><td><code>"ignore"</code></td></tr>
+<tr><td><code>verbose</code></td><td>Enable verbose logging.</td><td><code>false</code></td></tr>
 </tbody>
 </table>
 </div>
-<p>The <code>permission_mode</code> controls how Claude Code handles tool use permissions:</p>
+<p>The <code>default_permission_mode</code> controls how Claude Code handles tool use permissions:</p>
 <ul>
-<li><code>"default"</code> – Claude Code asks for permission on each tool use.</li>
-<li><code>"plan"</code> – Claude Code plans tool use but does not execute without approval.</li>
-<li><code>"bypasstool"</code> – Claude Code executes tools without asking for permission.</li>
+<li><code>"ignore"</code> – Claude Code skips permissions entirely (<code>--dangerously-skip-permissions</code>).</li>
+<li><code>"approve"</code> – Claude Code approves all tool use automatically.</li>
+<li><code>"ask"</code> – Claude Code asks for permission on each tool use (default Claude behavior).</li>
 </ul>
 <h3 id="projects"><a class="header" href="#projects"><code>[projects]</code></a></h3>
 <p>Registered projects. Each entry maps a display name to a filesystem path.</p>
@@ -6570,9 +6581,9 @@ field when selected.</p>
 <h2 id="example-file"><a class="header" href="#example-file">Example File</a></h2>
 <p>A complete global config:</p>
 <pre><code class="language-toml">[config]
-api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"
-claude_path = "/opt/homebrew/bin/claude"
-permission_mode = "bypasstool"
+anthropic_api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"
+claude_executable = "/opt/homebrew/bin/claude"
+default_permission_mode = "ignore"
 
 [projects]
 AZUREAL = "~/AZUREAL"
@@ -6604,9 +6615,9 @@ project-specific run commands and preset prompts.</p>
   src/
   ...
 </code></pre>
-<p>The <code>.azureal/</code> directory is gitignored. The project config lives alongside the
-session store and is local to the machine – it is not committed to the
-repository.</p>
+<p>The <code>.azureal/</code> directory is <strong>gitignored by default</strong> – AZUREAL automatically
+adds <code>.azureal/</code> to <code>.gitignore</code> on first load to prevent the session store and
+runtime files from causing rebase conflicts.</p>
 <p>Because git worktrees share a common working tree root, the project config file
 at the main worktree root is shared by all worktrees in the project. You do not
 maintain separate configs per worktree.</p>
@@ -6623,7 +6634,7 @@ hidden = ["worktrees", ".git", "target", "node_modules", ".DS_Store"]
 <tr><th>Key</th><th>Description</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>hidden</code></td><td>Array of file/directory names to hide from the file tree.</td><td><code>[]</code></td></tr>
+<tr><td><code>hidden</code></td><td>Array of file/directory names to hide from the file tree.</td><td><code>["worktrees", ".git", ".claude", ".azureal", ".DS_Store", "target", "node_modules"]</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -6635,7 +6646,7 @@ disk and are accessible via the embedded terminal.</p>
 <p>Directories included in health panel scans. Also aliased as <code>[godfilescope]</code> for
 backward compatibility.</p>
 <pre><code class="language-toml">[healthscope]
-directories = ["src", "crates", "lib"]
+dirs = ["src", "crates", "lib"]
 </code></pre>
 <div class="table-wrapper">
 <table>
@@ -6643,7 +6654,7 @@ directories = ["src", "crates", "lib"]
 <tr><th>Key</th><th>Description</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>directories</code></td><td>Array of directory names to include when scanning for god files and documentation coverage.</td><td>(scans entire project)</td></tr>
+<tr><td><code>dirs</code></td><td>Array of directory paths to include when scanning for god files and documentation coverage.</td><td><code>[]</code> (scans entire project)</td></tr>
 </tbody>
 </table>
 </div>
@@ -6671,30 +6682,34 @@ section.</p>
 <p>Project-local preset prompts appear alongside global ones in the preset prompts
 menu and are only visible when this project is active.</p>
 <h3 id="git"><a class="header" href="#git"><code>[git]</code></a></h3>
-<p>Git automation settings, organized into subsections.</p>
-<h4 id="gitauto-rebase"><a class="header" href="#gitauto-rebase"><code>[git.auto-rebase]</code></a></h4>
-<p>Per-branch auto-rebase settings. When enabled for a branch, AZUREAL
-automatically rebases the branch onto <code>main</code> after each agent session completes.</p>
-<pre><code class="language-toml">[git.auto-rebase]
-feat-auth = "true"
-fix-parser = "true"
+<p>Git automation settings. This section uses a flat key-value map. Auto-rebase
+and auto-resolve settings are stored <strong>per-worktree</strong> – each worktree has its
+own <code>.azureal/azufig.toml</code> with its own <code>[git]</code> section. They are not stored
+in the project-level config with per-branch keys.</p>
+<h4 id="auto-rebase-1"><a class="header" href="#auto-rebase-1">Auto-Rebase</a></h4>
+<p>When enabled for a worktree, AZUREAL automatically rebases the worktree’s
+branch onto <code>main</code> every 2 seconds (when idle).</p>
+<pre><code class="language-toml">[git]
+auto-rebase = "true"
 </code></pre>
-<p>Keys are branch names. Values are <code>"true"</code> to enable auto-rebase or <code>"false"</code>
-(or absent) to disable it. Auto-rebase is deferred while an agent is actively
-streaming to avoid interrupting work in progress.</p>
+<p>The key <code>auto-rebase</code> is set to <code>"true"</code> to enable or removed to disable.
+Auto-rebase is deferred while an agent is actively streaming to avoid
+interrupting work in progress.</p>
 <p>See <a href="#rebase--auto-rebase">Rebase &amp; Auto-Rebase</a> for how auto-rebase
 integrates with the git panel.</p>
-<h4 id="gitauto-resolve"><a class="header" href="#gitauto-resolve"><code>[git.auto-resolve]</code></a></h4>
+<h4 id="auto-resolve"><a class="header" href="#auto-resolve">Auto-Resolve</a></h4>
 <p>Per-file auto-resolve settings for merge conflicts. When enabled for a file,
 AZUREAL automatically resolves conflicts in that file during rebase operations
-without prompting.</p>
-<pre><code class="language-toml">[git.auto-resolve]
-Cargo.lock = "true"
-package-lock.json = "true"
+using a union merge strategy (keeping both sides’ changes).</p>
+<pre><code class="language-toml">[git]
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
+"auto-resolve/README.md" = "true"
+"auto-resolve/CLAUDE.md" = "true"
 </code></pre>
-<p>Keys are filenames (not paths). Values are <code>"true"</code> to enable auto-resolve. This
-is most useful for lock files and generated files that will be regenerated after
-the rebase completes.</p>
+<p>Keys follow the pattern <code>auto-resolve/&lt;filename&gt;</code>. Values are <code>"true"</code> to
+enable auto-resolve. The default list includes <code>AGENTS.md</code>, <code>CHANGELOG.md</code>,
+<code>README.md</code>, and <code>CLAUDE.md</code>.</p>
 <p>See <a href="#auto-resolve-settings">Auto-Resolve Settings</a> for details.</p>
 <hr>
 <h2 id="example-file-1"><a class="header" href="#example-file-1">Example File</a></h2>
@@ -6703,7 +6718,7 @@ the rebase completes.</p>
 hidden = ["worktrees", ".git", "target", "node_modules", ".DS_Store", ".azureal"]
 
 [healthscope]
-directories = ["src", "crates"]
+dirs = ["src", "crates"]
 
 [runcmds]
 1_Dev = "cargo run"
@@ -6714,12 +6729,10 @@ directories = ["src", "crates"]
 1_Modularize = "Break this file into smaller modules, one feature per file."
 2_Optimize = "Profile and optimize the hot path in this function."
 
-[git.auto-rebase]
-feat-session-store = "true"
-feat-render-pipeline = "true"
-
-[git.auto-resolve]
-Cargo.lock = "true"
+[git]
+auto-rebase = "true"
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="architecture--internals"><a class="header" href="#architecture--internals">Architecture &amp; Internals</a></h1>
@@ -6777,8 +6790,9 @@ mutable references to event handlers.</p>
 <h3 id="agentprocess"><a class="header" href="#agentprocess"><code>AgentProcess</code></a></h3>
 <p>Manages the lifecycle of agent CLI processes. Holds both a <code>ClaudeProcess</code> and a
 <code>CodexProcess</code>. At spawn time, the selected model determines which backend is
-invoked. The process writes JSONL to a temporary file, which the
-<code>AgentProcessor</code> thread tails and parses.</p>
+invoked. The process streams JSON events on stdout, which are forwarded to the
+<code>AgentProcessor</code> thread for parsing. A separate reader thread also writes events
+to a temporary JSONL file for post-exit ingestion into the session store.</p>
 <h3 id="displayevent"><a class="header" href="#displayevent"><code>DisplayEvent</code></a></h3>
 <p>The unified event type that both backends produce after parsing. The session
 pane, session store, and render pipeline all consume <code>DisplayEvent</code> values. This
@@ -6917,8 +6931,9 @@ rapid typing, while ensuring the screen stays current during pauses.</p>
 <li>Opening or closing overlay panels (health, projects, help)</li>
 <li>Terminal mode toggle</li>
 </ul>
-<p>These events set a <code>force_redraw</code> flag that bypasses all draw suppression and
-throttling, ensuring the layout transition renders immediately.</p>
+<p>These events set a <code>force_full_redraw</code> flag that bypasses all draw suppression
+and throttling, ensuring the layout transition renders immediately with a full
+<code>terminal.clear()</code> before the draw.</p>
 <hr>
 <h2 id="pre-draw-event-drain-with-abort"><a class="header" href="#pre-draw-event-drain-with-abort">Pre-Draw Event Drain with Abort</a></h2>
 <p>Immediately before calling <code>terminal.draw()</code>, the loop performs one final drain
@@ -7254,10 +7269,10 @@ When a <code>SessionFileChanged</code> event arrives, three phases execute in se
 On event-driven backends, this is immediate. On the stat() fallback, detection
 latency is up to 500ms.</p>
 <h3 id="phase-2-incremental-parse"><a class="header" href="#phase-2-incremental-parse">Phase 2: Incremental Parse</a></h3>
-<p>The <code>AgentProcessor</code> thread seeks to its last known file offset and reads only
-the <strong>newly appended lines</strong>. Each line is parsed as a JSON event and converted
-to a <code>DisplayEvent</code>. The processor does not re-read or re-parse previously
-processed content.</p>
+<p>The <code>refresh_session_events()</code> function seeks to its last known file offset
+(<code>session_file_parse_offset</code>) and reads only the <strong>newly appended lines</strong> from
+the JSONL file. Each line is parsed as a JSON event and converted to a
+<code>DisplayEvent</code>. Previously processed content is not re-read or re-parsed.</p>
 <p>This is the key to performance during long agent sessions. A session with 10,000
 events that appends one new event pays the cost of parsing one line, not 10,000.</p>
 <h3 id="phase-3-incremental-render"><a class="header" href="#phase-3-incremental-render">Phase 3: Incremental Render</a></h3>
@@ -7316,7 +7331,7 @@ artifacts in complex border intersections or half-block character rendering.</p>
 <tr><td>Kitty keyboard protocol</td><td>Yes</td><td>Yes</td><td>No</td></tr>
 <tr><td><code>fast_draw_input()</code></td><td>Yes</td><td>No</td><td>No</td></tr>
 <tr><td><code>.app</code> bundle</td><td>Yes</td><td>N/A</td><td>N/A</td></tr>
-<tr><td>Notifications</td><td>NSUserNotification</td><td>N/A</td><td>Toast (PowerShell)</td></tr>
+<tr><td>Notifications</td><td>NSUserNotification</td><td>D-Bus (notify-rust)</td><td>Toast (PowerShell)</td></tr>
 <tr><td>Modifier key for destructive actions</td><td>Cmd</td><td>Ctrl</td><td>Alt</td></tr>
 </tbody>
 </table>
@@ -7354,7 +7369,7 @@ speech-to-text dependency. Platform-specific build requirements:</p>
 <tbody>
 <tr><td>macOS</td><td>Xcode Command Line Tools</td></tr>
 <tr><td>Linux</td><td><code>libclang-dev</code>, <code>cmake</code></td></tr>
-<tr><td>Windows</td><td><code>LLVM.LLVM</code>, <code>CMake</code>, <code>LIBCLANG_PATH</code> environment variable</td></tr>
+<tr><td>Windows</td><td><code>LLVM.LLVM</code>, <code>CMake</code>, <code>Ninja</code>, <code>LIBCLANG_PATH</code> environment variable, NVIDIA CUDA Toolkit</td></tr>
 </tbody>
 </table>
 </div>
@@ -7371,17 +7386,17 @@ instead, which provides adequate key reporting for all supported features.</p>
 <hr>
 <h2 id="chapter-contents-11"><a class="header" href="#chapter-contents-11">Chapter Contents</a></h2>
 <ul>
-<li><strong><a href="#macos">macOS</a></strong> – Primary platform: Metal GPU,
+<li><strong><a href="#macos-1">macOS</a></strong> – Primary platform: Metal GPU,
 <code>.app</code> bundle, notifications, Cmd key bindings, fast-path input, and
 Option+letter remapping.</li>
-<li><strong><a href="#linux">Linux</a></strong> – Full support: CPU-only Whisper,
+<li><strong><a href="#linux-1">Linux</a></strong> – Full support: CPU-only Whisper,
 Ctrl key bindings, build dependencies, and Kitty protocol.</li>
-<li><strong><a href="#windows-1">Windows</a></strong> – ConPTY terminal, PowerShell
+<li><strong><a href="#windows-2">Windows</a></strong> – ConPTY terminal, PowerShell
 shell detection, Alt key bindings, MSVC Whisper fixes, path canonicalization,
 and NTFS junctions.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="macos"><a class="header" href="#macos">macOS</a></h1>
+<h1 id="macos-1"><a class="header" href="#macos-1">macOS</a></h1>
 <p>macOS is AZUREAL’s primary development platform. It receives the most testing,
 has the most platform-specific optimizations, and is the only platform with GPU-
 accelerated speech-to-text and native notification support.</p>
@@ -7487,7 +7502,7 @@ brew install cmake
 <p>On Apple Silicon (M1/M2/M3/M4), builds produce ARM64 binaries natively. No
 Rosetta translation is needed.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="linux"><a class="header" href="#linux">Linux</a></h1>
+<h1 id="linux-1"><a class="header" href="#linux-1">Linux</a></h1>
 <p>Linux is a fully supported platform. Every feature in AZUREAL works identically
 to macOS, with two exceptions: Whisper runs on the CPU rather than a GPU, and
 <code>fast_draw_input()</code> is not enabled (the standard draw path is used for all
@@ -7538,10 +7553,10 @@ recommended terminal on Linux is <strong>Kitty</strong>, which has full protocol
 AZUREAL has also been tested in <strong>Ghostty</strong>, <strong>Alacritty</strong>, <strong>WezTerm</strong>, and
 <strong>Konsole</strong>. Other terminals with protocol support include Foot.</p>
 <p>Terminal emulators that do not support the protocol (e.g., GNOME Terminal, older
-xterm, Konsole) fall back to standard key reporting with no loss of
-functionality. The only difference is that certain ambiguous key combinations
-(like Tab vs Ctrl+I) may not be distinguishable without the protocol – AZUREAL
-provides <code>Alt+</code> fallback bindings for these cases.</p>
+xterm) fall back to standard key reporting with no loss of functionality. The
+only difference is that certain ambiguous key combinations (like Tab vs Ctrl+I)
+may not be distinguishable without the protocol – AZUREAL provides <code>Alt+</code>
+fallback bindings for these cases.</p>
 <hr>
 <h2 id="file-watcher-1"><a class="header" href="#file-watcher-1">File Watcher</a></h2>
 <p>The file watcher uses <strong>inotify</strong> on Linux. This is efficient and event-driven
@@ -7568,16 +7583,19 @@ All terminal features – color support, click-to-position, mouse drag selection
 auto-scroll, and mouse wheel scrolling – work identically to macOS.</p>
 <hr>
 <h2 id="notifications-1"><a class="header" href="#notifications-1">Notifications</a></h2>
-<p>System notifications are not currently implemented on Linux. Agent completion
-events are reflected in the status bar and session list but do not produce
-desktop notifications. This is a planned feature.</p>
+<p>System notifications are delivered via the <strong>notify-rust</strong> crate, which uses
+the system’s D-Bus notification service (e.g., <code>notify-send</code>). When an agent
+session completes while AZUREAL is not the focused application, a desktop
+notification appears with the session name and completion status. Most Linux
+desktop environments and notification daemons (GNOME, KDE, dunst, mako) support
+this out of the box.</p>
 <hr>
 <h2 id="distribution-notes"><a class="header" href="#distribution-notes">Distribution Notes</a></h2>
 <p>AZUREAL is tested on Ubuntu 22.04+ and Fedora 38+. It should work on any modern
 Linux distribution with glibc 2.31+ and a terminal emulator that supports 256
 colors. Musl-based distributions (Alpine) are untested.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="windows-1"><a class="header" href="#windows-1">Windows</a></h1>
+<h1 id="windows-2"><a class="header" href="#windows-2">Windows</a></h1>
 <p>Windows is a supported platform with full feature parity, though several
 subsystems require platform-specific implementations and workarounds due to
 differences in the terminal model, filesystem, and input handling.</p>
@@ -7603,13 +7621,14 @@ embedded terminal on Windows. This is transparent to the user but differs from
 the Unix behavior where Enter sends <code>\n</code>.</p>
 <h3 id="terminal-title-reassertion"><a class="header" href="#terminal-title-reassertion">Terminal Title Reassertion</a></h3>
 <p>Claude Code CLI calls <code>SetConsoleTitle()</code> during execution, which overwrites
-AZUREAL’s terminal title. After each agent process exits, AZUREAL reasserts its
-own title (<code>AZUREAL @ &lt;project&gt; : &lt;branch&gt;</code>) to restore the expected title bar
-content.</p>
+AZUREAL’s terminal title. AZUREAL reasserts its own title
+(<code>AZUREAL @ &lt;project&gt; : &lt;branch&gt;</code>) after every draw frame, ensuring the title
+stays correct both during and after agent execution.</p>
 <hr>
-<h2 id="cpu-only-whisper-with-msvc-fixes"><a class="header" href="#cpu-only-whisper-with-msvc-fixes">CPU-Only Whisper with MSVC Fixes</a></h2>
-<p>Whisper runs on the CPU on Windows, as on Linux. However, the <code>whisper-rs</code> crate
-requires additional patches to compile with the MSVC toolchain:</p>
+<h2 id="cuda-gpu-whisper-with-msvc-fixes"><a class="header" href="#cuda-gpu-whisper-with-msvc-fixes">CUDA GPU Whisper with MSVC Fixes</a></h2>
+<p>Whisper runs on the <strong>CUDA GPU</strong> on Windows, providing GPU-accelerated
+transcription (requires an NVIDIA GPU and the CUDA Toolkit). The <code>whisper-rs</code>
+crate requires additional patches to compile with the MSVC toolchain:</p>
 <ul>
 <li><strong>Layout tests disabled</strong> – MSVC produces different struct layouts than GCC/
 Clang, causing layout assertion failures in the vendored whisper.cpp bindings.
@@ -7620,12 +7639,14 @@ to match MSVC’s default enum representation.</li>
 <p>These fixes are applied in AZUREAL’s vendored copy of <code>whisper-rs</code> and do not
 affect runtime behavior.</p>
 <h3 id="build-dependencies-2"><a class="header" href="#build-dependencies-2">Build Dependencies</a></h3>
-<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake
+<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja Nvidia.CUDA
 </code></pre>
 <p>After installing LLVM, set the <code>LIBCLANG_PATH</code> environment variable:</p>
 <pre><code class="language-powershell">[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")
 </code></pre>
-<p>Restart your terminal after setting this variable.</p>
+<p>Set <code>CMAKE_GENERATOR=Ninja</code> in your environment so CMake uses Ninja instead of
+the Visual Studio generator (required for correct CUDA include path propagation).</p>
+<p>Restart your terminal after setting these variables.</p>
 <hr>
 <h2 id="alt-key-bindings"><a class="header" href="#alt-key-bindings">Alt Key Bindings</a></h2>
 <p>Windows uses <strong>Alt</strong> as the modifier for destructive or significant actions,
@@ -7709,6 +7730,20 @@ management.</p>
 <p>Running <code>azureal</code> with no arguments launches the full TUI interface inside the
 current terminal. AZUREAL expects to be run from within a git repository (or with
 a registered project – see <a href="#projects-panel-1">Projects Panel</a>).</p>
+<h3 id="global-options"><a class="header" href="#global-options">Global Options</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-o, --output &lt;format&gt;</code></td><td>Output format: <code>table</code>, <code>json</code>, or <code>plain</code></td><td><code>table</code></td></tr>
+<tr><td><code>-v, --verbose</code></td><td>Enable verbose output</td><td>off</td></tr>
+<tr><td><code>--config &lt;path&gt;</code></td><td>Path to config file</td><td>(auto-detected)</td></tr>
+</tbody>
+</table>
+</div>
+<p>These flags can be placed before or after any subcommand.</p>
 <hr>
 <h2 id="self-installation"><a class="header" href="#self-installation">Self-Installation</a></h2>
 <p>The AZUREAL binary is <strong>self-installing</strong>. On first run, it detects whether it
@@ -7739,7 +7774,7 @@ disk while preserving the git branch. The worktree appears dimmed in the tab
 row and can be restored later.</p>
 <pre><code class="language-sh">azureal session archive my-feature
 </code></pre>
-<p>This is equivalent to pressing <code>Wx</code> or <code>x</code> (with the worktree focused) inside
+<p>This is equivalent to pressing <code>Wa</code> or <code>a</code> (with the worktree focused) inside
 the TUI. The branch <code>azureal/my-feature</code> remains in the local repository and
 can be pushed to a remote as usual.</p>
 <h4 id="azureal-session-unarchive-name"><a class="header" href="#azureal-session-unarchive-name"><code>azureal session unarchive &lt;name&gt;</code></a></h4>
@@ -7750,9 +7785,164 @@ from the preserved branch, restoring it to an active state.</p>
 <p>After unarchiving, the worktree reappears as a normal tab in the TUI with its
 full session history intact (stored in the SQLite session store, not in the
 worktree directory).</p>
+<h4 id="azureal-session-list"><a class="header" href="#azureal-session-list"><code>azureal session list</code></a></h4>
+<p>List all sessions. Alias: <code>azureal session ls</code>.</p>
+<pre><code class="language-sh">azureal session list
+azureal session list --project /path/to/project --all
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --project</code></td><td>Filter by project path</td></tr>
+<tr><td><code>-a, --all</code></td><td>Show archived sessions too</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-new"><a class="header" href="#azureal-session-new"><code>azureal session new</code></a></h4>
+<p>Create a new session.</p>
+<pre><code class="language-sh">azureal session new -p "Fix the login bug"
+azureal session new -p "Add tests" --name my-session --project /path
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --prompt</code></td><td>Initial prompt for the agent (required)</td></tr>
+<tr><td><code>-d, --project</code></td><td>Project path (defaults to current directory)</td></tr>
+<tr><td><code>-n, --name</code></td><td>Custom session name</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-status-name"><a class="header" href="#azureal-session-status-name"><code>azureal session status &lt;name&gt;</code></a></h4>
+<p>Show the status of a session.</p>
+<h4 id="azureal-session-stop-name"><a class="header" href="#azureal-session-stop-name"><code>azureal session stop &lt;name&gt;</code></a></h4>
+<p>Stop a running session.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-f, --force</code></td><td>Force stop (SIGKILL instead of SIGTERM)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-delete-name"><a class="header" href="#azureal-session-delete-name"><code>azureal session delete &lt;name&gt;</code></a></h4>
+<p>Delete a session and its worktree.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-y, --yes</code></td><td>Skip confirmation prompt</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-resume-name"><a class="header" href="#azureal-session-resume-name"><code>azureal session resume &lt;name&gt;</code></a></h4>
+<p>Resume a stopped or waiting session.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --prompt</code></td><td>Additional prompt to send</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-logs-name"><a class="header" href="#azureal-session-logs-name"><code>azureal session logs &lt;name&gt;</code></a></h4>
+<p>Show session logs/output.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-f, --follow</code></td><td>Follow output in real-time</td></tr>
+<tr><td><code>-l, --lines</code></td><td>Number of lines to show (default: 50)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-diff-name"><a class="header" href="#azureal-session-diff-name"><code>azureal session diff &lt;name&gt;</code></a></h4>
+<p>Show diff for a session’s worktree.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--stat</code></td><td>Show stat only (files changed summary)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-cleanup"><a class="header" href="#azureal-session-cleanup"><code>azureal session cleanup</code></a></h4>
+<p>Clean up worktrees from completed/failed/archived sessions.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-d, --project</code></td><td>Project path (defaults to current directory)</td></tr>
+<tr><td><code>--delete-branches</code></td><td>Also delete the associated git branches</td></tr>
+<tr><td><code>-y, --yes</code></td><td>Perform cleanup without confirmation</td></tr>
+<tr><td><code>--dry-run</code></td><td>Only show what would be cleaned up</td></tr>
+</tbody>
+</table>
+</div>
 <h3 id="azureal-project"><a class="header" href="#azureal-project"><code>azureal project</code></a></h3>
-<p>Project management subcommands. These mirror the operations available in the
-<a href="#projects-panel-1">Projects Panel</a>.</p>
+<p>Project management subcommands.</p>
+<h4 id="azureal-project-list"><a class="header" href="#azureal-project-list"><code>azureal project list</code></a></h4>
+<p>List all registered projects. Alias: <code>azureal project ls</code>.</p>
+<h4 id="azureal-project-show-project"><a class="header" href="#azureal-project-show-project"><code>azureal project show [project]</code></a></h4>
+<p>Show details for a project. Defaults to the current directory if no project is
+specified.</p>
+<h4 id="azureal-project-remove-project"><a class="header" href="#azureal-project-remove-project"><code>azureal project remove &lt;project&gt;</code></a></h4>
+<p>Remove a project from tracking (does not delete the repository).</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-y, --yes</code></td><td>Skip confirmation prompt</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-project-config"><a class="header" href="#azureal-project-config"><code>azureal project config</code></a></h4>
+<p>Show or update project configuration.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --project</code></td><td>Project path (defaults to current directory)</td></tr>
+<tr><td><code>--main-branch</code></td><td>Set the main branch name</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="shortcut-commands"><a class="header" href="#shortcut-commands">Shortcut Commands</a></h3>
+<p>Several session operations have top-level shortcuts:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Shortcut</th><th>Equivalent</th></tr>
+</thead>
+<tbody>
+<tr><td><code>azureal list</code> (or <code>azureal ls</code>)</td><td><code>azureal session list</code></td></tr>
+<tr><td><code>azureal new -p "prompt"</code></td><td><code>azureal session new -p "prompt"</code></td></tr>
+<tr><td><code>azureal status &lt;name&gt;</code></td><td><code>azureal session status &lt;name&gt;</code></td></tr>
+<tr><td><code>azureal diff &lt;name&gt;</code></td><td><code>azureal session diff &lt;name&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
 <hr>
 <h2 id="logging"><a class="header" href="#logging">Logging</a></h2>
 <p>AZUREAL uses <code>tracing-subscriber</code> with <code>env-filter</code> for structured logging.
@@ -7789,7 +7979,7 @@ diagnosing issues, redirect stderr to a file:</p>
 <hr>
 <h2 id="debug-dump-1"><a class="header" href="#debug-dump-1">Debug Dump</a></h2>
 <p>The <code>Ctrl+D</code> keybinding inside the TUI triggers a debug dump – a snapshot of
-internal state written to a timestamped file. This is covered in detail at
+internal state written to a named text file in <code>.azureal/</code>. This is covered in detail at
 <a href="#debug-dump">Debug Dump</a>. The dump is useful for filing bug reports or
 inspecting runtime state without attaching a debugger.</p>
 <hr>
@@ -7806,10 +7996,23 @@ inspecting runtime state without attaching a debugger.</p>
 </thead>
 <tbody>
 <tr><td><code>azureal</code></td><td>Launch the TUI</td></tr>
+<tr><td><code>azureal tui</code></td><td>Launch the TUI (explicit subcommand)</td></tr>
 <tr><td><code>azureal --version</code></td><td>Print version and exit</td></tr>
+<tr><td><code>azureal session list</code></td><td>List all sessions</td></tr>
+<tr><td><code>azureal session new -p "prompt"</code></td><td>Create a new session</td></tr>
+<tr><td><code>azureal session status &lt;name&gt;</code></td><td>Show session status</td></tr>
+<tr><td><code>azureal session stop &lt;name&gt;</code></td><td>Stop a running session</td></tr>
+<tr><td><code>azureal session delete &lt;name&gt;</code></td><td>Delete a session and its worktree</td></tr>
 <tr><td><code>azureal session archive &lt;name&gt;</code></td><td>Archive a worktree (remove directory, keep branch)</td></tr>
 <tr><td><code>azureal session unarchive &lt;name&gt;</code></td><td>Unarchive a worktree (recreate directory from branch)</td></tr>
-<tr><td><code>azureal project</code></td><td>Project management subcommands</td></tr>
+<tr><td><code>azureal session resume &lt;name&gt;</code></td><td>Resume a stopped session</td></tr>
+<tr><td><code>azureal session logs &lt;name&gt;</code></td><td>Show session logs</td></tr>
+<tr><td><code>azureal session diff &lt;name&gt;</code></td><td>Show worktree diff</td></tr>
+<tr><td><code>azureal session cleanup</code></td><td>Clean up completed/failed worktrees</td></tr>
+<tr><td><code>azureal project list</code></td><td>List registered projects</td></tr>
+<tr><td><code>azureal project show [project]</code></td><td>Show project details</td></tr>
+<tr><td><code>azureal project remove &lt;project&gt;</code></td><td>Remove project from tracking</td></tr>
+<tr><td><code>azureal project config</code></td><td>Show/update project configuration</td></tr>
 </tbody>
 </table>
 </div>
@@ -7862,9 +8065,6 @@ mode, or active filter/search inputs).</p>
 <tr><td><code>r</code></td><td>Run command</td><td>Opens the run-command picker, or executes directly if only one command is registered</td></tr>
 <tr><td><code>R</code></td><td>Add run command</td><td>Opens the dialog to register a new run command</td></tr>
 <tr><td><code>[</code> / <code>]</code></td><td>Switch worktree tab</td><td>Moves to the previous/next worktree tab. Wraps around at both ends</td></tr>
-<tr><td><code>f</code></td><td>Toggle file tree</td><td>Shows or hides the file tree pane</td></tr>
-<tr><td><code>s</code></td><td>Toggle session list</td><td>Opens the session list overlay when the session pane is focused</td></tr>
-<tr><td><code>/</code></td><td>Search / filter</td><td>Context-dependent: filters the file tree, searches session text, or filters session list depending on focused pane</td></tr>
 <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle pane focus</td><td>Cycles focus through FileTree, Viewer, Session, and Input in order</td></tr>
 </tbody>
 </table>
@@ -7881,9 +8081,9 @@ key mechanism.</p>
 <tr><th>Key</th><th>Action</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Wa</code> / <code>a</code></td><td>Create new worktree</td></tr>
+<tr><td><code>Wn</code> / <code>n</code></td><td>Create new worktree</td></tr>
 <tr><td><code>Wr</code> / <code>r</code></td><td>Rename worktree</td></tr>
-<tr><td><code>Wx</code> / <code>x</code></td><td>Archive or unarchive worktree (toggles based on current state)</td></tr>
+<tr><td><code>Wa</code> / <code>a</code></td><td>Archive or unarchive worktree (toggles based on current state)</td></tr>
 <tr><td><code>Wd</code> / <code>d</code></td><td>Delete worktree</td></tr>
 </tbody>
 </table>
@@ -7904,10 +8104,9 @@ area border turns yellow to indicate prompt mode.</p>
 <tr><td><code>Ctrl+S</code> / <code>Alt+S</code></td><td>Toggle speech-to-text</td></tr>
 <tr><td><code>Alt+P</code></td><td>Preset prompts picker</td></tr>
 <tr><td><code>Alt+1</code> through <code>Alt+9</code>, <code>Alt+0</code></td><td>Quick-select preset</td></tr>
-<tr><td><code>Up</code> / <code>Down</code></td><td>Cursor navigation</td></tr>
-<tr><td><code>Left</code> / <code>Right</code></td><td>Character navigation</td></tr>
-<tr><td><code>Home</code> / <code>End</code></td><td>Line start/end</td></tr>
-<tr><td><code>Ctrl+U</code></td><td>Clear input</td></tr>
+<tr><td><code>Up</code> / <code>Down</code></td><td>History prev/next</td></tr>
+<tr><td><code>Alt+Left</code> / <code>Alt+Right</code></td><td>Word navigation</td></tr>
+<tr><td><code>Ctrl+W</code></td><td>Delete word</td></tr>
 </tbody>
 </table>
 </div>
@@ -7923,6 +8122,10 @@ mode (not typing a prompt).</p>
 <tbody>
 <tr><td><code>j</code> / <code>k</code></td><td>Scroll line</td></tr>
 <tr><td><code>J</code> / <code>K</code></td><td>Page scroll</td></tr>
+<tr><td><code>Up</code> / <code>Down</code></td><td>Jump to next/prev message</td></tr>
+<tr><td><code>Shift+Up</code> / <code>Shift+Down</code></td><td>Jump to next/prev prompt</td></tr>
+<tr><td><code>Alt+Up</code> / <code>Alt+Down</code></td><td>Top / bottom</td></tr>
+<tr><td><code>a</code></td><td>New session</td></tr>
 <tr><td><code>s</code></td><td>Toggle session list</td></tr>
 <tr><td><code>/</code></td><td>Search text</td></tr>
 <tr><td><code>n</code> / <code>N</code></td><td>Next/prev search match</td></tr>
@@ -7960,15 +8163,19 @@ sessions. It appears over the session pane when <code>s</code> is pressed.</p>
 </thead>
 <tbody>
 <tr><td><code>j</code> / <code>k</code> / <code>Up</code> / <code>Down</code></td><td>Navigate</td></tr>
-<tr><td><code>Enter</code></td><td>Open file / expand directory</td></tr>
-<tr><td><code>Backspace</code></td><td>Collapse / go to parent</td></tr>
+<tr><td><code>h</code> / <code>Left</code></td><td>Collapse / go to parent</td></tr>
+<tr><td><code>l</code> / <code>Right</code></td><td>Expand directory</td></tr>
+<tr><td><code>Enter</code></td><td>Open file / toggle directory</td></tr>
+<tr><td><code>Space</code></td><td>Toggle directory</td></tr>
+<tr><td><code>Alt+Right</code> / <code>Alt+J</code></td><td>Recursive expand</td></tr>
+<tr><td><code>Alt+Left</code> / <code>Alt+K</code></td><td>Recursive collapse</td></tr>
+<tr><td><code>Alt+Up</code> / <code>Alt+Down</code></td><td>Jump to first/last sibling</td></tr>
 <tr><td><code>a</code></td><td>Add file/directory</td></tr>
 <tr><td><code>d</code></td><td>Delete</td></tr>
 <tr><td><code>r</code></td><td>Rename</td></tr>
 <tr><td><code>c</code></td><td>Copy (clipboard mode)</td></tr>
 <tr><td><code>m</code></td><td>Move (clipboard mode)</td></tr>
 <tr><td><code>O</code></td><td>Options overlay</td></tr>
-<tr><td><code>/</code></td><td>Filter</td></tr>
 </tbody>
 </table>
 </div>
@@ -7984,12 +8191,14 @@ read-only mode.</p>
 <tbody>
 <tr><td><code>j</code> / <code>k</code></td><td>Scroll line</td></tr>
 <tr><td><code>J</code> / <code>K</code></td><td>Page scroll</td></tr>
-<tr><td><code>e</code></td><td>Enter edit mode</td></tr>
-<tr><td><code>t</code></td><td>Save to tab</td></tr>
-<tr><td><code>Alt+t</code></td><td>Tab picker dialog</td></tr>
-<tr><td><code>[</code> / <code>]</code></td><td>Navigate tabs</td></tr>
-<tr><td><code>x</code></td><td>Close current tab</td></tr>
+<tr><td><code>Alt+Up</code> / <code>Alt+Down</code></td><td>Top / bottom</td></tr>
 <tr><td><code>Alt+Left</code> / <code>Alt+Right</code></td><td>Cycle through edits</td></tr>
+<tr><td><code>e</code></td><td>Enter edit mode</td></tr>
+<tr><td><code>Cmd+A</code> / <code>Ctrl+A</code></td><td>Select all</td></tr>
+<tr><td><code>t</code></td><td>Save to tab</td></tr>
+<tr><td><code>Alt+T</code></td><td>Tab picker dialog</td></tr>
+<tr><td><code>x</code></td><td>Close current tab</td></tr>
+<tr><td><code>Esc</code></td><td>Close viewer</td></tr>
 </tbody>
 </table>
 </div>
@@ -8054,8 +8263,10 @@ overrides listed below.</p>
 <hr>
 <h2 id="git-panel-1"><a class="header" href="#git-panel-1">Git Panel</a></h2>
 <p>The git panel is a modal overlay opened with <code>G</code>. It has three focus areas –
-Actions, Files, and Commits – cycled with <code>Tab</code>/<code>Shift+Tab</code>. Some keybindings
-are context-dependent based on which area is focused and whether the current
+Actions (pane 0), Files (pane 1), and Commits (pane 2) – cycled with
+<code>Tab</code>/<code>Shift+Tab</code>. The Viewer pane always shows the diff for the selected file
+or commit but is not a separate focus target. Some keybindings are
+context-dependent based on which area is focused and whether the current
 worktree is the main branch or a feature branch.</p>
 <h3 id="actions-pane"><a class="header" href="#actions-pane">Actions Pane</a></h3>
 <div class="table-wrapper">
@@ -8069,8 +8280,10 @@ worktree is the main branch or a feature branch.</p>
 <tr><td><code>R</code></td><td>Rebase</td><td>Feature branch only</td></tr>
 <tr><td><code>c</code></td><td>Commit</td><td>Any branch</td></tr>
 <tr><td><code>P</code></td><td>Push</td><td>Any branch</td></tr>
+<tr><td><code>z</code></td><td>Stash</td><td>Any branch</td></tr>
+<tr><td><code>Z</code></td><td>Stash pop</td><td>Any branch</td></tr>
 <tr><td><code>a</code></td><td>Toggle auto-rebase</td><td>Feature branch only</td></tr>
-<tr><td><code>s</code></td><td>Auto-resolve settings</td><td>Feature branch only</td></tr>
+<tr><td><code>s</code></td><td>Auto-resolve settings</td><td>Actions pane only</td></tr>
 </tbody>
 </table>
 </div>
@@ -8111,7 +8324,7 @@ worktree is the main branch or a feature branch.</p>
 <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle pane focus</td></tr>
 <tr><td><code>[</code> / <code>]</code></td><td>Switch worktree</td></tr>
 <tr><td><code>{</code> / <code>}</code></td><td>Jump page</td></tr>
-<tr><td><code>r</code> / <code>R</code></td><td>Refresh</td></tr>
+<tr><td><code>r</code></td><td>Refresh</td></tr>
 <tr><td><code>Cmd+A</code> / <code>Ctrl+A</code></td><td>Select all (viewer)</td></tr>
 <tr><td><code>Cmd+C</code> / <code>Ctrl+C</code></td><td>Copy selection</td></tr>
 <tr><td><code>J</code> / <code>PageDown</code></td><td>Page down diff</td></tr>
@@ -8216,25 +8429,25 @@ unsure of your current context.</p>
 <tr><th>Key</th><th>Command Mode</th><th>Session Pane</th><th>File Tree</th><th>Viewer</th><th>Git Panel</th><th>Health Panel</th><th>Projects Panel</th></tr>
 </thead>
 <tbody>
-<tr><td><code>a</code></td><td>–</td><td>–</td><td>Add file</td><td>–</td><td>Auto-rebase / Toggle all</td><td>Toggle all</td><td>Add project</td></tr>
+<tr><td><code>a</code></td><td>–</td><td>New session</td><td>Add file</td><td>–</td><td>Auto-rebase / Toggle all</td><td>Toggle all</td><td>Add project</td></tr>
 <tr><td><code>c</code></td><td>–</td><td>–</td><td>Copy (clipboard)</td><td>–</td><td>Commit</td><td>–</td><td>–</td></tr>
 <tr><td><code>d</code></td><td>–</td><td>–</td><td>Delete</td><td>–</td><td>View diff</td><td>–</td><td>Delete project</td></tr>
 <tr><td><code>e</code></td><td>–</td><td>–</td><td>–</td><td>Edit mode</td><td>–</td><td>–</td><td>–</td></tr>
-<tr><td><code>f</code></td><td>Toggle file tree</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
 <tr><td><code>i</code></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>Init git repo</td></tr>
 <tr><td><code>j</code></td><td>–</td><td>Scroll down</td><td>Navigate down</td><td>Scroll down</td><td>Navigate down</td><td>Navigate down</td><td>Navigate down</td></tr>
 <tr><td><code>k</code></td><td>–</td><td>Scroll up</td><td>Navigate up</td><td>Scroll up</td><td>Navigate up</td><td>Navigate up</td><td>Navigate up</td></tr>
-<tr><td><code>l</code></td><td>–</td><td>–</td><td>–</td><td>–</td><td>Pull (main)</td><td>–</td><td>–</td></tr>
+<tr><td><code>l</code></td><td>–</td><td>–</td><td>Expand</td><td>–</td><td>Pull (main)</td><td>–</td><td>–</td></tr>
 <tr><td><code>m</code></td><td>–</td><td>–</td><td>Move (clipboard)</td><td>–</td><td>Squash merge</td><td>Modularize/Document</td><td>–</td></tr>
 <tr><td><code>n</code></td><td>–</td><td>Next match</td><td>–</td><td>–</td><td>–</td><td>–</td><td>Rename</td></tr>
 <tr><td><code>p</code></td><td>Prompt mode</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
 <tr><td><code>r</code></td><td>Run command</td><td>–</td><td>Rename</td><td>–</td><td>Refresh</td><td>–</td><td>–</td></tr>
-<tr><td><code>s</code></td><td>Session list</td><td>Session list</td><td>–</td><td>–</td><td>Stage / Auto-resolve / Scope</td><td>Scope mode</td><td>–</td></tr>
+<tr><td><code>s</code></td><td>–</td><td>Session list</td><td>–</td><td>–</td><td>Stage / Auto-resolve / Scope</td><td>Scope mode</td><td>–</td></tr>
 <tr><td><code>t</code></td><td>–</td><td>–</td><td>–</td><td>Save to tab</td><td>–</td><td>–</td><td>–</td></tr>
 <tr><td><code>v</code></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>View as tabs</td><td>–</td></tr>
 <tr><td><code>x</code></td><td>–</td><td>–</td><td>–</td><td>Close tab</td><td>Discard changes</td><td>–</td><td>–</td></tr>
+<tr><td><code>z</code></td><td>–</td><td>–</td><td>–</td><td>–</td><td>Stash</td><td>–</td><td>–</td></tr>
 <tr><td><code>?</code></td><td>Help overlay</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
-<tr><td><code>/</code></td><td>Search/filter</td><td>Search</td><td>Filter</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+<tr><td><code>/</code></td><td>–</td><td>Search</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
 </tbody>
 </table>
 </div>

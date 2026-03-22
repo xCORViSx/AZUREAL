@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -232,10 +232,10 @@ the normal layout is restored exactly as you left it.</p>
 <hr>
 <h2 id="context-aware-actions"><a class="header" href="#context-aware-actions">Context-Aware Actions</a></h2>
 <p>The actions available in the git panel depend on which branch is active. On
-main, you get pull/commit/push. On feature branches, you get squash
-merge/rebase/commit/push. A few actions are always available regardless of
-branch.</p>
-<h3 id="on-main-branch"><a class="header" href="#on-main-branch">On Main Branch</a></h3>
+main, you get pull/commit/push/stash/stash pop. On feature branches, you get
+squash merge/rebase/commit/push/stash/stash pop. A few actions are always
+available regardless of branch.</p>
+<h3 id="on-main-branch-5-actions"><a class="header" href="#on-main-branch-5-actions">On Main Branch (5 actions)</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -245,10 +245,12 @@ branch.</p>
 <tr><td><code>l</code></td><td>Pull</td></tr>
 <tr><td><code>c</code></td><td>Commit</td></tr>
 <tr><td><code>Shift+P</code></td><td>Push</td></tr>
+<tr><td><code>z</code></td><td>Stash</td></tr>
+<tr><td><code>Shift+Z</code></td><td>Stash pop</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="on-feature-branch"><a class="header" href="#on-feature-branch">On Feature Branch</a></h3>
+<h3 id="on-feature-branch-6-actions"><a class="header" href="#on-feature-branch-6-actions">On Feature Branch (6 actions)</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -259,6 +261,8 @@ branch.</p>
 <tr><td><code>Shift+R</code></td><td>Rebase onto main</td></tr>
 <tr><td><code>c</code></td><td>Commit</td></tr>
 <tr><td><code>Shift+P</code></td><td>Push</td></tr>
+<tr><td><code>z</code></td><td>Stash</td></tr>
+<tr><td><code>Shift+Z</code></td><td>Stash pop</td></tr>
 </tbody>
 </table>
 </div>
@@ -266,12 +270,12 @@ branch.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Key</th><th>Action</th></tr>
+<tr><th>Key</th><th>Context</th><th>Action</th></tr>
 </thead>
 <tbody>
-<tr><td><code>r</code></td><td>Refresh git state</td></tr>
-<tr><td><code>a</code></td><td>Toggle auto-rebase</td></tr>
-<tr><td><code>s</code></td><td>Auto-resolve settings</td></tr>
+<tr><td><code>r</code></td><td>Any pane</td><td>Refresh git state</td></tr>
+<tr><td><code>a</code></td><td>Actions focused, feature branch only</td><td>Toggle auto-rebase</td></tr>
+<tr><td><code>s</code></td><td>Actions focused</td><td>Auto-resolve settings</td></tr>
 </tbody>
 </table>
 </div>

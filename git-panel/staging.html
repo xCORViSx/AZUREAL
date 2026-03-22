@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -259,8 +259,9 @@ files are unstaged, it stages all; if all are staged, it unstages all.</p>
 </table>
 </div>
 <p>Pressing <code>x</code> prompts for inline confirmation directly in the file list entry.
-The prompt displays <code>y/n</code> next to the file name. Pressing <code>y</code> confirms the
-discard; pressing <code>n</code> or any other key cancels.</p>
+The prompt displays <code>Discard &lt;path&gt;? [y/n]</code> in the file’s row. Pressing <code>y</code>
+confirms the discard; pressing <code>n</code> or <code>Esc</code> cancels. Other keys are ignored
+while the confirmation is active.</p>
 <p>The discard mechanism depends on the file type:</p>
 <div class="table-wrapper">
 <table>

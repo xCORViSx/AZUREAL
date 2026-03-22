@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -192,12 +192,12 @@
 <li>Any compaction summaries that replaced older events.</li>
 </ul>
 <p>The context is formatted as structured text and wrapped in <code>&lt;azureal-session-context&gt;</code> XML tags. This tagged context is prepended to the user’s prompt, giving the agent full conversational history without relying on the CLI’s own session management.</p>
-<p>For the Codex backend, the native <code>resume &lt;UUID&gt;</code> mechanism supplements (but does not replace) context injection.</p>
+<p>Both backends receive context injection identically – neither uses a CLI-native resume flag.</p>
 <h3 id="3-agent-process-is-spawned"><a class="header" href="#3-agent-process-is-spawned">3. Agent Process Is Spawned</a></h3>
 <p>A new CLI process is spawned based on the active backend:</p>
 <ul>
 <li><strong>Claude</strong>: <code>claude -p "&lt;context + prompt&gt;" --verbose --output-format stream-json</code></li>
-<li><strong>Codex</strong>: <code>codex exec --json "&lt;prompt&gt;"</code> (or <code>codex exec --json resume &lt;UUID&gt; "&lt;prompt&gt;"</code> if a thread ID exists)</li>
+<li><strong>Codex</strong>: <code>codex exec --json "&lt;context + prompt&gt;"</code></li>
 </ul>
 <p>The process runs in the worktree’s directory, so all file operations performed by the agent are scoped to the correct working tree. The process’s PID is registered as a new session slot (see <a href="./multi-agent.html">Multi-Agent Concurrency</a>).</p>
 <h3 id="4-streaming-json-events-are-received-and-parsed"><a class="header" href="#4-streaming-json-events-are-received-and-parsed">4. Streaming JSON Events Are Received and Parsed</a></h3>

@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -206,10 +206,10 @@ initializing new repos, and removing entries.</p>
 <li><strong>Validation</strong> – The target directory is checked to confirm it is still a
 valid git repository. If it is not, the entry is pruned and an error message
 appears.</li>
-<li><strong>Process cleanup</strong> – All Claude processes for the current project are
-killed. This ensures clean separation between projects.</li>
 <li><strong>State snapshot</strong> – The current project’s full state is captured (see
-<a href="./parallel.html">Parallel Projects</a> for what is included in the snapshot).</li>
+<a href="./parallel.html">Parallel Projects</a> for what is included in the snapshot).
+Agent processes continue running in the background – their output is
+captured to session files and handled via the background exit flow.</li>
 <li><strong>Reload</strong> – AZUREAL reloads with the target project’s repository,
 restoring its snapshot if one exists.</li>
 </ol>

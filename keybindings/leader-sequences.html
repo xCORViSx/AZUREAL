@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -196,19 +196,19 @@
 <tr><th>Sequence</th><th>Action</th></tr>
 </thead>
 <tbody>
-<tr><td><code>W</code> then <code>a</code></td><td>Create a new worktree</td></tr>
+<tr><td><code>W</code> then <code>n</code></td><td>Create a new worktree</td></tr>
 <tr><td><code>W</code> then <code>r</code></td><td>Rename the active worktree</td></tr>
-<tr><td><code>W</code> then <code>x</code></td><td>Archive the active worktree</td></tr>
+<tr><td><code>W</code> then <code>a</code></td><td>Archive the active worktree</td></tr>
 <tr><td><code>W</code> then <code>d</code></td><td>Delete a worktree</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="create-wa"><a class="header" href="#create-wa">Create (Wa)</a></h3>
+<h3 id="create-wn"><a class="header" href="#create-wn">Create (Wn)</a></h3>
 <p>Opens the worktree creation dialog. You provide a branch name, and AZUREAL creates a new git worktree with that branch, adds it to the tab row, and switches to it.</p>
 <h3 id="rename-wr"><a class="header" href="#rename-wr">Rename (Wr)</a></h3>
-<p>Opens a rename prompt for the active worktree’s display label. The underlying git branch is not renamed – this only changes the label shown in the tab row.</p>
-<h3 id="archive-wx"><a class="header" href="#archive-wx">Archive (Wx)</a></h3>
-<p>Archives the active worktree. Archived worktrees are removed from the tab row but not deleted from disk. They can be restored from the worktree management interface.</p>
+<p>Opens a rename dialog pre-filled with the current branch suffix. On confirm, the underlying git branch is renamed (<code>git branch -m</code>), the new branch is pushed to the remote, and the old remote branch is deleted. All branch-keyed app state is migrated to the new name.</p>
+<h3 id="archive-wa"><a class="header" href="#archive-wa">Archive (Wa)</a></h3>
+<p>Archives the active worktree. The worktree directory is removed, but the git branch is preserved. Archived worktrees remain visible in the tab row with a dim <code>◇</code> prefix and can be unarchived with <code>u</code> to recreate the worktree from the preserved branch.</p>
 <h3 id="delete-wd"><a class="header" href="#delete-wd">Delete (Wd)</a></h3>
 <p>Deletes a worktree from disk. This runs <code>git worktree remove</code> and is destructive – uncommitted changes in the worktree are lost. A confirmation prompt is shown before deletion.</p>
 <hr>
@@ -220,15 +220,15 @@
 <tr><th>Key</th><th>Action</th></tr>
 </thead>
 <tbody>
-<tr><td><code>a</code></td><td>Create a new worktree</td></tr>
+<tr><td><code>n</code></td><td>Create a new worktree</td></tr>
 <tr><td><code>r</code></td><td>Rename worktree</td></tr>
-<tr><td><code>x</code></td><td>Archive worktree</td></tr>
+<tr><td><code>a</code></td><td>Archive worktree</td></tr>
 <tr><td><code>d</code></td><td>Delete worktree</td></tr>
 </tbody>
 </table>
 </div>
 <p>This shortcut exists because when you are already looking at the worktrees list, the <code>W</code> prefix is redundant. The direct keys are faster and more natural in that context.</p>
-<p>Outside the Worktrees pane, these single keys have other meanings (e.g., <code>r</code> runs a command, <code>d</code> may be unbound), so the <code>W</code> leader prefix is required to disambiguate.</p>
+<p>Outside the Worktrees pane, these single keys have other meanings (e.g., <code>r</code> runs a command, <code>n</code> may be unbound), so the <code>W</code> leader prefix is required to disambiguate.</p>
 <hr>
 <h2 id="status-bar-feedback"><a class="header" href="#status-bar-feedback">Status Bar Feedback</a></h2>
 <p>The status bar provides real-time feedback during leader sequences:</p>

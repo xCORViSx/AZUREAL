@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -187,9 +187,9 @@ and schema.</p>
 <h2 id="lazy-creation"><a class="header" href="#lazy-creation">Lazy Creation</a></h2>
 <p>The store file is <strong>not</strong> created when you open a project. It is created
 lazily on first use – specifically, when you create your first session.
-Projects that have never had a session will not have a <code>.azureal/</code> directory.
-This keeps the filesystem clean and avoids polluting repositories with empty
-database files.</p>
+Projects that have never had a session will not have a <code>sessions.azs</code> file
+(though the <code>.azureal/</code> directory may still exist for configuration files
+like <code>azufig.toml</code>).</p>
 <hr>
 <h2 id="session-numbering"><a class="header" href="#session-numbering">Session Numbering</a></h2>
 <p>Sessions are numbered sequentially: <strong>S1</strong>, <strong>S2</strong>, <strong>S3</strong>, and so on. These
@@ -210,9 +210,10 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 <tr><td><code>name</code></td><td>TEXT</td><td>User-assigned session name (or default “S<em>n</em>”)</td></tr>
 <tr><td><code>worktree</code></td><td>TEXT</td><td>Path to the git worktree this session belongs to</td></tr>
 <tr><td><code>created</code></td><td>TEXT</td><td>ISO 8601 timestamp of session creation</td></tr>
-<tr><td><code>completed</code></td><td>TEXT</td><td>ISO 8601 timestamp of completion (NULL if still active)</td></tr>
+<tr><td><code>completed</code></td><td>INTEGER</td><td>Boolean success flag (1 = success, 0 = failure, NULL if still active)</td></tr>
 <tr><td><code>duration_ms</code></td><td>INTEGER</td><td>Total session duration in milliseconds</td></tr>
 <tr><td><code>cost_usd</code></td><td>REAL</td><td>Accumulated cost in USD (populated on completion)</td></tr>
+<tr><td><code>last_claude_uuid</code></td><td>TEXT</td><td>UUID of the last Claude JSONL session file (for orphan recovery)</td></tr>
 </tbody>
 </table>
 </div>
@@ -224,14 +225,16 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 <tr><th>Column</th><th>Type</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code></td></tr>
+<tr><td><code>id</code></td><td>INTEGER</td><td>Primary key, auto-incremented</td></tr>
+<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code> (with cascade delete)</td></tr>
 <tr><td><code>seq</code></td><td>INTEGER</td><td>Sequence number within the session (monotonically increasing)</td></tr>
-<tr><td><code>kind</code></td><td>TEXT</td><td>Event type (e.g., <code>UserPrompt</code>, <code>AssistantResponse</code>, <code>ToolCall</code>, <code>ToolResult</code>, <code>Complete</code>)</td></tr>
-<tr><td><code>data</code></td><td>TEXT</td><td>JSON-encoded event payload</td></tr>
-<tr><td><code>char_len</code></td><td>INTEGER</td><td>Character length of the serialized data</td></tr>
+<tr><td><code>kind</code></td><td>TEXT</td><td>Event type (e.g., <code>UserMessage</code>, <code>AssistantText</code>, <code>ToolCall</code>, <code>ToolResult</code>, <code>Complete</code>)</td></tr>
+<tr><td><code>data</code></td><td>TEXT</td><td>Zstd-compressed JSON event payload (stored as blob despite TEXT type)</td></tr>
+<tr><td><code>char_len</code></td><td>INTEGER</td><td>Character length of the original (uncompressed) event data</td></tr>
 </tbody>
 </table>
 </div>
+<p>A unique constraint on <code>(session_id, seq)</code> prevents duplicate events.</p>
 <h3 id="compactions"><a class="header" href="#compactions"><code>compactions</code></a></h3>
 <p>Compaction summaries that replace older event ranges.</p>
 <div class="table-wrapper">
@@ -240,9 +243,11 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 <tr><th>Column</th><th>Type</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code></td></tr>
+<tr><td><code>id</code></td><td>INTEGER</td><td>Primary key, auto-incremented</td></tr>
+<tr><td><code>session_id</code></td><td>INTEGER</td><td>Foreign key to <code>sessions.id</code> (with cascade delete)</td></tr>
 <tr><td><code>after_seq</code></td><td>INTEGER</td><td>The sequence number after which events were compacted</td></tr>
 <tr><td><code>summary</code></td><td>TEXT</td><td>The 2000–4000 character compaction summary</td></tr>
+<tr><td><code>created</code></td><td>TEXT</td><td>ISO 8601 timestamp of when the compaction was stored</td></tr>
 </tbody>
 </table>
 </div>
@@ -259,13 +264,10 @@ is simple and monotonic – there is no reuse of session numbers after deletion.
 </tbody>
 </table>
 </div>
-<p>Notable keys include:</p>
-<ul>
-<li><code>current_session_id</code> – tracks which session is currently active in the UI.</li>
-<li><code>pid_session_target</code> – maps PIDs to <code>(session_id, worktree_path)</code> tuples,
-recorded at agent spawn time so that AZUREAL can associate a running process
-with the correct session and worktree even after restarts.</li>
-</ul>
+<p>The primary key stored here is <code>schema_version</code>, which tracks the database
+schema version for migrations. Other runtime state such as the active session
+ID and PID-to-session mappings are held in memory on the App struct, not
+persisted to the database.</p>
 <hr>
 <h2 id="event-storage-and-compaction"><a class="header" href="#event-storage-and-compaction">Event Storage and Compaction</a></h2>
 <p>Events are not stored verbatim from the agent’s JSONL output. Before

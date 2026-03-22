@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -188,6 +188,20 @@ management.</p>
 <p>Running <code>azureal</code> with no arguments launches the full TUI interface inside the
 current terminal. AZUREAL expects to be run from within a git repository (or with
 a registered project – see <a href="./projects.html">Projects Panel</a>).</p>
+<h3 id="global-options"><a class="header" href="#global-options">Global Options</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-o, --output &lt;format&gt;</code></td><td>Output format: <code>table</code>, <code>json</code>, or <code>plain</code></td><td><code>table</code></td></tr>
+<tr><td><code>-v, --verbose</code></td><td>Enable verbose output</td><td>off</td></tr>
+<tr><td><code>--config &lt;path&gt;</code></td><td>Path to config file</td><td>(auto-detected)</td></tr>
+</tbody>
+</table>
+</div>
+<p>These flags can be placed before or after any subcommand.</p>
 <hr>
 <h2 id="self-installation"><a class="header" href="#self-installation">Self-Installation</a></h2>
 <p>The AZUREAL binary is <strong>self-installing</strong>. On first run, it detects whether it
@@ -218,7 +232,7 @@ disk while preserving the git branch. The worktree appears dimmed in the tab
 row and can be restored later.</p>
 <pre><code class="language-sh">azureal session archive my-feature
 </code></pre>
-<p>This is equivalent to pressing <code>Wx</code> or <code>x</code> (with the worktree focused) inside
+<p>This is equivalent to pressing <code>Wa</code> or <code>a</code> (with the worktree focused) inside
 the TUI. The branch <code>azureal/my-feature</code> remains in the local repository and
 can be pushed to a remote as usual.</p>
 <h4 id="azureal-session-unarchive-name"><a class="header" href="#azureal-session-unarchive-name"><code>azureal session unarchive &lt;name&gt;</code></a></h4>
@@ -229,9 +243,164 @@ from the preserved branch, restoring it to an active state.</p>
 <p>After unarchiving, the worktree reappears as a normal tab in the TUI with its
 full session history intact (stored in the SQLite session store, not in the
 worktree directory).</p>
+<h4 id="azureal-session-list"><a class="header" href="#azureal-session-list"><code>azureal session list</code></a></h4>
+<p>List all sessions. Alias: <code>azureal session ls</code>.</p>
+<pre><code class="language-sh">azureal session list
+azureal session list --project /path/to/project --all
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --project</code></td><td>Filter by project path</td></tr>
+<tr><td><code>-a, --all</code></td><td>Show archived sessions too</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-new"><a class="header" href="#azureal-session-new"><code>azureal session new</code></a></h4>
+<p>Create a new session.</p>
+<pre><code class="language-sh">azureal session new -p "Fix the login bug"
+azureal session new -p "Add tests" --name my-session --project /path
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --prompt</code></td><td>Initial prompt for the agent (required)</td></tr>
+<tr><td><code>-d, --project</code></td><td>Project path (defaults to current directory)</td></tr>
+<tr><td><code>-n, --name</code></td><td>Custom session name</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-status-name"><a class="header" href="#azureal-session-status-name"><code>azureal session status &lt;name&gt;</code></a></h4>
+<p>Show the status of a session.</p>
+<h4 id="azureal-session-stop-name"><a class="header" href="#azureal-session-stop-name"><code>azureal session stop &lt;name&gt;</code></a></h4>
+<p>Stop a running session.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-f, --force</code></td><td>Force stop (SIGKILL instead of SIGTERM)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-delete-name"><a class="header" href="#azureal-session-delete-name"><code>azureal session delete &lt;name&gt;</code></a></h4>
+<p>Delete a session and its worktree.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-y, --yes</code></td><td>Skip confirmation prompt</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-resume-name"><a class="header" href="#azureal-session-resume-name"><code>azureal session resume &lt;name&gt;</code></a></h4>
+<p>Resume a stopped or waiting session.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --prompt</code></td><td>Additional prompt to send</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-logs-name"><a class="header" href="#azureal-session-logs-name"><code>azureal session logs &lt;name&gt;</code></a></h4>
+<p>Show session logs/output.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-f, --follow</code></td><td>Follow output in real-time</td></tr>
+<tr><td><code>-l, --lines</code></td><td>Number of lines to show (default: 50)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-diff-name"><a class="header" href="#azureal-session-diff-name"><code>azureal session diff &lt;name&gt;</code></a></h4>
+<p>Show diff for a session’s worktree.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--stat</code></td><td>Show stat only (files changed summary)</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-session-cleanup"><a class="header" href="#azureal-session-cleanup"><code>azureal session cleanup</code></a></h4>
+<p>Clean up worktrees from completed/failed/archived sessions.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-d, --project</code></td><td>Project path (defaults to current directory)</td></tr>
+<tr><td><code>--delete-branches</code></td><td>Also delete the associated git branches</td></tr>
+<tr><td><code>-y, --yes</code></td><td>Perform cleanup without confirmation</td></tr>
+<tr><td><code>--dry-run</code></td><td>Only show what would be cleaned up</td></tr>
+</tbody>
+</table>
+</div>
 <h3 id="azureal-project"><a class="header" href="#azureal-project"><code>azureal project</code></a></h3>
-<p>Project management subcommands. These mirror the operations available in the
-<a href="./projects.html">Projects Panel</a>.</p>
+<p>Project management subcommands.</p>
+<h4 id="azureal-project-list"><a class="header" href="#azureal-project-list"><code>azureal project list</code></a></h4>
+<p>List all registered projects. Alias: <code>azureal project ls</code>.</p>
+<h4 id="azureal-project-show-project"><a class="header" href="#azureal-project-show-project"><code>azureal project show [project]</code></a></h4>
+<p>Show details for a project. Defaults to the current directory if no project is
+specified.</p>
+<h4 id="azureal-project-remove-project"><a class="header" href="#azureal-project-remove-project"><code>azureal project remove &lt;project&gt;</code></a></h4>
+<p>Remove a project from tracking (does not delete the repository).</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-y, --yes</code></td><td>Skip confirmation prompt</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="azureal-project-config"><a class="header" href="#azureal-project-config"><code>azureal project config</code></a></h4>
+<p>Show or update project configuration.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-p, --project</code></td><td>Project path (defaults to current directory)</td></tr>
+<tr><td><code>--main-branch</code></td><td>Set the main branch name</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="shortcut-commands"><a class="header" href="#shortcut-commands">Shortcut Commands</a></h3>
+<p>Several session operations have top-level shortcuts:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Shortcut</th><th>Equivalent</th></tr>
+</thead>
+<tbody>
+<tr><td><code>azureal list</code> (or <code>azureal ls</code>)</td><td><code>azureal session list</code></td></tr>
+<tr><td><code>azureal new -p "prompt"</code></td><td><code>azureal session new -p "prompt"</code></td></tr>
+<tr><td><code>azureal status &lt;name&gt;</code></td><td><code>azureal session status &lt;name&gt;</code></td></tr>
+<tr><td><code>azureal diff &lt;name&gt;</code></td><td><code>azureal session diff &lt;name&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
 <hr>
 <h2 id="logging"><a class="header" href="#logging">Logging</a></h2>
 <p>AZUREAL uses <code>tracing-subscriber</code> with <code>env-filter</code> for structured logging.
@@ -268,7 +437,7 @@ diagnosing issues, redirect stderr to a file:</p>
 <hr>
 <h2 id="debug-dump"><a class="header" href="#debug-dump">Debug Dump</a></h2>
 <p>The <code>Ctrl+D</code> keybinding inside the TUI triggers a debug dump – a snapshot of
-internal state written to a timestamped file. This is covered in detail at
+internal state written to a named text file in <code>.azureal/</code>. This is covered in detail at
 <a href="./debug-dump.html">Debug Dump</a>. The dump is useful for filing bug reports or
 inspecting runtime state without attaching a debugger.</p>
 <hr>
@@ -285,10 +454,23 @@ inspecting runtime state without attaching a debugger.</p>
 </thead>
 <tbody>
 <tr><td><code>azureal</code></td><td>Launch the TUI</td></tr>
+<tr><td><code>azureal tui</code></td><td>Launch the TUI (explicit subcommand)</td></tr>
 <tr><td><code>azureal --version</code></td><td>Print version and exit</td></tr>
+<tr><td><code>azureal session list</code></td><td>List all sessions</td></tr>
+<tr><td><code>azureal session new -p "prompt"</code></td><td>Create a new session</td></tr>
+<tr><td><code>azureal session status &lt;name&gt;</code></td><td>Show session status</td></tr>
+<tr><td><code>azureal session stop &lt;name&gt;</code></td><td>Stop a running session</td></tr>
+<tr><td><code>azureal session delete &lt;name&gt;</code></td><td>Delete a session and its worktree</td></tr>
 <tr><td><code>azureal session archive &lt;name&gt;</code></td><td>Archive a worktree (remove directory, keep branch)</td></tr>
 <tr><td><code>azureal session unarchive &lt;name&gt;</code></td><td>Unarchive a worktree (recreate directory from branch)</td></tr>
-<tr><td><code>azureal project</code></td><td>Project management subcommands</td></tr>
+<tr><td><code>azureal session resume &lt;name&gt;</code></td><td>Resume a stopped session</td></tr>
+<tr><td><code>azureal session logs &lt;name&gt;</code></td><td>Show session logs</td></tr>
+<tr><td><code>azureal session diff &lt;name&gt;</code></td><td>Show worktree diff</td></tr>
+<tr><td><code>azureal session cleanup</code></td><td>Clean up completed/failed worktrees</td></tr>
+<tr><td><code>azureal project list</code></td><td>List registered projects</td></tr>
+<tr><td><code>azureal project show [project]</code></td><td>Show project details</td></tr>
+<tr><td><code>azureal project remove &lt;project&gt;</code></td><td>Remove project from tracking</td></tr>
+<tr><td><code>azureal project config</code></td><td>Show/update project configuration</td></tr>
 </tbody>
 </table>
 </div>

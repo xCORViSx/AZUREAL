@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -189,7 +189,7 @@ panel.</p>
 <ol>
 <li><strong>Stage</strong> – All files marked as staged in the UI are staged in the git
 index.</li>
-<li><strong>Diff</strong> – AZUREAL captures the staged diff (<code>git diff --cached</code>).</li>
+<li><strong>Diff</strong> – AZUREAL captures the staged diff (<code>git diff --staged</code>).</li>
 <li><strong>Generate</strong> – A background thread spawns to send the diff to the selected
 AI model with instructions to produce a conventional commit message.</li>
 <li><strong>Display</strong> – The generated message fills an editable text area in the
@@ -241,7 +241,7 @@ message entirely, tweak a word, or accept it as-is.</p>
 </thead>
 <tbody>
 <tr><td><code>Enter</code></td><td>Commit with the current message</td></tr>
-<tr><td><code>Cmd+P</code></td><td>Commit and push in one action</td></tr>
+<tr><td><code>Cmd+P</code> / <code>Ctrl+P</code></td><td>Commit and push in one action</td></tr>
 <tr><td><code>Shift+Enter</code></td><td>Insert a newline (for multi-line messages)</td></tr>
 <tr><td><code>Esc</code></td><td>Cancel the commit</td></tr>
 </tbody>

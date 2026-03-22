@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -266,10 +266,10 @@ When a <code>SessionFileChanged</code> event arrives, three phases execute in se
 On event-driven backends, this is immediate. On the stat() fallback, detection
 latency is up to 500ms.</p>
 <h3 id="phase-2-incremental-parse"><a class="header" href="#phase-2-incremental-parse">Phase 2: Incremental Parse</a></h3>
-<p>The <code>AgentProcessor</code> thread seeks to its last known file offset and reads only
-the <strong>newly appended lines</strong>. Each line is parsed as a JSON event and converted
-to a <code>DisplayEvent</code>. The processor does not re-read or re-parse previously
-processed content.</p>
+<p>The <code>refresh_session_events()</code> function seeks to its last known file offset
+(<code>session_file_parse_offset</code>) and reads only the <strong>newly appended lines</strong> from
+the JSONL file. Each line is parsed as a JSON event and converted to a
+<code>DisplayEvent</code>. Previously processed content is not re-read or re-parsed.</p>
 <p>This is the key to performance during long agent sessions. A session with 10,000
 events that appends one new event pays the cost of parsing one line, not 10,000.</p>
 <h3 id="phase-3-incremental-render"><a class="header" href="#phase-3-incremental-render">Phase 3: Incremental Render</a></h3>

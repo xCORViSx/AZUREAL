@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -278,8 +278,9 @@ rapid typing, while ensuring the screen stays current during pauses.</p>
 <li>Opening or closing overlay panels (health, projects, help)</li>
 <li>Terminal mode toggle</li>
 </ul>
-<p>These events set a <code>force_redraw</code> flag that bypasses all draw suppression and
-throttling, ensuring the layout transition renders immediately.</p>
+<p>These events set a <code>force_full_redraw</code> flag that bypasses all draw suppression
+and throttling, ensuring the layout transition renders immediately with a full
+<code>terminal.clear()</code> before the draw.</p>
 <hr>
 <h2 id="pre-draw-event-drain-with-abort"><a class="header" href="#pre-draw-event-drain-with-abort">Pre-Draw Event Drain with Abort</a></h2>
 <p>Immediately before calling <code>terminal.draw()</code>, the loop performs one final drain

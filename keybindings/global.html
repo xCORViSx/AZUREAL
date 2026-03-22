@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -194,7 +194,7 @@
 </table>
 </div>
 <hr>
-<h2 id="scrolling"><a class="header" href="#scrolling">Scrolling</a></h2>
+<h2 id="scrolling-per-pane"><a class="header" href="#scrolling-per-pane">Scrolling (Per-Pane)</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -208,7 +208,7 @@
 </tbody>
 </table>
 </div>
-<p>Scroll targets the currently focused pane. In the session pane, this scrolls the conversation. In the file viewer, this scrolls the file content.</p>
+<p>These are defined per-pane (FileTree, Viewer, Session, Terminal) rather than as global bindings, but they behave consistently across all scrollable panes. The scroll targets whichever pane currently has focus.</p>
 <hr>
 <h2 id="pane-focus"><a class="header" href="#pane-focus">Pane Focus</a></h2>
 <div class="table-wrapper">
@@ -222,7 +222,7 @@
 </tbody>
 </table>
 </div>
-<p>Focus cycles through the visible panes: file tree, file viewer, and session pane. Hidden panes (e.g., when the file tree is toggled off) are skipped.</p>
+<p>Focus cycles through the four panes: FileTree, Viewer, Session, and Input.</p>
 <hr>
 <h2 id="panels--overlays"><a class="header" href="#panels--overlays">Panels &amp; Overlays</a></h2>
 <div class="table-wrapper">
@@ -254,32 +254,6 @@
 </table>
 </div>
 <p>These keys cycle through the worktree tab row at the top of the interface. The active worktree determines which branch, session, and terminal are shown.</p>
-<hr>
-<h2 id="toggles"><a class="header" href="#toggles">Toggles</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>f</code></td><td>Toggle file tree visibility</td></tr>
-<tr><td><code>s</code></td><td>Toggle session list visibility</td></tr>
-</tbody>
-</table>
-</div>
-<hr>
-<h2 id="search"><a class="header" href="#search">Search</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Key</th><th>Action</th></tr>
-</thead>
-<tbody>
-<tr><td><code>/</code></td><td>Activate search / filter</td></tr>
-</tbody>
-</table>
-</div>
-<p>The behavior of <code>/</code> depends on the focused pane. In the session pane, it opens the session search. In the file tree, it opens the file filter. Once a search/filter is active, letter keys type into the filter field – global bindings are suppressed until <code>Esc</code> dismisses the filter.</p>
 <hr>
 <h2 id="run-commands"><a class="header" href="#run-commands">Run Commands</a></h2>
 <div class="table-wrapper">
@@ -321,9 +295,7 @@
 <tbody>
 <tr><td><code>p</code></td><td>Enter prompt mode</td></tr>
 <tr><td><code>T</code></td><td>Toggle terminal</td></tr>
-<tr><td><code>Esc</code></td><td>Return to command mode</td></tr>
-<tr><td><code>j</code> / <code>k</code></td><td>Scroll line down / up</td></tr>
-<tr><td><code>J</code> / <code>K</code></td><td>Page scroll down / up</td></tr>
+<tr><td><code>Esc</code></td><td>Return to command mode (per-pane)</td></tr>
 <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle pane focus</td></tr>
 <tr><td><code>G</code></td><td>GitView panel</td></tr>
 <tr><td><code>H</code></td><td>Health panel</td></tr>
@@ -332,9 +304,6 @@
 <tr><td><code>r</code></td><td>Run command</td></tr>
 <tr><td><code>R</code></td><td>Add run command</td></tr>
 <tr><td><code>[</code> / <code>]</code></td><td>Switch worktree tab</td></tr>
-<tr><td><code>f</code></td><td>Toggle file tree</td></tr>
-<tr><td><code>s</code></td><td>Toggle session list</td></tr>
-<tr><td><code>/</code></td><td>Search / filter</td></tr>
 <tr><td><code>?</code></td><td>Help overlay</td></tr>
 <tr><td><code>Cmd+C</code> / <code>Ctrl+C</code></td><td>Copy selection</td></tr>
 <tr><td><code>Ctrl+C</code> / <code>Alt+C</code></td><td>Cancel agent</td></tr>

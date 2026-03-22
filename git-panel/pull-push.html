@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -212,17 +212,23 @@ automatically to reflect any new changes.</p>
 </table>
 </div>
 <p>Push works on any branch – main or feature. The behavior adapts based on the
-branch state:</p>
+branch state.</p>
+<h3 id="pre-push-pull-main-only"><a class="header" href="#pre-push-pull-main-only">Pre-Push Pull (Main Only)</a></h3>
+<p>On main/master branches, AZUREAL runs <code>git pull --rebase</code> before pushing to
+incorporate any upstream changes. This is skipped on feature branches – they
+are kept in sync with main via the auto-rebase system, and pulling on a feature
+branch whose remote was already squash-merged could corrupt HEAD state.</p>
 <h3 id="regular-push"><a class="header" href="#regular-push">Regular Push</a></h3>
 <p>If the local branch is ahead of its remote tracking branch and has not
-diverged (no rewritten history), AZUREAL runs a standard push:</p>
-<pre><code class="language-sh">git push
+diverged (no rewritten history), AZUREAL runs:</p>
+<pre><code class="language-sh">git push -u origin &lt;branch&gt;
 </code></pre>
+<p>The <code>-u</code> flag sets the upstream tracking reference on first push.</p>
 <h3 id="force-push-with-lease"><a class="header" href="#force-push-with-lease">Force Push with Lease</a></h3>
 <p>If the local branch has <strong>diverged</strong> from its remote tracking branch – which
 happens after a rebase rewrites commit history – a regular push would be
 rejected. AZUREAL detects this condition and automatically uses:</p>
-<pre><code class="language-sh">git push --force-with-lease
+<pre><code class="language-sh">git push --force-with-lease -u origin &lt;branch&gt;
 </code></pre>
 <p>The status bar appends <strong>(force-pushed)</strong> to confirm that a force push was
 performed rather than a regular push.</p>

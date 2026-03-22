@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -203,13 +203,14 @@ embedded terminal on Windows. This is transparent to the user but differs from
 the Unix behavior where Enter sends <code>\n</code>.</p>
 <h3 id="terminal-title-reassertion"><a class="header" href="#terminal-title-reassertion">Terminal Title Reassertion</a></h3>
 <p>Claude Code CLI calls <code>SetConsoleTitle()</code> during execution, which overwrites
-AZUREAL’s terminal title. After each agent process exits, AZUREAL reasserts its
-own title (<code>AZUREAL @ &lt;project&gt; : &lt;branch&gt;</code>) to restore the expected title bar
-content.</p>
+AZUREAL’s terminal title. AZUREAL reasserts its own title
+(<code>AZUREAL @ &lt;project&gt; : &lt;branch&gt;</code>) after every draw frame, ensuring the title
+stays correct both during and after agent execution.</p>
 <hr>
-<h2 id="cpu-only-whisper-with-msvc-fixes"><a class="header" href="#cpu-only-whisper-with-msvc-fixes">CPU-Only Whisper with MSVC Fixes</a></h2>
-<p>Whisper runs on the CPU on Windows, as on Linux. However, the <code>whisper-rs</code> crate
-requires additional patches to compile with the MSVC toolchain:</p>
+<h2 id="cuda-gpu-whisper-with-msvc-fixes"><a class="header" href="#cuda-gpu-whisper-with-msvc-fixes">CUDA GPU Whisper with MSVC Fixes</a></h2>
+<p>Whisper runs on the <strong>CUDA GPU</strong> on Windows, providing GPU-accelerated
+transcription (requires an NVIDIA GPU and the CUDA Toolkit). The <code>whisper-rs</code>
+crate requires additional patches to compile with the MSVC toolchain:</p>
 <ul>
 <li><strong>Layout tests disabled</strong> – MSVC produces different struct layouts than GCC/
 Clang, causing layout assertion failures in the vendored whisper.cpp bindings.
@@ -220,12 +221,14 @@ to match MSVC’s default enum representation.</li>
 <p>These fixes are applied in AZUREAL’s vendored copy of <code>whisper-rs</code> and do not
 affect runtime behavior.</p>
 <h3 id="build-dependencies"><a class="header" href="#build-dependencies">Build Dependencies</a></h3>
-<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake
+<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja Nvidia.CUDA
 </code></pre>
 <p>After installing LLVM, set the <code>LIBCLANG_PATH</code> environment variable:</p>
 <pre><code class="language-powershell">[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")
 </code></pre>
-<p>Restart your terminal after setting this variable.</p>
+<p>Set <code>CMAKE_GENERATOR=Ninja</code> in your environment so CMake uses Ninja instead of
+the Visual Studio generator (required for correct CUDA include path propagation).</p>
+<p>Restart your terminal after setting these variables.</p>
 <hr>
 <h2 id="alt-key-bindings"><a class="header" href="#alt-key-bindings">Alt Key Bindings</a></h2>
 <p>Windows uses <strong>Alt</strong> as the modifier for destructive or significant actions,

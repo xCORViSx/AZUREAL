@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -224,6 +224,7 @@ family:</p>
 <tr><td>GPT-5.4</td><td>Green</td></tr>
 <tr><td>GPT-5.3-codex</td><td>Light green</td></tr>
 <tr><td>GPT-5.2-codex</td><td>Teal</td></tr>
+<tr><td>GPT-5.2</td><td>Light cyan</td></tr>
 <tr><td>GPT-5.1-codex-max</td><td>Blue</td></tr>
 <tr><td>GPT-5.1-codex-mini</td><td>Light blue</td></tr>
 </tbody>
@@ -274,16 +275,18 @@ arrived for 20 seconds.</li>
 <p>Hooks (permission checks, tool validations) are captured from multiple sources
 in the event stream (<code>hook_progress</code>, <code>system-reminder</code> tags,
 <code>hook_response</code>). They render as dim gray lines near their corresponding tool
-calls, prefixed with <code>&gt;</code>. Consecutive duplicate hooks are deduplicated to
+calls, prefixed with <code>›</code>. Consecutive duplicate hooks are deduplicated to
 prevent visual clutter.</p>
 <h2 id="scrolling-and-navigation"><a class="header" href="#scrolling-and-navigation">Scrolling and Navigation</a></h2>
 <ul>
-<li><code>j</code> / <code>k</code> or arrow keys scroll one line at a time.</li>
-<li><code>g</code> jumps to the top of the session; <code>G</code> jumps to the bottom.</li>
+<li><code>j</code> / <code>k</code> scroll one line at a time.</li>
+<li><code>Up</code> / <code>Down</code> arrows jump to the previous / next message bubble.</li>
+<li><code>J</code> / <code>K</code> page scroll (viewport height minus 2 lines of overlap).</li>
+<li><code>Alt+Up</code> / <code>Alt+Down</code> jump to the top / bottom of the session.</li>
 <li>Mouse wheel scrolling works regardless of keyboard focus.</li>
 <li>The session pane auto-follows new content (pinned to bottom) until the user
-scrolls up. Scrolling up detaches from the bottom; pressing <code>G</code> or scrolling
-back to the end re-attaches.</li>
+scrolls up. Scrolling up detaches from the bottom; scrolling back to the end
+re-attaches.</li>
 </ul>
 <h2 id="session-find"><a class="header" href="#session-find">Session Find</a></h2>
 <p>Press <code>/</code> to open an in-session search bar at the bottom of the session pane.

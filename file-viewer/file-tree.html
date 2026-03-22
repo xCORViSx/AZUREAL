@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -238,8 +238,8 @@ application launch.</p>
 <tr><td><code>Enter</code></td><td>Open file in Viewer, or expand/collapse directory</td></tr>
 <tr><td><code>l</code> / Right</td><td>Expand directory</td></tr>
 <tr><td><code>h</code> / Left</td><td>Collapse directory</td></tr>
-<tr><td><code>g</code></td><td>Jump to first entry</td></tr>
-<tr><td><code>G</code></td><td>Jump to last entry</td></tr>
+<tr><td><code>Alt+Up</code></td><td>Jump to first sibling in current folder</td></tr>
+<tr><td><code>Alt+Down</code></td><td>Jump to last sibling in current folder</td></tr>
 </tbody>
 </table>
 </div>
@@ -262,11 +262,13 @@ tree.</p>
 <tr><td><code>.claude</code></td><td>Hidden</td></tr>
 <tr><td><code>.azureal</code></td><td>Hidden</td></tr>
 <tr><td><code>.DS_Store</code></td><td>Hidden</td></tr>
+<tr><td><code>target</code></td><td>Hidden</td></tr>
+<tr><td><code>node_modules</code></td><td>Hidden</td></tr>
 </tbody>
 </table>
 </div>
-<p>Each entry is a toggle. Checked entries are visible; unchecked entries are
-filtered out of the tree. Navigate the list with <code>j</code>/<code>k</code> and toggle with
+<p>Each entry is a “Hide” toggle. Checked entries are hidden from the tree;
+unchecked entries are visible. Navigate the list with <code>j</code>/<code>k</code> and toggle with
 <code>Space</code> or <code>Enter</code>. Press <code>Esc</code> or <code>O</code> again to close the overlay.</p>
 <h3 id="persistence"><a class="header" href="#persistence">Persistence</a></h3>
 <p>Filter settings are persisted to the project’s <code>azufig.toml</code> configuration

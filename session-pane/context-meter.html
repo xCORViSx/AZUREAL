@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -233,7 +233,7 @@ ensures the badge stays accurate without adding I/O overhead to the hot path.</p
 <hr>
 <h2 id="compaction-inactivity-watcher"><a class="header" href="#compaction-inactivity-watcher">Compaction Inactivity Watcher</a></h2>
 <p>When the context percentage reaches 90% or above, AZUREAL starts monitoring
-for inactivity. If no session events arrive for 20 seconds while the context
+for inactivity. If no session events arrive for 30 seconds while the context
 is at or above 90%, a yellow warning banner is injected into the conversation:</p>
 <pre><code class="language-text">       Session may be compacting...
 </code></pre>

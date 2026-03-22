@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -208,8 +208,6 @@ content area.</p>
 <tbody>
 <tr><td><code>t</code></td><td>Save current file to a new tab</td></tr>
 <tr><td><code>Alt+t</code></td><td>Open tab dialog</td></tr>
-<tr><td><code>[</code></td><td>Switch to previous tab</td></tr>
-<tr><td><code>]</code></td><td>Switch to next tab</td></tr>
 <tr><td><code>x</code></td><td>Close current tab</td></tr>
 </tbody>
 </table>
@@ -220,15 +218,9 @@ appears at the next available slot. If the file is already tabbed, no duplicate
 is created.</p>
 <h3 id="tab-dialog"><a class="header" href="#tab-dialog">Tab Dialog</a></h3>
 <p><code>Alt+t</code> opens a tab dialog overlay that shows all current tabs in a navigable
-list. You can select a tab from the dialog to switch to it, or manage tabs from
-within the overlay.</p>
-<h3 id="navigating-tabs"><a class="header" href="#navigating-tabs">Navigating Tabs</a></h3>
-<p><code>[</code> and <code>]</code> cycle through open tabs in order. Navigation wraps at both ends –
-pressing <code>]</code> on the last tab moves to the first, and pressing <code>[</code> on the first
-tab moves to the last.</p>
-<p>When you navigate to a tab, the Viewer loads that file’s content immediately.
-The file tree cursor does not move – tabs provide an independent navigation
-path from the tree.</p>
+list. Navigate with <code>j</code>/<code>k</code>, select with <code>Enter</code>, or jump directly to a tab
+with number keys <code>1</code>-<code>9</code>. You can also close tabs with <code>x</code> from within the
+dialog.</p>
 <h3 id="closing-tabs"><a class="header" href="#closing-tabs">Closing Tabs</a></h3>
 <p><code>x</code> closes the currently active tab. If the closed tab was the one being
 viewed, the Viewer switches to the next available tab. If no tabs remain, the

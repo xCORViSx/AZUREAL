@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -261,17 +261,16 @@ results in the vast majority of cases.</p>
 <p>Changes are saved immediately on close.</p>
 <hr>
 <h2 id="persistence"><a class="header" href="#persistence">Persistence</a></h2>
-<p>The auto-resolve file list is stored in <code>azufig.toml</code> under the <code>[git]</code>
-section:</p>
+<p>The auto-resolve file list is stored per-worktree in
+<code>&lt;worktree_path&gt;/.azureal/azufig.toml</code> under the <code>[git]</code> section. Each file is
+a separate key with an <code>auto-resolve/</code> prefix:</p>
 <pre><code class="language-toml">[git]
-auto_resolve_files = [
-    "AGENTS.md",
-    "CHANGELOG.md",
-    "README.md",
-    "CLAUDE.md",
-]
+"auto-resolve/AGENTS.md" = "true"
+"auto-resolve/CHANGELOG.md" = "true"
+"auto-resolve/README.md" = "true"
+"auto-resolve/CLAUDE.md" = "true"
 </code></pre>
-<p>This configuration is per-project, so different projects can have different
+<p>This configuration is per-worktree, so different worktrees can have different
 auto-resolve lists. Editing the TOML file directly has the same effect as using
 the settings overlay.</p>
 

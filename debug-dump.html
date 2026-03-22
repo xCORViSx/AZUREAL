@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -194,10 +194,13 @@ identifier (e.g., “broken-render”, “missing-tool-result”) and press
 closes. This ensures the dialog itself does not appear in the captured state.</li>
 </ol>
 <p>The output file is saved to:</p>
-<pre><code class="language-text">.azureal/debug-output-{name}.txt
+<pre><code class="language-text">.azureal/debug-output_{name}
 </code></pre>
 <p>For example, entering “broken-render” produces
-<code>.azureal/debug-output-broken-render.txt</code> in the project root.</p>
+<code>.azureal/debug-output_broken-render</code> in the project root. Entering an empty
+name produces <code>.azureal/debug-output</code>.</p>
+<p>The name is used directly in the filename, so short hyphenated identifiers are
+usually the easiest to search for and share.</p>
 <hr>
 <h2 id="contents"><a class="header" href="#contents">Contents</a></h2>
 <p>The dump file includes the following sections:</p>
@@ -245,7 +248,7 @@ Esc           Cancel
 <tr><th>Detail</th><th>Value</th></tr>
 </thead>
 <tbody>
-<tr><td>Output path</td><td><code>.azureal/debug-output-{name}.txt</code></td></tr>
+<tr><td>Output path</td><td><code>.azureal/debug-output_{name}</code> (no extension)</td></tr>
 <tr><td>Execution timing</td><td>Next frame after dialog close</td></tr>
 <tr><td>Obfuscation</td><td>Deterministic word replacement</td></tr>
 <tr><td>Preserved verbatim</td><td>Tool names, event types, parsing stats, structure</td></tr>

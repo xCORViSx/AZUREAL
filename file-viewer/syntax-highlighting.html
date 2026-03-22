@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-834b8180.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -184,7 +184,7 @@ highlighters, tree-sitter parses source code into a full abstract syntax tree
 multi-line strings, and language-specific edge cases.</p>
 <hr>
 <h2 id="supported-languages"><a class="header" href="#supported-languages">Supported Languages</a></h2>
-<p>Twenty-five language grammars are bundled:</p>
+<p>Twenty-four language grammars are bundled:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -192,15 +192,15 @@ multi-line strings, and language-specific edge cases.</p>
 </thead>
 <tbody>
 <tr><td>Rust</td><td><code>.rs</code></td></tr>
-<tr><td>Python</td><td><code>.py</code>, <code>.pyw</code></td></tr>
-<tr><td>JavaScript</td><td><code>.js</code>, <code>.mjs</code>, <code>.cjs</code></td></tr>
-<tr><td>TypeScript</td><td><code>.ts</code></td></tr>
+<tr><td>Python</td><td><code>.py</code>, <code>.pyw</code>, <code>.pyi</code></td></tr>
+<tr><td>JavaScript</td><td><code>.js</code>, <code>.mjs</code>, <code>.cjs</code>, <code>.jsx</code></td></tr>
+<tr><td>TypeScript</td><td><code>.ts</code>, <code>.mts</code>, <code>.cts</code></td></tr>
 <tr><td>TSX</td><td><code>.tsx</code></td></tr>
-<tr><td>JSON</td><td><code>.json</code></td></tr>
+<tr><td>JSON</td><td><code>.json</code>, <code>.jsonc</code></td></tr>
 <tr><td>TOML</td><td><code>.toml</code></td></tr>
-<tr><td>Bash</td><td><code>.sh</code>, <code>.bash</code></td></tr>
+<tr><td>Bash</td><td><code>.sh</code>, <code>.bash</code>, <code>.zsh</code></td></tr>
 <tr><td>C</td><td><code>.c</code>, <code>.h</code></td></tr>
-<tr><td>C++</td><td><code>.cpp</code>, <code>.hpp</code>, <code>.cc</code>, <code>.cxx</code></td></tr>
+<tr><td>C++</td><td><code>.cpp</code>, <code>.hpp</code>, <code>.cc</code>, <code>.cxx</code>, <code>.hxx</code>, <code>.hh</code></td></tr>
 <tr><td>Go</td><td><code>.go</code></td></tr>
 <tr><td>HTML</td><td><code>.html</code>, <code>.htm</code></td></tr>
 <tr><td>CSS</td><td><code>.css</code></td></tr>
@@ -209,7 +209,7 @@ multi-line strings, and language-specific edge cases.</p>
 <tr><td>Lua</td><td><code>.lua</code></td></tr>
 <tr><td>YAML</td><td><code>.yml</code>, <code>.yaml</code></td></tr>
 <tr><td>Markdown</td><td><code>.md</code>, <code>.markdown</code></td></tr>
-<tr><td>Scala</td><td><code>.scala</code></td></tr>
+<tr><td>Scala</td><td><code>.scala</code>, <code>.sc</code></td></tr>
 <tr><td>R</td><td><code>.r</code>, <code>.R</code></td></tr>
 <tr><td>Haskell</td><td><code>.hs</code></td></tr>
 <tr><td>PHP</td><td><code>.php</code></td></tr>
@@ -218,6 +218,8 @@ multi-line strings, and language-specific edge cases.</p>
 </tbody>
 </table>
 </div>
+<p>Perl is registered with an empty highlight query, so <code>.pl</code> and <code>.pm</code> files are
+recognized but rendered as plain text without syntax coloring.</p>
 <p>Files with unrecognized extensions are displayed as plain text without
 highlighting.</p>
 <hr>
@@ -242,35 +244,35 @@ colors:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Capture</th><th>Typical Color</th></tr>
+<tr><th>Capture</th><th>Color</th></tr>
 </thead>
 <tbody>
-<tr><td><code>keyword</code></td><td>Magenta / Purple</td></tr>
-<tr><td><code>string</code></td><td>Green</td></tr>
+<tr><td><code>attribute</code></td><td>Light blue / Lavender</td></tr>
 <tr><td><code>comment</code></td><td>Gray (dim)</td></tr>
+<tr><td><code>constant</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>constant.builtin</code></td><td>Yellow</td></tr>
+<tr><td><code>constructor</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>embedded</code></td><td>White</td></tr>
+<tr><td><code>escape</code></td><td>Magenta</td></tr>
 <tr><td><code>function</code></td><td>Blue</td></tr>
-<tr><td><code>type</code></td><td>Yellow</td></tr>
-<tr><td><code>variable</code></td><td>White</td></tr>
-<tr><td><code>constant</code></td><td>Orange</td></tr>
-<tr><td><code>number</code></td><td>Orange</td></tr>
+<tr><td><code>function.builtin</code></td><td>Blue</td></tr>
+<tr><td><code>function.method</code></td><td>Blue</td></tr>
+<tr><td><code>keyword</code></td><td>Magenta</td></tr>
+<tr><td><code>label</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>number</code></td><td>Yellow</td></tr>
 <tr><td><code>operator</code></td><td>White</td></tr>
-<tr><td><code>punctuation</code></td><td>Gray</td></tr>
-<tr><td><code>property</code></td><td>Cyan</td></tr>
-<tr><td><code>attribute</code></td><td>Yellow</td></tr>
-<tr><td><code>tag</code></td><td>Red</td></tr>
-<tr><td><code>namespace</code></td><td>Yellow</td></tr>
-<tr><td><code>label</code></td><td>Cyan</td></tr>
-<tr><td><code>boolean</code></td><td>Orange</td></tr>
-<tr><td><code>builtin</code></td><td>Cyan</td></tr>
-<tr><td><code>constructor</code></td><td>Yellow</td></tr>
-<tr><td><code>escape</code></td><td>Orange</td></tr>
-<tr><td><code>field</code></td><td>Cyan</td></tr>
-<tr><td><code>parameter</code></td><td>White (italic)</td></tr>
-<tr><td><code>include</code></td><td>Magenta</td></tr>
-<tr><td><code>conditional</code></td><td>Magenta</td></tr>
-<tr><td><code>repeat</code></td><td>Magenta</td></tr>
-<tr><td><code>exception</code></td><td>Magenta</td></tr>
-<tr><td><code>module</code></td><td>Yellow</td></tr>
+<tr><td><code>property</code></td><td>White</td></tr>
+<tr><td><code>punctuation</code></td><td>White</td></tr>
+<tr><td><code>punctuation.bracket</code></td><td>White</td></tr>
+<tr><td><code>punctuation.delimiter</code></td><td>White</td></tr>
+<tr><td><code>string</code></td><td>Green</td></tr>
+<tr><td><code>string.special</code></td><td>Green</td></tr>
+<tr><td><code>tag</code></td><td>AZURE (blue)</td></tr>
+<tr><td><code>type</code></td><td>Yellow</td></tr>
+<tr><td><code>type.builtin</code></td><td>Yellow</td></tr>
+<tr><td><code>variable</code></td><td>White</td></tr>
+<tr><td><code>variable.builtin</code></td><td>Magenta</td></tr>
+<tr><td><code>variable.parameter</code></td><td>Orange</td></tr>
 </tbody>
 </table>
 </div>
