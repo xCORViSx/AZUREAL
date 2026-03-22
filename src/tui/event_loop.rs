@@ -279,15 +279,15 @@ pub async fn run_app(
         }
 
         // Windows deferred-Enter timeout: if Enter was deferred and 30ms elapsed
-        // with no new characters (not a paste), fire the submit. We leave
-        // paste_deferred_enter as Some so handle_input_mode sees it and proceeds
-        // to submit instead of re-deferring.
+        // with no new characters (not a paste), fire the submit. Clear the defer
+        // and set paste_submit_now so the Enter handler skips deferral.
         #[cfg(target_os = "windows")]
         if let Some(t) = app.paste_deferred_enter {
             if t.elapsed() > Duration::from_millis(30) {
                 if app.prompt_mode && app.focus == Focus::Input {
-                    // Re-inject Enter — paste_deferred_enter is still Some, so
-                    // handle_input_mode will skip the defer and submit directly
+                    // Clear defer, signal direct submit to avoid re-deferral
+                    app.paste_deferred_enter = None;
+                    app.paste_submit_now = true;
                     let enter_key = crossterm::event::KeyEvent::new_with_kind(
                         KeyCode::Enter,
                         crossterm::event::KeyModifiers::NONE,

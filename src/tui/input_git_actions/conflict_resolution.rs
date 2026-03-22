@@ -165,12 +165,28 @@ fn spawn_conflict_claude(
     let display = crate::models::strip_branch_prefix(branch);
     let prompt = build_conflict_prompt(display, conflicted, auto_merged);
     let selected_model = app.selected_model.clone();
+    let session_name = format!("[RCR] {}", display);
+
+    // Create a dedicated store session for RCR
+    app.ensure_session_store();
+    let store_id = app.session_store.as_ref().and_then(|store| {
+        store.create_session(branch).ok().map(|id| {
+            let _ = store.rename_session(id, &session_name);
+            id
+        })
+    });
 
     match claude_process.spawn(wt_path, &prompt, None, selected_model.as_deref()) {
         Ok((rx, pid)) => {
             let slot = pid.to_string();
+            // Map PID to the store session so post-exit flow persists events correctly
+            if let Some(sid) = store_id {
+                app.pid_session_target
+                    .insert(slot.clone(), (sid, wt_path.to_path_buf(), 0, 0));
+                app.current_session_id = Some(sid);
+            }
             app.pending_session_names
-                .push((slot.clone(), format!("[RCR] {}", display)));
+                .push((slot.clone(), session_name.clone()));
             app.register_claude(branch.to_string(), pid, rx, None);
             app.rcr_session = Some(RcrSession {
                 branch: branch.to_string(),
@@ -182,7 +198,7 @@ fn spawn_conflict_claude(
                 approval_pending: false,
                 continue_with_merge,
             });
-            app.title_session_name = format!("[RCR] {}", display);
+            app.title_session_name = session_name;
             app.display_events.clear();
             app.session_lines.clear();
             app.session_buffer.clear();
@@ -196,6 +212,7 @@ fn spawn_conflict_claude(
             app.pending_tool_calls.clear();
             app.failed_tool_calls.clear();
             app.token_badge_cache = None;
+            app.chars_since_compaction = 0;
             app.current_todos.clear();
             app.subagent_todos.clear();
             app.active_task_tool_ids.clear();

@@ -241,21 +241,40 @@ impl App {
 
         self.health_panel = None;
 
+        // Ensure the SQLite session store exists so each DH file gets its own session
+        self.ensure_session_store();
+
         let selected_model = self.selected_model.clone();
         let mut spawned = 0usize;
         let mut failed = 0usize;
+        let mut last_session_id: Option<i64> = None;
         for (rel_path, documented, total) in &checked {
             let prompt = build_doc_health_prompt(rel_path, *documented, *total);
             let filename = Path::new(rel_path)
                 .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| rel_path.clone());
+            let session_name = format!("[DH] {}", filename);
+
+            // Create a dedicated store session for this DH file
+            let store_id = self.session_store.as_ref().and_then(|store| {
+                store.create_session(&branch).ok().map(|id| {
+                    let _ = store.rename_session(id, &session_name);
+                    id
+                })
+            });
 
             match claude_process.spawn(&wt_path, &prompt, None, selected_model.as_deref()) {
                 Ok((rx, pid)) => {
                     let slot = pid.to_string();
+                    // Map PID to the store session so post-exit flow persists events correctly
+                    if let Some(sid) = store_id {
+                        self.pid_session_target
+                            .insert(slot.clone(), (sid, wt_path.clone(), 0, 0));
+                        last_session_id = Some(sid);
+                    }
                     self.pending_session_names
-                        .push((slot, format!("[DH] {}", filename)));
+                        .push((slot, session_name));
                     self.register_claude(branch.clone(), pid, rx, selected_model.as_deref());
                     spawned += 1;
                 }
@@ -267,6 +286,10 @@ impl App {
 
         // Clear session pane so DH output starts fresh (same as GFM)
         if spawned > 0 {
+            // Point current_session_id to the last (active slot's) session
+            if let Some(sid) = last_session_id {
+                self.current_session_id = Some(sid);
+            }
             self.display_events.clear();
             self.session_lines.clear();
             self.session_buffer.clear();
@@ -293,6 +316,9 @@ impl App {
             self.current_todos.clear();
             self.subagent_todos.clear();
             self.active_task_tool_ids.clear();
+            self.chars_since_compaction = 0;
+            self.token_badge_cache = None;
+            self.update_title_session_name();
         }
 
         if failed == 0 {

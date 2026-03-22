@@ -1260,7 +1260,7 @@ When checked files include `.rs` or `.py`, pressing Enter/m shows a **module sty
 The choice is embedded in each file's modularization prompt. Languages without dual-style conventions (Go, Java, TypeScript, etc.) skip the dialog entirely. `Space` toggles between styles, `j/k` navigates between language rows (when both Rust and Python are checked), `Enter` confirms and spawns, `Esc` cancels back to the file list.
 
 *Parallel Modularization:*
-All checked files spawned simultaneously as concurrent agent processes on the current worktree. Each session named `[GFM] <filename>`. Model and backend derived from `selected_model` via `AgentProcess::spawn()` — respects the user's model switcher choice (Claude or Codex). Changes merge back to main via squash-merge.
+All checked files spawned simultaneously as concurrent agent processes on the current worktree. Each file gets its own dedicated SQLite store session (created via `ensure_session_store()` + `store.create_session()` + `store.rename_session()`) named `[GFM] <filename>`, with PID mapped via `pid_session_target` for proper post-exit event persistence. `current_session_id` points to the last (active slot's) session. Model and backend derived from `selected_model` via `AgentProcess::spawn()` — respects the user's model switcher choice (Claude or Codex). Changes merge back to main via squash-merge.
 
 **Documentation Tab:**
 Scans all source files for documentation coverage — counts documentable items (`fn`, `struct`, `enum`, `trait`, `const`, `static`, `type`, `impl`, `mod`) and checks whether each has a preceding `///` or `//!` doc comment. Line-based heuristic, no AST parsing.
@@ -1283,7 +1283,7 @@ Scans all source files for documentation coverage — counts documentable items 
 - `Esc` — close panel
 
 *[DH] Session Spawning:*
-Checked files spawn concurrent agent sessions on the current worktree, each prefixed `[DH] filename`. Model and backend derived from `selected_model` via `AgentProcess::spawn()` — respects the user's model switcher choice (Claude or Codex). The prompt instructs the agent to add `///` and `//!` doc comments to all undocumented items without modifying executable code. Shows current documented/total ratio so the agent knows the starting coverage. Changes merge back to main via squash-merge.
+Checked files spawn concurrent agent sessions on the current worktree. Each file gets its own dedicated SQLite store session (created via `ensure_session_store()` + `store.create_session()` + `store.rename_session()`) named `[DH] <filename>`, with PID mapped via `pid_session_target` for proper post-exit event persistence. `current_session_id` points to the last (active slot's) session. Model and backend derived from `selected_model` via `AgentProcess::spawn()` — respects the user's model switcher choice (Claude or Codex). The prompt instructs the agent to add `///` and `//!` doc comments to all undocumented items without modifying executable code. Shows current documented/total ratio so the agent knows the starting coverage. Changes merge back to main via squash-merge.
 
 *Auto-Refresh:*
 When the health panel is open, file changes in the worktree trigger an automatic rescan (debounced 500ms alongside file tree refresh). `health_refresh_pending` flag set on `WorktreeChanged` events when `health_panel.is_some()`. `refresh_health_panel()` rescans god files + documentation while preserving tab, cursor positions, scroll offsets, and checked states (matched by `rel_path`). Cursor clamped to new list bounds after rescan.
@@ -1415,13 +1415,15 @@ Input handled by `handle_conflict_overlay()` (intercepted before commit overlay 
 - `n` or `Esc` — calls `abort_rebase()` which runs `Git::rebase_abort()` on the worktree, pops the pre-rebase stash, calls `Git::cleanup_squash_merge_state()` on main, closes overlay, shows "Aborted" status
 
 `spawn_conflict_claude()` follows the GFM/DH streaming session pattern (NOT one-shot):
-1. Builds a rebase-specific prompt listing conflicted and auto-merged files with resolution instructions (read markers, edit files, `git add`, `git rebase --continue`, repeat if more conflicts, verify with `git status`)
-2. `AgentProcess::spawn(wt_path, &prompt, None, selected_model)` — spawns interactive agent session in the feature branch worktree (where the rebase is happening), model and backend from `selected_model` (respects the user's model switcher choice)
-3. `pending_session_names.push(("[RCR] <branch>", slot))` — names the session for display
-4. `register_claude(branch, pid, rx)` — registers under the feature branch name so output appears in the current view immediately
-5. Creates `RcrSession { branch, display_name, worktree_path, repo_root, slot_id, session_id: None, approval_pending: false, continue_with_merge }` → sets `app.rcr_session`
-6. Sets `app.title_session_name = "[RCR] <display>"` (locked — `update_title_session_name()` early-returns during RCR)
-7. Closes git panel, sets `focus = Focus::Session` so the user sees the session pane in RCR mode
+1. Creates a dedicated SQLite store session named `[RCR] <branch>` via `ensure_session_store()` + `store.create_session()` + `store.rename_session()`
+2. Builds a rebase-specific prompt listing conflicted and auto-merged files with resolution instructions (read markers, edit files, `git add`, `git rebase --continue`, repeat if more conflicts, verify with `git status`)
+3. `AgentProcess::spawn(wt_path, &prompt, None, selected_model)` — spawns interactive agent session in the feature branch worktree (where the rebase is happening), model and backend from `selected_model` (respects the user's model switcher choice)
+4. Maps PID to store session via `pid_session_target.insert(slot, (session_id, wt_path, 0, 0))` and sets `current_session_id`
+5. `pending_session_names.push(("[RCR] <branch>", slot))` — names the session for display
+6. `register_claude(branch, pid, rx)` — registers under the feature branch name so output appears in the current view immediately
+7. Creates `RcrSession { branch, display_name, worktree_path, repo_root, slot_id, session_id: None, approval_pending: false, continue_with_merge }` → sets `app.rcr_session`
+8. Sets `app.title_session_name = "[RCR] <display>"` (locked — `update_title_session_name()` early-returns during RCR)
+9. Closes git panel, sets `focus = Focus::Session` so the user sees the session pane in RCR mode
 
 **RCR (Rebase Conflict Resolution) mode:**
 When `spawn_conflict_claude()` activates RCR, the session pane switches to green-themed borders and titles. The user can send follow-up prompts to Claude during/after resolution — prompts are routed to `rcr.worktree_path` (feature branch worktree where the rebase is in progress) with `--resume rcr.session_id`. Each follow-up spawns a new Claude process; `rcr.slot_id` is updated to the new PID. When the RCR Claude process exits, `handle_claude_exited()` intercepts: sets `rcr.approval_pending = true`, skips the normal re-parse (preserving streaming output), and returns early. A green-bordered approval dialog renders over the session pane:

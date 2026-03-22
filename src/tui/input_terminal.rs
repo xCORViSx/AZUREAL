@@ -263,17 +263,17 @@ pub fn handle_input_mode(
         }
         (KeyModifiers::NONE, KeyCode::Enter) => {
             // Windows paste detection: defer Enter for ~30ms to see if characters
-            // follow (paste) or not (real submit). When the event loop fires the
-            // timeout, it re-injects Enter with paste_deferred_enter still set,
-            // so we skip this check and proceed directly to submit.
+            // follow (paste) or not (real submit). The event loop sets
+            // paste_submit_now when the timeout fires to bypass deferral.
             #[cfg(target_os = "windows")]
             {
-                if app.paste_deferred_enter.is_none() {
+                if app.paste_submit_now {
+                    // Event loop timeout fired — proceed directly to submit
+                    app.paste_submit_now = false;
+                } else if app.paste_deferred_enter.is_none() {
                     app.paste_deferred_enter = Some(std::time::Instant::now());
                     return Ok(());
                 }
-                // paste_deferred_enter is Some → event loop timeout fired, proceed to submit
-                app.paste_deferred_enter = None;
             }
 
             if !app.input.is_empty() {

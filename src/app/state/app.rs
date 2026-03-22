@@ -90,6 +90,11 @@ pub struct App {
     /// This is necessary because Windows Terminal delivers pasted newlines as
     /// individual Enter key events — there's no bracketed paste support.
     pub paste_deferred_enter: Option<std::time::Instant>,
+    /// Set by the event loop when the deferred Enter timeout fires. Tells the
+    /// Enter handler to skip deferral and submit immediately. Without this,
+    /// the re-injected Enter would be caught by the deferred resolution block
+    /// and treated as "another paste Enter" → infinite newline insertion.
+    pub paste_submit_now: bool,
     pub should_quit: bool,
     pub status_message: Option<String>,
     /// Claude event receivers keyed by slot_id (PID string). One per running process.
@@ -644,6 +649,7 @@ impl App {
             prompt_mode: false,
             paste_guard_until: std::time::Instant::now(),
             paste_deferred_enter: None,
+            paste_submit_now: false,
             should_quit: false,
             status_message: None,
             agent_receivers: HashMap::new(),
