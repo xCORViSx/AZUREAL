@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-834b8180.js";
+            window.path_to_searchindex_js = "../searchindex-9e62454d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -178,6 +178,78 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="main-branch-browse"><a class="header" href="#main-branch-browse">Main Branch Browse</a></h1>
+<p>The main branch (typically <code>main</code> or <code>master</code>) is the original repository
+checkout and always appears as the first tab in the tab row. While it is not a
+worktree in the <code>&lt;repo&gt;/worktrees/</code> sense, AZUREAL lets you browse and work on
+it with the same interface as any feature worktree.</p>
+<hr>
+<h2 id="entering-and-exiting"><a class="header" href="#entering-and-exiting">Entering and Exiting</a></h2>
+<p>Press <code>Shift+M</code> from any pane to enter main branch browse mode. The <code>[★ main]</code>
+tab highlights in <strong>yellow</strong> (distinct from the AZURE highlight used for feature
+worktrees) as a visual cue that you are working on the primary branch.</p>
+<p>To exit, press <code>Esc</code> or <code>Shift+M</code> again. AZUREAL restores your previous
+worktree selection and focus state.</p>
+<p><code>Shift+M</code> works globally – from the file tree, viewer, session pane, or input.
+It also works from inside the git panel, where clicking the <code>★ main</code> tab or
+pressing <code>Shift+M</code> opens the main branch’s git view.</p>
+<hr>
+<h2 id="full-functionality"><a class="header" href="#full-functionality">Full Functionality</a></h2>
+<p>Main browse is not a read-only mode. Everything works the same as it does on a
+feature worktree:</p>
+<ul>
+<li><strong>File tree</strong> shows the main branch’s working directory</li>
+<li><strong>Viewer</strong> opens and edits files on main</li>
+<li><strong>Terminal</strong> spawns a shell in the repository root</li>
+<li><strong>Sessions</strong> are fully functional – you can create sessions, send prompts,
+and run agents on main</li>
+<li><strong>Edit mode</strong> works normally for file editing</li>
+</ul>
+<p>The main worktree is stored separately from the feature worktrees vec
+(<code>app.main_worktree</code>), and <code>current_worktree()</code> transparently returns it when
+<code>browsing_main</code> is true. This means all code paths that operate on “the current
+worktree” work seamlessly on main.</p>
+<hr>
+<h2 id="git-panel-differences"><a class="header" href="#git-panel-differences">Git Panel Differences</a></h2>
+<p>The git panel (<code>Shift+G</code>) is context-aware and shows different actions depending
+on whether you are on main or a feature branch:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Main Branch</th><th>Feature Branch</th></tr>
+</thead>
+<tbody>
+<tr><td><code>l</code> Pull</td><td><code>m</code> Squash merge to main</td></tr>
+<tr><td><code>c</code> Commit</td><td><code>Shift+R</code> Rebase onto main</td></tr>
+<tr><td><code>Shift+P</code> Push</td><td><code>c</code> Commit</td></tr>
+<tr><td><code>z</code> Stash</td><td><code>Shift+P</code> Push</td></tr>
+<tr><td><code>Shift+Z</code> Stash pop</td><td><code>z</code> Stash</td></tr>
+<tr><td></td><td><code>Shift+Z</code> Stash pop</td></tr>
+</tbody>
+</table>
+</div>
+<p>Main does not offer squash merge or rebase (you cannot merge main into itself),
+and feature branches do not offer pull (pulling is done on main, then
+auto-rebase propagates changes to feature branches).</p>
+<p>The different action set and the yellow tab highlight serve as indirect cues that
+you are operating on the primary branch – there is no separate “main mode”
+overlay or banner.</p>
+<hr>
+<h2 id="interaction-with-tab-switching"><a class="header" href="#interaction-with-tab-switching">Interaction With Tab Switching</a></h2>
+<p>The <code>[</code> and <code>]</code> keys cycle through feature worktree tabs. When browsing main:</p>
+<ul>
+<li>Pressing <code>[</code> exits main browse and selects the <strong>last</strong> worktree</li>
+<li>Pressing <code>]</code> exits main browse and selects the <strong>first</strong> worktree</li>
+</ul>
+<p>This makes it easy to hop between main and your feature branches without
+reaching for <code>Shift+M</code>.</p>
+<hr>
+<h2 id="state-isolation"><a class="header" href="#state-isolation">State Isolation</a></h2>
+<p>Entering and exiting main browse saves and restores display events and terminal
+state, just like switching between feature worktrees. Your main branch session
+history, file tree expansion state, and terminal shell are all preserved
+independently from any feature worktree.</p>
+<p><code>switch_project()</code> clears main browse state, so switching projects always starts
+fresh.</p>
 
                     </main>
 

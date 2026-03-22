@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-834b8180.js";
+            window.path_to_searchindex_js = "../searchindex-9e62454d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -178,6 +178,71 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="creating-worktrees"><a class="header" href="#creating-worktrees">Creating Worktrees</a></h1>
+<p>Creating a worktree gives you a fully isolated working directory with its own
+branch, file tree, terminal, and agent sessions. Every worktree lives under
+<code>&lt;repo&gt;/worktrees/&lt;name&gt;</code> on a branch named <code>azureal/&lt;name&gt;</code>.</p>
+<hr>
+<h2 id="the-wn-leader-sequence"><a class="header" href="#the-wn-leader-sequence">The <code>Wn</code> Leader Sequence</a></h2>
+<p>Worktree creation uses a two-key leader sequence. Press <code>Shift+W</code> to enter
+leader mode (the status bar shows <code>W ...</code>), then press <code>n</code> to open the branch
+dialog. Press <code>Esc</code> at any point to cancel.</p>
+<p>This leader pattern keeps destructive worktree operations behind an intentional
+two-step keypress, preventing accidental triggers from normal typing.</p>
+<hr>
+<h2 id="the-branch-dialog"><a class="header" href="#the-branch-dialog">The Branch Dialog</a></h2>
+<p>The branch dialog is a centered overlay that lists all available branches in the
+repository. It has two purposes: creating a brand-new branch or checking out an
+existing one as a worktree.</p>
+<h3 id="layout"><a class="header" href="#layout">Layout</a></h3>
+<p>The first row is always <strong>“Create new”</strong>. Below it, every local and remote
+branch is listed. Each branch row shows:</p>
+<ul>
+<li>A <strong>checkmark</strong> if the branch is already checked out in an active worktree</li>
+<li>A <strong>worktree count</strong> showing how many worktrees (active + archived) use that
+branch</li>
+<li>The full branch name</li>
+</ul>
+<h3 id="filtering"><a class="header" href="#filtering">Filtering</a></h3>
+<p>Start typing to filter the branch list. The filter bar accepts git-safe
+characters (alphanumeric plus <code>-</code>, <code>_</code>, <code>.</code>, <code>+</code>, <code>@</code>, <code>/</code>, <code>!</code>). The list
+narrows in real time as you type. <code>Backspace</code> widens the filter, and
+<code>Left</code>/<code>Right</code> move the cursor within the filter text.</p>
+<h3 id="creating-a-new-branch"><a class="header" href="#creating-a-new-branch">Creating a New Branch</a></h3>
+<p>When the <strong>“Create new”</strong> row is selected (the default), type a name into the
+filter field and press <code>Enter</code>. AZUREAL will:</p>
+<ol>
+<li>Create a git worktree at <code>&lt;repo&gt;/worktrees/&lt;name&gt;</code></li>
+<li>Check it out on a new branch named <code>azureal/&lt;name&gt;</code></li>
+<li>Refresh the tab row and auto-select the new worktree</li>
+<li>Enable <strong>auto-rebase</strong> for the new worktree by default (persisted to
+<code>.azureal/azufig.toml</code>)</li>
+</ol>
+<p>The name you type becomes both the directory name and the branch suffix. For
+example, typing <code>auth-refactor</code> creates <code>worktrees/auth-refactor</code> on branch
+<code>azureal/auth-refactor</code>.</p>
+<p>If a worktree with that name already exists, creation fails with an error
+message in the status bar.</p>
+<h3 id="checking-out-an-existing-branch"><a class="header" href="#checking-out-an-existing-branch">Checking Out an Existing Branch</a></h3>
+<p>Navigate to an existing branch with <code>j</code>/<code>k</code> and press <code>Enter</code>. If the branch is
+already checked out in a worktree (shown by the checkmark), AZUREAL switches
+focus to that worktree instead of creating a duplicate. Otherwise, a new
+worktree is created from the selected branch.</p>
+<hr>
+<h2 id="what-happens-after-creation"><a class="header" href="#what-happens-after-creation">What Happens After Creation</a></h2>
+<p>Creation runs on a background thread so the UI stays responsive. A
+“Creating worktree…” loading indicator appears while git does its work. Once
+complete:</p>
+<ul>
+<li>The <strong>tab row</strong> gains a new tab for the worktree</li>
+<li>The new worktree is <strong>auto-selected</strong> and its file tree loads immediately</li>
+<li><strong>Auto-rebase</strong> is enabled by default, keeping the branch up to date with main
+(the green <code>R</code> indicator appears on the tab)</li>
+<li>No session is created yet – the SQLite session store is only populated when
+you send your first prompt or explicitly create a session via <code>a</code> in the
+Session pane</li>
+</ul>
+<p>From here, the worktree is a self-contained environment. You can open files in
+the viewer, start a terminal shell, or send a prompt to begin an agent session.</p>
 
                     </main>
 

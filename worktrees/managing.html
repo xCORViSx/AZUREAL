@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-834b8180.js";
+            window.path_to_searchindex_js = "../searchindex-9e62454d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -178,6 +178,121 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="managing-worktrees"><a class="header" href="#managing-worktrees">Managing Worktrees</a></h1>
+<p>Once a worktree exists, you can rename it, archive it for later, or delete it
+permanently. All management actions use the <code>W</code> leader sequence: press
+<code>Shift+W</code>, then the action key. The status bar shows <code>W ...</code> while waiting for
+the second keypress.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Sequence</th><th>Action</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Wn</code></td><td>New worktree</td></tr>
+<tr><td><code>Wr</code></td><td>Rename worktree</td></tr>
+<tr><td><code>Wa</code></td><td>Archive / unarchive worktree</td></tr>
+<tr><td><code>Wd</code></td><td>Delete worktree</td></tr>
+</tbody>
+</table>
+</div>
+<p>The main branch cannot be renamed, archived, or deleted.</p>
+<hr>
+<h2 id="renaming-wr"><a class="header" href="#renaming-wr">Renaming (<code>Wr</code>)</a></h2>
+<p>Renaming changes the git branch name and migrates all internal state. Press
+<code>Wr</code> to open a centered dialog with a cyan double border, pre-filled with the
+current branch suffix (without the <code>azureal/</code> prefix).</p>
+<h3 id="dialog-controls"><a class="header" href="#dialog-controls">Dialog Controls</a></h3>
+<ul>
+<li><strong>Type</strong> to edit the name. The cursor supports <code>Left</code>/<code>Right</code> movement,
+<code>Backspace</code>, and character insertion at the cursor position.</li>
+<li><strong>Enter</strong> confirms the rename.</li>
+<li><strong>Esc</strong> cancels.</li>
+</ul>
+<h3 id="what-happens-on-confirm"><a class="header" href="#what-happens-on-confirm">What Happens on Confirm</a></h3>
+<ol>
+<li>All branch-keyed state maps are migrated immediately on the main thread:
+session files, display events cache, branch slots, active slot, unread
+sessions, and auto-rebase configuration.</li>
+<li>The worktree entry’s branch name updates in-place.</li>
+<li>A background thread handles the git operations:
+<ul>
+<li><code>git branch -m &lt;old&gt; &lt;new&gt;</code> renames the local branch</li>
+<li>Pushes the new name to the remote</li>
+<li>Deletes the old remote branch</li>
+<li>Sets upstream tracking for the new name</li>
+</ul>
+</li>
+<li>The tab row refreshes with the updated name.</li>
+</ol>
+<p>The worktree directory on disk is not renamed – only the git branch changes.</p>
+<hr>
+<h2 id="archiving-wa"><a class="header" href="#archiving-wa">Archiving (<code>Wa</code>)</a></h2>
+<p>Archiving removes the worktree’s working directory from disk but preserves the
+git branch. This is useful for parking a feature branch you want to return to
+later without cluttering the filesystem.</p>
+<p>Press <code>Wa</code> on an active worktree to archive it. The operation runs on a
+background thread and shows an “Archiving worktree…” loading indicator.</p>
+<h3 id="visual-changes"><a class="header" href="#visual-changes">Visual Changes</a></h3>
+<p>Archived worktrees remain in the tab row but appear dimmed with a diamond prefix
+(<code>◇</code>) instead of the normal status circle. They cannot be opened or prompted
+until unarchived.</p>
+<p>Pressing <code>Enter</code> on an archived worktree’s session shows a status message
+directing you to unarchive first.</p>
+<h3 id="unarchiving"><a class="header" href="#unarchiving">Unarchiving</a></h3>
+<p>Press <code>Wa</code> again on an archived worktree to restore it. AZUREAL recreates the
+git worktree from the preserved branch. The “Unarchiving worktree…” loading
+indicator appears while the working directory is rebuilt.</p>
+<p>After unarchiving, the worktree returns to its normal state with full file tree,
+terminal, and session access. The tab icon reverts from <code>◇</code> back to the standard
+status circle.</p>
+<hr>
+<h2 id="deleting-wd"><a class="header" href="#deleting-wd">Deleting (<code>Wd</code>)</a></h2>
+<p>Deleting is permanent: it removes the worktree directory, deletes the local git
+branch, pushes a branch deletion to the remote, and prunes the local
+remote-tracking ref. All associated session state (session files, branch slots,
+active slot, unread sessions, auto-rebase config) is cleaned up.</p>
+<p>Press <code>Wd</code> to open a centered confirmation dialog with a red double border.</p>
+<h3 id="safety-warnings"><a class="header" href="#safety-warnings">Safety Warnings</a></h3>
+<p>Before showing the dialog, AZUREAL checks for potential data loss:</p>
+<ul>
+<li><strong>Uncommitted changes</strong>: runs <code>git status --porcelain</code> on the worktree path
+(skipped for archived worktrees that have no working directory)</li>
+<li><strong>Unmerged commits</strong>: runs <code>git log main..&lt;branch&gt; --oneline</code> to count
+commits not yet merged to main</li>
+</ul>
+<p>If either condition is found, yellow warning lines appear in the dialog between
+the question and the action keys:</p>
+<pre><code class="language-text">! 3 uncommitted changes
+! 2 commits not merged to main
+</code></pre>
+<p>These warnings are informational – they do not block deletion.</p>
+<h3 id="sole-worktree-dialog"><a class="header" href="#sole-worktree-dialog">Sole Worktree Dialog</a></h3>
+<p>When the worktree is the only one on its branch (the common case), the dialog
+shows a simple confirmation:</p>
+<ul>
+<li><code>y</code> or <code>Enter</code> – confirm deletion</li>
+<li><code>Esc</code> or any other key – cancel</li>
+</ul>
+<h3 id="sibling-guard-dialog"><a class="header" href="#sibling-guard-dialog">Sibling Guard Dialog</a></h3>
+<p>When multiple worktrees share the same branch (rare, but possible), git prevents
+branch deletion while any worktree is still checked out on it. The dialog
+adjusts to offer two choices:</p>
+<ul>
+<li><code>y</code> – delete <strong>all</strong> sibling worktrees on this branch and the branch itself</li>
+<li><code>a</code> – <strong>archive</strong> only the current worktree (keeps siblings and branch
+intact)</li>
+<li><code>Esc</code> or any other key – cancel</li>
+</ul>
+<h3 id="after-deletion"><a class="header" href="#after-deletion">After Deletion</a></h3>
+<p>The deletion runs on a background thread. Once complete, the tab row updates,
+and the selection moves to the nearest remaining worktree. If no worktrees
+remain, the welcome modal appears.</p>
+<hr>
+<h2 id="cross-machine-cleanup"><a class="header" href="#cross-machine-cleanup">Cross-Machine Cleanup</a></h2>
+<p>On startup and project switch, AZUREAL runs <code>git remote prune origin</code> followed
+by a cleanup pass that deletes local <code>azureal/*</code> branches which are fully merged
+to main and have no remote counterpart. This prevents worktrees deleted on one
+machine from appearing as archived on another.</p>
 
                     </main>
 

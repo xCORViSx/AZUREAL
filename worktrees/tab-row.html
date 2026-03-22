@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-834b8180.js";
+            window.path_to_searchindex_js = "../searchindex-9e62454d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -178,6 +178,112 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="worktree-tab-row"><a class="header" href="#worktree-tab-row">Worktree Tab Row</a></h1>
+<p>The tab row is a single horizontal bar at the top of the layout showing all
+worktrees as clickable tabs. It replaces the older sidebar design, giving more
+horizontal space to the three-pane layout below.</p>
+<hr>
+<h2 id="layout"><a class="header" href="#layout">Layout</a></h2>
+<p>The <code>[★ main]</code> tab is always first. Feature worktrees follow in the order they
+were discovered by <code>git worktree list</code>. Each tab shows a status icon prefix
+followed by the worktree’s display name (the branch suffix after <code>azureal/</code>).</p>
+<p>Tabs are separated by <code>│</code> dividers. The divider color is AZURE when the tab row
+has focus, dark gray otherwise.</p>
+<hr>
+<h2 id="status-icons"><a class="header" href="#status-icons">Status Icons</a></h2>
+<p>Every tab has a leading icon that communicates the worktree’s current state at a
+glance. Icons follow a strict priority order – the first matching condition
+wins:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Icon</th><th>Color</th><th>Condition</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>●</code></td><td>Green</td><td>Agent process is running</td><td>An active agent session is streaming</td></tr>
+<tr><td><code>◐</code></td><td>AZURE</td><td>Unread session finished</td><td>A session completed while you were viewing a different worktree</td></tr>
+<tr><td><code>◇</code></td><td>Dim gray</td><td>Worktree is archived</td><td>Working directory removed, branch preserved</td></tr>
+<tr><td><code>○</code></td><td>Gray</td><td>Default idle state</td><td>No agent running, nothing unread</td></tr>
+</tbody>
+</table>
+</div>
+<p>The running check (<code>●</code>) always takes priority. If an agent is actively streaming
+and the session also has unread events, you see the green filled circle, not the
+half-filled unread indicator.</p>
+<h3 id="unread-tracking"><a class="header" href="#unread-tracking">Unread Tracking</a></h3>
+<p>When any agent session finishes on a worktree you are not currently viewing, that
+worktree’s tab shows <code>◐</code> in AZURE. The unread indicator clears per-session when
+you view that specific session, and the branch-level <code>◐</code> disappears only when
+all unread sessions on the branch have been viewed. Unread state only clears
+when the session pane is visible (normal mode or after closing the git panel).</p>
+<hr>
+<h2 id="tab-styling"><a class="header" href="#tab-styling">Tab Styling</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>State</th><th>Foreground</th><th>Background</th><th>Modifier</th></tr>
+</thead>
+<tbody>
+<tr><td>Active feature worktree</td><td>White</td><td>AZURE (<code>#3399FF</code>)</td><td>Bold</td></tr>
+<tr><td>Active <code>★ main</code></td><td>Black</td><td>Yellow</td><td>Bold</td></tr>
+<tr><td>Running (not selected)</td><td>Green</td><td>–</td><td>–</td></tr>
+<tr><td>Unread (not selected)</td><td>AZURE</td><td>–</td><td>–</td></tr>
+<tr><td>Archived</td><td>Dim gray</td><td>–</td><td>–</td></tr>
+<tr><td>Inactive <code>★ main</code></td><td>Yellow</td><td>–</td><td>–</td></tr>
+<tr><td>Inactive feature worktree</td><td>Gray / Dark gray</td><td>–</td><td>–</td></tr>
+</tbody>
+</table>
+</div>
+<p>When the tab row itself has focus, inactive tabs use <code>Gray</code>; when another pane
+is focused, they use <code>DarkGray</code>.</p>
+<hr>
+<h2 id="navigation"><a class="header" href="#navigation">Navigation</a></h2>
+<h3 id="keyboard"><a class="header" href="#keyboard">Keyboard</a></h3>
+<ul>
+<li><code>[</code> / <code>]</code> – switch to the previous / next worktree tab. These keys are
+<strong>global</strong> and work from any pane (file tree, viewer, session, input,
+terminal). Navigation wraps around at both ends.</li>
+<li>When browsing main, <code>[</code> exits to the last worktree and <code>]</code> exits to the
+first.</li>
+</ul>
+<h3 id="mouse"><a class="header" href="#mouse">Mouse</a></h3>
+<p>Click any tab to select it. Click <code>★ main</code> to enter main browse mode. Tab
+hit-test regions are cached during each render for accurate click detection.</p>
+<hr>
+<h2 id="pagination"><a class="header" href="#pagination">Pagination</a></h2>
+<p>When tabs do not fit in the available width, they are packed into pages using a
+greedy algorithm. The page containing the active tab is always shown. A dim
+<code>N/M</code> indicator appears at the end of the row (e.g., <code>2/3</code> means page 2 of 3).</p>
+<p>Use <code>{</code> / <code>}</code> (in the git panel) to jump between pages. In normal mode, <code>[</code>
+and <code>]</code> cycle through worktrees and automatically advance the page when crossing
+a page boundary.</p>
+<hr>
+<h2 id="auto-rebase-indicator"><a class="header" href="#auto-rebase-indicator">Auto-Rebase Indicator</a></h2>
+<p>Worktrees with auto-rebase enabled show an <code>R</code> suffix after their tab label.
+The <code>R</code> is bold and color-coded to reflect the current rebase state:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Color</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td>Green</td><td>Auto-rebase enabled, idle</td></tr>
+<tr><td>Orange (GIT_ORANGE)</td><td>RCR (Rebase Conflict Resolution) actively running</td></tr>
+<tr><td>Blue</td><td>RCR complete, awaiting approval</td></tr>
+</tbody>
+</table>
+</div>
+<p>The indicator is rendered as a separate span after the tab label, so it does not
+interfere with the tab’s own styling. Its width (1 character) is included in the
+tab width calculation for pagination accuracy.</p>
+<p>Auto-rebase is enabled by default for newly created worktrees. Toggle it with
+<code>a</code> in the git panel’s actions section (feature branches only). The setting is
+persisted to <code>.azureal/azufig.toml</code>.</p>
+<hr>
+<h2 id="the-tab-row-is-not-focusable"><a class="header" href="#the-tab-row-is-not-focusable">The Tab Row Is Not Focusable</a></h2>
+<p>The tab row occupies a single row at the top of the layout and is not part of
+the <code>Tab</code>/<code>Shift+Tab</code> focus cycle. Focus cycles through <strong>FileTree -&gt; Viewer -&gt;
+Session -&gt; Input</strong>. The <code>[</code>/<code>]</code> global keys and mouse clicks are the only ways
+to interact with the tab row.</p>
 
                     </main>
 
