@@ -91,6 +91,52 @@ For the best experience, use a modern terminal emulator with true-color and mous
 
 A [Nerd Font](https://www.nerdfonts.com/) is recommended for file tree icons and full text styling. AZUREAL falls back to emoji icons when a Nerd Font is not detected.
 
+### Recommended Color Schemes
+
+AZUREAL's AZURE (`#3399FF`) accent and dark-background design pairs well with cool-toned terminal themes. These two schemes have been tested extensively:
+
+**Windows Terminal — Winter is Coming (Dark Blue)**
+
+Add to your `settings.json` under `"schemes"`:
+
+```json
+{
+    "background": "#011627",
+    "black": "#011627",
+    "blue": "#2472C8",
+    "brightBlack": "#666666",
+    "brightBlue": "#3B8EEA",
+    "brightCyan": "#29B8DB",
+    "brightGreen": "#23D18B",
+    "brightPurple": "#D670D6",
+    "brightRed": "#F14C4C",
+    "brightWhite": "#E5E5E5",
+    "brightYellow": "#F5F543",
+    "cursorColor": "#FFFFFF",
+    "cyan": "#11A8CD",
+    "foreground": "#CCCCCC",
+    "green": "#0DBC79",
+    "name": "Winter is Coming (Dark Blue)",
+    "purple": "#BC3FBC",
+    "red": "#CD3131",
+    "selectionBackground": "#FFFFFF",
+    "white": "#E5E5E5",
+    "yellow": "#E5E510"
+}
+```
+
+Then set `"colorScheme": "Winter is Coming (Dark Blue)"` in your profile.
+
+**Kitty — Copland OS**
+
+Copland OS is a built-in Kitty theme. Apply it with:
+
+```bash
+kitty +kitten themes Copland OS
+```
+
+Or add `include themes/Copland_OS.conf` to your `kitty.conf`.
+
 ## Requirements
 
 - **Rust** (latest stable) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
