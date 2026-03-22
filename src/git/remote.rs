@@ -88,9 +88,12 @@ impl Git {
             })
             .unwrap_or(false);
 
-        if !diverged {
-            // Normal case: pull --rebase first to integrate remote changes.
-            // Non-fatal: if offline or no upstream yet, skip silently and let push create it.
+        // Only pull --rebase before push on main/master. Feature branches are
+        // kept up to date via the auto-rebase system, and pulling on a feature
+        // branch whose remote was already squash-merged corrupts HEAD state
+        // (replays already-merged commits onto the squashed main).
+        let is_main = branch_name == "main" || branch_name == "master";
+        if !diverged && is_main {
             let pull = Command::new("git")
                 .args(["pull", "--rebase", "origin", &branch_name])
                 .current_dir(worktree_path)
