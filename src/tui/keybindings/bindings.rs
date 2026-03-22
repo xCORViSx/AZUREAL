@@ -329,8 +329,8 @@ pub static GLOBAL: [Keybinding; 18] = [
 /// The action keys below are the THIRD keystroke in the sequence.
 pub static WORKTREES: [Keybinding; 4] = [
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('a')),
-        "Add worktree",
+        KeyCombo::plain(KeyCode::Char('n')),
+        "New worktree",
         Action::AddWorktree,
     ),
     Keybinding::new(
@@ -339,7 +339,7 @@ pub static WORKTREES: [Keybinding; 4] = [
         Action::RenameWorktree,
     ),
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('x')),
+        KeyCombo::plain(KeyCode::Char('a')),
         "Archive worktree",
         Action::ToggleArchiveWorktree,
     ),

@@ -52,9 +52,9 @@ key mechanism.
 
 | Key | Action |
 |-----|--------|
-| `Wa` / `a` | Create new worktree |
+| `Wn` / `n` | Create new worktree |
 | `Wr` / `r` | Rename worktree |
-| `Wx` / `x` | Archive or unarchive worktree (toggles based on current state) |
+| `Wa` / `a` | Archive or unarchive worktree (toggles based on current state) |
 | `Wd` / `d` | Delete worktree |
 
 ---

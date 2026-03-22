@@ -76,7 +76,7 @@ Each worktree provides true branch isolation:
 - Has its own working directory
 - Can have different uncommitted changes
 - Operates on a separate branch from main
-- **Archiving** removes the worktree directory but preserves the git branch (`⌘a` key). Archived worktrees show as `◇` (diamond) with dimmed text in the tab row.
+- **Archiving** removes the worktree directory but preserves the git branch (`Wa` leader sequence). Archived worktrees show as `◇` (diamond) with dimmed text in the tab row.
 - **Unarchiving** recreates the worktree from the preserved branch (`u` key). `Enter` on an archived session shows a status message directing the user to press `u` first.
 - **Deleting** removes the worktree directory AND deletes the git branch permanently — both local and remote (`Wd` leader sequence). Opens a centered dialog box with red double-border. **Safety warnings:** before showing the dialog, runs `git status --porcelain` on the worktree path (skipped for archived) and `git log main..branch --oneline` from the repo root. If uncommitted changes or unmerged commits are found, yellow `! N uncommitted change(s)` / `! N commit(s) not merged to main` warning lines appear in the dialog between the question and the action keys. Does not block deletion — just warns. **Sibling guard:** if other worktrees share the same branch, the dialog offers to delete all siblings + branch (`y`) or archive the current worktree only (`a`) — git prevents branch deletion while worktrees are checked out. Sole worktrees show a simple y/Esc confirmation. State: `delete_worktree_dialog: Option<DeleteWorktreeDialog>` enum with `Sole { name, warnings }` and `Siblings { branch, sibling_indices, count, warnings }` variants. Also cleans up auto-rebase config and all session state maps (`session_files`, `session_selected_file_idx`, `claude_session_ids`, `branch_slots`, `active_slot`, `running_sessions`, `claude_receivers`, `claude_exit_codes`, `unread_sessions`) for the deleted branch. `delete_branch()` deletes local branch, pushes `--delete` to remote, and prunes the local remote-tracking ref (`origin/<branch>`) so stale refs don't appear in branch dialogs.
 - **Renaming** changes the git branch name and migrates all keyed app state (`Wr` leader sequence). Opens a centered dialog box with cyan double-border, pre-filled with the current branch suffix (without the `azureal/` prefix). Text input supports cursor movement (Left/Right), Backspace, and character insertion at cursor. Enter confirms, Esc cancels. On confirm: spawns a background thread that runs `git branch -m old new`, pushes the new name to remote, deletes the old remote branch, and sets upstream tracking. All branch-keyed state maps are migrated on the main thread before the background op: `session_files`, `session_selected_file_idx`, `live_display_events_cache`, `branch_slots`, `active_slot`, `unread_sessions`, `auto_rebase_enabled`. The worktree entry's `branch_name` is updated in-place. Cannot rename main branch. State: `rename_worktree_dialog: Option<RenameWorktreeDialog>` struct with `old_name`, `input`, `cursor` fields. Background op sends `BackgroundOpOutcome::Renamed { new_branch }` — handler refreshes worktrees and re-selects the renamed branch.
@@ -1163,7 +1163,7 @@ Implementation: `render_ask_user_question()` in `src/tui/render_events.rs`, `bui
 
 ### Worktree Tab Row
 
-The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse. `[`/`]` switch tabs globally from any pane. The tab row is not focusable — `Tab`/`Shift+Tab` cycle through FileTree → Viewer → Session → Input. Worktree actions (`w` add, `⌘a` archive, `⌘d` delete) are global keybindings.
+The worktree sidebar was replaced by a horizontal tab row at the top of the normal mode layout. `[★ main]` tab is always first; clicking it or pressing `Shift+M` toggles main branch browse. `[`/`]` switch tabs globally from any pane. The tab row is not focusable — `Tab`/`Shift+Tab` cycle through FileTree → Viewer → Session → Input. Worktree actions (`Wn` new, `Wa` archive, `Wd` delete) are global keybindings.
 
 **Tab styling:** Active tab uses AZURE bg + white fg + bold; `[M]` active uses yellow bg + black fg + bold; archived tabs use dim gray with `◇` prefix; unread tabs (session finished while viewing another worktree) use AZURE fg with `◐` prefix; inactive tabs use gray with status symbol prefix. No leading space before icons — trailing space only for separator padding. Auto-rebase indicator `R` (bold, color-coded) appended after label with +1 char width. Pagination via greedy tab packing with `N/M` page indicator.
 
@@ -2041,9 +2041,9 @@ Destructive worktree actions are behind a two-key leader sequence: press `Shift+
 
 | Key | Action |
 |-----|--------|
-| `Wa` | Add worktree (open branch dialog) |
+| `Wn` | New worktree (open branch dialog) |
 | `Wr` | Rename worktree (branch rename dialog) |
-| `Wx` | Archive worktree |
+| `Wa` | Archive worktree |
 | `Wd` | Delete worktree |
 
 ### FileTree Pane

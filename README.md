@@ -165,9 +165,9 @@ azureal
 
 | Key | Action |
 |-----|--------|
-| `Wa` | New worktree |
+| `Wn` | New worktree |
 | `Wr` | Rename worktree |
-| `Wx` | Archive worktree |
+| `Wa` | Archive worktree |
 | `Wd` | Delete worktree |
 
 **Input modes** are indicated by the input box border color:

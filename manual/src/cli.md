@@ -52,7 +52,7 @@ row and can be restored later.
 azureal session archive my-feature
 ```
 
-This is equivalent to pressing `Wx` or `x` (with the worktree focused) inside
+This is equivalent to pressing `Wa` or `a` (with the worktree focused) inside
 the TUI. The branch `azureal/my-feature` remains in the local repository and
 can be pushed to a remote as usual.
 

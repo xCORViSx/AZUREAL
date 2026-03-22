@@ -19,12 +19,12 @@ If you press `W` and then change your mind, press `Esc` to cancel the sequence a
 
 | Sequence | Action |
 |----------|--------|
-| `W` then `a` | Create a new worktree |
+| `W` then `n` | Create a new worktree |
 | `W` then `r` | Rename the active worktree |
-| `W` then `x` | Archive the active worktree |
+| `W` then `a` | Archive the active worktree |
 | `W` then `d` | Delete a worktree |
 
-### Create (Wa)
+### Create (Wn)
 
 Opens the worktree creation dialog. You provide a branch name, and AZUREAL creates a new git worktree with that branch, adds it to the tab row, and switches to it.
 
@@ -32,7 +32,7 @@ Opens the worktree creation dialog. You provide a branch name, and AZUREAL creat
 
 Opens a rename prompt for the active worktree's display label. The underlying git branch is not renamed -- this only changes the label shown in the tab row.
 
-### Archive (Wx)
+### Archive (Wa)
 
 Archives the active worktree. Archived worktrees are removed from the tab row but not deleted from disk. They can be restored from the worktree management interface.
 

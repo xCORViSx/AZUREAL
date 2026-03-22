@@ -750,11 +750,11 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn worktrees_focus_resolves_add() {
-        // Direct press 'a' on Worktrees pane → AddWorktree
+    fn worktrees_focus_resolves_new() {
+        // Direct press 'n' on Worktrees pane → AddWorktree
         let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('a')),
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('n')),
             Some(Action::AddWorktree)
         );
     }
@@ -763,7 +763,7 @@ mod tests {
     fn worktrees_focus_resolves_archive() {
         let ctx = cmd_ctx(Focus::Worktrees);
         assert_eq!(
-            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('x')),
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('a')),
             Some(Action::ToggleArchiveWorktree)
         );
     }
@@ -1942,17 +1942,17 @@ mod tests {
     }
 
     #[test]
-    fn leader_a_adds_worktree() {
+    fn leader_n_adds_worktree() {
         assert_eq!(
-            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('a')),
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('n')),
             Some(Action::AddWorktree)
         );
     }
 
     #[test]
-    fn leader_x_archives_worktree() {
+    fn leader_a_archives_worktree() {
         assert_eq!(
-            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('x')),
+            lookup_leader_action(KeyModifiers::NONE, KeyCode::Char('a')),
             Some(Action::ToggleArchiveWorktree)
         );
     }

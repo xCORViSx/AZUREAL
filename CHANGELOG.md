@@ -5,6 +5,7 @@ All notable changes to Azureal will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- **Worktree leader keybindings renamed** — `Wa` (add) → `Wn` (new), `Wx` (archive) → `Wa` (archive). More intuitive: `n` for "new", `a` for "archive". Modified: `src/tui/keybindings/bindings.rs`, `src/tui/keybindings/lookup.rs`.
 - **FileTree `target` and `node_modules` are now configurable** — Previously, `target/` (Rust build artifacts) and `node_modules/` were always hidden from the file tree. They are now configurable options in the FileTree Options overlay (`O` key), hidden by default. Users can toggle them on or off alongside the existing options (`.git`, `.claude`, `.azureal`, `.DS_Store`, `worktrees`). Modified: `src/app/state/helpers.rs`, `src/azufig.rs`, `src/tui/draw_file_tree.rs`.
 
 ### Fixed
