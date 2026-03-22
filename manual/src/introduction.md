@@ -48,7 +48,7 @@ A full shell per worktree with color support, click-to-position cursor, word nav
 
 ### Git Panel
 
-A dedicated overlay for the full git workflow: staging, committing with AI-generated messages, squash merging, rebasing, conflict resolution with Claude-assisted RCR (Recursive Conflict Resolution), and pull/push operations.
+A dedicated overlay for the full git workflow: staging, committing with AI-generated messages, squash merging, rebasing, conflict resolution with Claude-assisted RCR (Rebase Conflict Resolution), and pull/push operations.
 
 ### Health Panel
 
