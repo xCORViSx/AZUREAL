@@ -174,7 +174,7 @@ impl App {
                 .or_else(|| self.current_worktree().and_then(|wt| wt.worktree_path.clone()));
             if let Some(wt) = wt_path {
                 if let Some(p) = crate::config::session_file(&wt, uuid) {
-                    let _ = std::fs::remove_file(&p);
+                    crate::config::remove_session_file(&p);
                     if self.session_file_path.as_ref() == Some(&p) {
                         self.session_file_path = None;
                         self.session_file_dirty = false;

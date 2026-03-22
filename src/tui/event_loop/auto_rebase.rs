@@ -46,11 +46,11 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
         .as_ref()
         .map(|p| p.worktree_name.clone());
 
-    let ar_files = crate::azufig::load_auto_resolve_files(&project.path);
     let mut rebased: Vec<String> = Vec::new();
     let mut changed = false;
 
     for (branch, wt_path) in candidates {
+        let ar_files = crate::azufig::load_auto_resolve_files(&wt_path);
         // Skip the worktree whose git panel is currently open
         if git_panel_branch.as_ref() == Some(&branch) {
             continue;

@@ -113,9 +113,9 @@ impl App {
         };
 
         if events.is_empty() {
-            // Still delete the JSONL even if no events to store
+            // Still delete the JSONL (and companion dir) even if no events to store
             if let Some(p) = jsonl_path.filter(|p| p.exists()) {
-                let _ = std::fs::remove_file(&p);
+                crate::config::remove_session_file(&p);
             }
             return;
         }
@@ -170,10 +170,10 @@ impl App {
             // Clear the persisted UUID — ingestion complete, no recovery needed
             let _ = store.clear_session_uuid(session_id);
 
-            // Source JSONL ingested — delete the original file
+            // Source JSONL ingested — delete the original file and companion dir
             if let Some(ref p) = jsonl_path {
                 if p.exists() {
-                    let _ = std::fs::remove_file(p);
+                    crate::config::remove_session_file(p);
                 }
                 // Clear JSONL tracking so poll_session_file doesn't try to read the deleted file
                 if self.session_file_path.as_ref() == Some(p) {
@@ -266,8 +266,8 @@ impl App {
                 return;
             }
             if store.append_events(session_id, &events).is_ok() {
-                // Source JSONL ingested — delete the original file
-                let _ = std::fs::remove_file(&jsonl_path);
+                // Source JSONL ingested — delete the original file and companion dir
+                crate::config::remove_session_file(&jsonl_path);
             }
         }
     }

@@ -54,7 +54,7 @@ fn take_rcr_session(app: &mut App) -> Option<RcrSession> {
 fn cleanup_rcr_session_file(rcr: &RcrSession) {
     if let Some(ref sid) = rcr.session_id {
         if let Some(path) = crate::config::session_file(&rcr.worktree_path, sid) {
-            let _ = std::fs::remove_file(path);
+            crate::config::remove_session_file(&path);
         }
     }
 }

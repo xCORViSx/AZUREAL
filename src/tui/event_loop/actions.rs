@@ -197,21 +197,15 @@ pub fn handle_key_event(
                         all_indices.dedup();
                         all_indices.reverse();
                         // Gather paths for background removal
-                        let mut wt_paths = Vec::new();
                         let project = app.project.clone();
-                        if let Some(ref project) = project {
-                            for &idx in &all_indices {
-                                if let Some(wt) = app.worktrees.get(idx) {
-                                    if let Some(ref wt_path) = wt.worktree_path {
-                                        wt_paths.push(wt_path.clone());
-                                    }
-                                    app.auto_rebase_enabled.remove(&wt.branch_name);
-                                    crate::azufig::set_auto_rebase(
-                                        &project.path,
-                                        &wt.branch_name,
-                                        false,
-                                    );
+                        let mut wt_paths = Vec::new();
+                        for &idx in &all_indices {
+                            if let Some(wt) = app.worktrees.get(idx) {
+                                if let Some(ref wt_path) = wt.worktree_path {
+                                    wt_paths.push(wt_path.clone());
+                                    crate::azufig::set_auto_rebase(wt_path, false);
                                 }
+                                app.auto_rebase_enabled.remove(&wt.branch_name);
                             }
                         }
                         // Clean up state immediately (fast)
@@ -328,7 +322,7 @@ pub fn handle_key_event(
                         // Archive — remove worktree, keep branch
                         if let Some(project) = &app.project {
                             app.auto_rebase_enabled.remove(&d.branch);
-                            crate::azufig::set_auto_rebase(&project.path, &d.branch, false);
+                            crate::azufig::set_auto_rebase(&d.worktree_path, false);
                             let project_path = project.path.clone();
                             let wt_path = d.worktree_path.clone();
                             let (tx, rx) = mpsc::channel();
@@ -353,10 +347,8 @@ pub fn handle_key_event(
                     }
                     2 => {
                         // Delete — remove worktree + delete branch
-                        if let Some(project) = &app.project {
-                            app.auto_rebase_enabled.remove(&d.branch);
-                            crate::azufig::set_auto_rebase(&project.path, &d.branch, false);
-                        }
+                        app.auto_rebase_enabled.remove(&d.branch);
+                        crate::azufig::set_auto_rebase(&d.worktree_path, false);
                         // Clean up stale session state immediately
                         app.session_files.remove(&d.branch);
                         app.session_selected_file_idx.remove(&d.branch);

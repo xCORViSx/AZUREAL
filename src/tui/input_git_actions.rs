@@ -306,14 +306,14 @@ pub fn handle_git_actions_input(
         Action::GitAutoRebase => {
             if let Some(ref p) = app.git_actions_panel {
                 let branch = p.worktree_name.clone();
-                let repo_root = p.repo_root.clone();
+                let wt_path = p.worktree_path.clone();
                 let enabled = !app.auto_rebase_enabled.contains(&branch);
                 if enabled {
                     app.auto_rebase_enabled.insert(branch.clone());
                 } else {
                     app.auto_rebase_enabled.remove(&branch);
                 }
-                crate::azufig::set_auto_rebase(&repo_root, &branch, enabled);
+                crate::azufig::set_auto_rebase(&wt_path, enabled);
                 app.invalidate_sidebar();
                 if let Some(ref mut p) = app.git_actions_panel {
                     p.result_message = Some((

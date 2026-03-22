@@ -178,8 +178,11 @@ pub fn poll_background_ops(app: &mut App) -> bool {
                     app.load_session_output();
                 }
                 // Enable auto-rebase by default for new worktrees
-                if let Some(ref project) = app.project {
-                    crate::azufig::set_auto_rebase(&project.path, &branch, true);
+                if let Some(wt_path) = app.worktrees.iter()
+                    .find(|wt| wt.branch_name == branch)
+                    .and_then(|wt| wt.worktree_path.as_ref())
+                {
+                    crate::azufig::set_auto_rebase(wt_path, true);
                     app.auto_rebase_enabled.insert(branch.clone());
                 }
             }

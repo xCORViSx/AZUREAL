@@ -190,6 +190,19 @@ pub fn claude_session_file(project_path: &std::path::Path, session_id: &str) -> 
     }
 }
 
+/// Delete a Claude session JSONL file AND its companion UUID directory.
+/// Claude Code creates `{uuid}/` directories alongside `{uuid}.jsonl` files,
+/// containing `subagents/` and `tool-results/` subdirectories. When we ingest
+/// the JSONL into our SQLite store, both the file and directory must be cleaned up.
+pub fn remove_session_file(jsonl_path: &std::path::Path) {
+    let _ = std::fs::remove_file(jsonl_path);
+    // Companion directory: same path without the .jsonl extension
+    let companion_dir = jsonl_path.with_extension("");
+    if companion_dir.is_dir() {
+        let _ = std::fs::remove_dir_all(&companion_dir);
+    }
+}
+
 /// Get Claude's project directory for a given worktree path
 pub fn claude_project_dir(worktree_path: &std::path::Path) -> Option<PathBuf> {
     let home = dirs::home_dir()?;

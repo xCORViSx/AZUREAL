@@ -155,7 +155,7 @@ impl App {
             )
             .collect();
 
-        let auto_resolve_files = crate::azufig::load_auto_resolve_files(&repo_root);
+        let auto_resolve_files = crate::azufig::load_auto_resolve_files(&wt_path);
         let (commits_behind_main, commits_ahead_main) = if is_on_main {
             (0, 0)
         } else {

@@ -168,40 +168,50 @@ pub fn update_project_azufig(project_root: &Path, f: impl FnOnce(&mut ProjectAzu
     save_project_azufig(project_root, &azufig);
 }
 
-// ── Auto-rebase helpers ──
+// ── Auto-rebase helpers (worktree-level) ──
 
-/// Enable or disable auto-rebase for a branch in the project-local azufig.
-pub fn set_auto_rebase(project_root: &Path, branch: &str, enabled: bool) {
-    let key = format!("auto-rebase/{}", branch);
-    update_project_azufig(project_root, |azufig| {
+/// Check if auto-rebase is enabled for a worktree.
+/// Reads from `<worktree_path>/.azureal/azufig.toml` `[git]` section.
+pub fn is_worktree_auto_rebase(wt_path: &Path) -> bool {
+    let azufig = load_project_azufig(wt_path);
+    azufig.git.get("auto-rebase").map(|v| v == "true").unwrap_or(false)
+}
+
+/// Enable or disable auto-rebase for a worktree.
+/// Saves to `<worktree_path>/.azureal/azufig.toml` `[git]` section.
+pub fn set_auto_rebase(wt_path: &Path, enabled: bool) {
+    update_project_azufig(wt_path, |azufig| {
         if enabled {
-            azufig.git.insert(key, "true".to_string());
+            azufig.git.insert("auto-rebase".to_string(), "true".to_string());
         } else {
-            azufig.git.remove(&key);
+            azufig.git.remove("auto-rebase");
         }
     });
 }
 
-/// Load all branches with auto-rebase enabled from the project-local azufig.
-pub fn load_auto_rebase_branches(project_root: &Path) -> std::collections::HashSet<String> {
-    let azufig = load_project_azufig(project_root);
-    azufig
-        .git
+/// Scan all worktrees and return the set of branch names with auto-rebase enabled.
+pub fn load_auto_rebase_from_worktrees(worktrees: &[crate::models::Worktree]) -> std::collections::HashSet<String> {
+    worktrees
         .iter()
-        .filter(|(k, v)| k.starts_with("auto-rebase/") && v == &"true")
-        .map(|(k, _)| k.strip_prefix("auto-rebase/").unwrap().to_string())
+        .filter(|wt| {
+            wt.worktree_path
+                .as_ref()
+                .map(|p| is_worktree_auto_rebase(p))
+                .unwrap_or(false)
+        })
+        .map(|wt| wt.branch_name.clone())
         .collect()
 }
 
-// ── Auto-resolve file helpers ──
+// ── Auto-resolve file helpers (worktree-level) ──
 
 /// Default files that are auto-resolved during rebase via union merge.
 const DEFAULT_AUTO_RESOLVE: &[&str] = &["AGENTS.md", "CHANGELOG.md", "README.md", "CLAUDE.md"];
 
-/// Load the auto-resolve file list from the project-local azufig.
+/// Load the auto-resolve file list from a worktree's azufig.
 /// Returns the default list when no config exists yet.
-pub fn load_auto_resolve_files(project_root: &Path) -> Vec<String> {
-    let azufig = load_project_azufig(project_root);
+pub fn load_auto_resolve_files(wt_path: &Path) -> Vec<String> {
+    let azufig = load_project_azufig(wt_path);
     let files: Vec<String> = azufig
         .git
         .iter()
@@ -215,9 +225,9 @@ pub fn load_auto_resolve_files(project_root: &Path) -> Vec<String> {
     }
 }
 
-/// Save the auto-resolve file list to the project-local azufig.
-pub fn save_auto_resolve_files(project_root: &Path, files: &[String]) {
-    update_project_azufig(project_root, |azufig| {
+/// Save the auto-resolve file list to a worktree's azufig.
+pub fn save_auto_resolve_files(wt_path: &Path, files: &[String]) {
+    update_project_azufig(wt_path, |azufig| {
         azufig.git.retain(|k, _| !k.starts_with("auto-resolve/"));
         for file in files {
             azufig

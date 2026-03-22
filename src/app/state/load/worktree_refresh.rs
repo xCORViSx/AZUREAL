@@ -200,8 +200,8 @@ impl App {
         let az = crate::azufig::load_project_azufig(&repo_root);
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
-        // Load auto-rebase enabled branches from project azufig
-        self.auto_rebase_enabled = crate::azufig::load_auto_rebase_branches(&repo_root);
+        // Load auto-rebase enabled branches from each worktree's azufig
+        self.auto_rebase_enabled = crate::azufig::load_auto_rebase_from_worktrees(&self.worktrees);
 
         // Untrack any files that match .gitignore but are still in the index
         // (e.g. .DS_Store committed before gitignore was added).

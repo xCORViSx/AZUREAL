@@ -127,12 +127,12 @@ impl App {
                     .collect();
 
                 if store.append_events(*session_id, &events).is_ok() {
-                    let _ = std::fs::remove_file(&jsonl_path);
+                    crate::config::remove_session_file(&jsonl_path);
                     let _ = store.clear_session_uuid(*session_id);
                 }
             } else {
                 // Empty JSONL — just clean up
-                let _ = std::fs::remove_file(&jsonl_path);
+                crate::config::remove_session_file(&jsonl_path);
                 let _ = store.clear_session_uuid(*session_id);
             }
         }
@@ -313,7 +313,9 @@ impl App {
 
         // Clean up auto-rebase config (fast, can stay on main thread)
         self.auto_rebase_enabled.remove(&branch);
-        crate::azufig::set_auto_rebase(&project_path, &branch, false);
+        if let Some(ref p) = wt_path {
+            crate::azufig::set_auto_rebase(p, false);
+        }
         // Clean up stale session state immediately
         self.session_files.remove(&branch);
         self.session_selected_file_idx.remove(&branch);
@@ -400,8 +402,7 @@ impl App {
         }
         if self.auto_rebase_enabled.remove(&old_branch) {
             self.auto_rebase_enabled.insert(new_branch.to_string());
-            crate::azufig::set_auto_rebase(&project_path, &old_branch, false);
-            crate::azufig::set_auto_rebase(&project_path, new_branch, true);
+            // Worktree path unchanged on rename — setting persists in same azufig
         }
 
         // Update the worktree entry in-place

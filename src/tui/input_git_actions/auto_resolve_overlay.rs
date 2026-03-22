@@ -94,8 +94,8 @@ pub(super) fn handle_auto_resolve_overlay(key: event::KeyEvent, app: &mut App) -
                 .filter(|(_, on)| *on)
                 .map(|(f, _)| f.clone())
                 .collect();
-            let repo_root = panel.repo_root.clone();
-            crate::azufig::save_auto_resolve_files(&repo_root, &enabled);
+            let wt_path = panel.worktree_path.clone();
+            crate::azufig::save_auto_resolve_files(&wt_path, &enabled);
             panel.auto_resolve_files = enabled;
             panel.auto_resolve_overlay = None;
         }
