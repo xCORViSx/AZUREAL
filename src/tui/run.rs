@@ -14,7 +14,10 @@ use anyhow::Result;
 #[cfg(not(target_os = "windows"))]
 use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture, PopKeyboardEnhancementFlags},
+    event::{
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        PopKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -63,7 +66,12 @@ fn term_program_supports_kitty() -> bool {
 pub async fn run() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )?;
 
     // Enable Kitty keyboard protocol so Shift+Enter is distinguishable from Enter.
     // DISAMBIGUATE alone makes Enter → CSI 13u, Shift+Enter → CSI 13;2u.
@@ -148,7 +156,8 @@ pub async fn run() -> Result<()> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        DisableBracketedPaste
     )?;
     terminal.show_cursor()?;
 

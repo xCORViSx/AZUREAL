@@ -104,6 +104,43 @@ pub fn process_input_event(
             }
             _ => {}
         },
+        Event::Paste(text) => {
+            // Bracketed paste: terminal wraps pasted content so we receive it
+            // as a single event instead of individual keystrokes. This prevents
+            // newlines in pasted text from triggering Enter (which submits the prompt).
+            if app.prompt_mode && !app.terminal_mode {
+                if app.has_input_selection() {
+                    app.input_delete_selection();
+                }
+                // Insert pasted text at cursor, preserving newlines for multi-line input
+                let chars: Vec<char> = app.input.chars().collect();
+                let before: String =
+                    chars[..app.input_cursor.min(chars.len())].iter().collect();
+                let after: String =
+                    chars[app.input_cursor.min(chars.len())..].iter().collect();
+                app.input = before + &text + &after;
+                app.input_cursor += text.chars().count();
+                *had_key_event = true;
+            } else if app.terminal_mode {
+                // In terminal type mode, forward pasted text directly to PTY
+                app.write_to_terminal(text.as_bytes());
+                *had_key_event = true;
+            } else if app.viewer_edit_mode {
+                // In edit mode, insert pasted text at cursor
+                if app.viewer_edit_selection.is_some() {
+                    app.viewer_edit_delete_selection();
+                }
+                for c in text.chars() {
+                    if c == '\n' {
+                        app.viewer_edit_enter();
+                    } else if c != '\r' {
+                        app.viewer_edit_char(c);
+                    }
+                }
+                *had_key_event = true;
+            }
+            *needs_redraw = true;
+        }
         Event::Resize(w, h) => {
             *cached_width = w;
             *cached_height = h;
