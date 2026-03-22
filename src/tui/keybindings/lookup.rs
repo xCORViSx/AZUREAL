@@ -19,6 +19,10 @@ pub struct KeyContext {
     pub terminal_mode: bool,
     pub help_open: bool,
     pub stt_recording: bool,
+    /// True for ~20ms after Enter submits a prompt. On Windows, multiline paste
+    /// arrives as individual key events that may span drain cycles — if Enter
+    /// exits prompt_mode mid-paste, remaining chars could trigger globals.
+    pub paste_guard: bool,
 }
 
 impl KeyContext {
@@ -31,6 +35,8 @@ impl KeyContext {
             terminal_mode: app.terminal_mode,
             help_open: app.show_help,
             stt_recording: app.stt_recording,
+            paste_guard: app.paste_guard_until.elapsed()
+                < std::time::Duration::from_millis(20),
         }
     }
 }
@@ -57,7 +63,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             | Action::WorktreeTabPrev
             | Action::RunCommand
             | Action::AddRunCommand
-                if ctx.prompt_mode || ctx.edit_mode =>
+                if ctx.prompt_mode || ctx.edit_mode || ctx.paste_guard =>
             {
                 true
             }
@@ -66,7 +72,9 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             // but focus is elsewhere — this lets the user refocus the prompt box
             // after tabbing away.
             Action::EnterPromptMode
-                if ctx.edit_mode || (ctx.prompt_mode && ctx.focus == Focus::Input) =>
+                if ctx.edit_mode
+                    || ctx.paste_guard
+                    || (ctx.prompt_mode && ctx.focus == Focus::Input) =>
             {
                 true
             }
@@ -249,6 +257,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         }
     }
 
@@ -446,6 +455,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         // 'p' should be skipped when prompt_mode=true AND focus=Input
         assert_ne!(
@@ -463,6 +473,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('?')),
@@ -479,6 +490,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('T')),
@@ -496,6 +508,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('q')),
@@ -512,6 +525,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         // macOS: ⌃C = Cancel, Windows/Linux: Alt+c = Cancel
         #[cfg(target_os = "macos")]
@@ -535,6 +549,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('G')),
@@ -551,6 +566,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::SHIFT, KeyCode::Char('H')),
@@ -567,6 +583,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char(']')),
@@ -587,6 +604,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('r')),
@@ -612,6 +630,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         #[cfg(target_os = "macos")]
         assert_ne!(
@@ -634,6 +653,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Tab),
@@ -650,6 +670,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('p')),
@@ -670,6 +691,7 @@ mod tests {
             terminal_mode: false,
             help_open: true,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_ne!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Tab),
@@ -696,6 +718,7 @@ mod tests {
             terminal_mode: true,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('?')),
@@ -714,6 +737,7 @@ mod tests {
             terminal_mode: true,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('p')),
@@ -883,6 +907,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         #[cfg(target_os = "macos")]
         let mods = KeyModifiers::SUPER;
@@ -903,6 +928,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         #[cfg(target_os = "macos")]
         let mods = KeyModifiers::SUPER;
@@ -923,6 +949,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Esc),
@@ -992,6 +1019,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Enter),
@@ -1008,6 +1036,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Esc),
@@ -1024,6 +1053,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('w')),
@@ -1040,6 +1070,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Up),
@@ -1056,6 +1087,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Down),
@@ -1072,6 +1104,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('s')),
@@ -1092,6 +1125,7 @@ mod tests {
             terminal_mode: true,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('t')),
@@ -1108,6 +1142,7 @@ mod tests {
             terminal_mode: true,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Esc),
@@ -1124,6 +1159,7 @@ mod tests {
             terminal_mode: true,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('j')),
@@ -1140,6 +1176,7 @@ mod tests {
             terminal_mode: true,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('+')),
@@ -1156,6 +1193,7 @@ mod tests {
             terminal_mode: true,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('-')),
@@ -1209,6 +1247,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         // EnterPromptMode has its own skip guard — only blocked when
         // edit_mode OR (prompt_mode AND focus==Input). Here focus is Session,
@@ -1233,6 +1272,7 @@ mod tests {
             terminal_mode: false,
             help_open: false,
             stt_recording: false,
+            paste_guard: false,
         };
         // 'j' has no global or context binding here
         assert_eq!(

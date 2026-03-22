@@ -211,25 +211,27 @@ pub async fn run_app(
             while let Ok(evt) = input_rx.try_recv() {
                 batch.push(evt);
             }
-            // If the batch ends with Enter and has other events, the input thread
-            // may still be forwarding remaining paste events. Wait briefly (2ms) to
-            // catch them — imperceptible to humans but paste events arrive within
-            // microseconds. Only extends when batch already has >1 event (solo Enter
-            // is just a normal submit, no delay needed).
+            // On Windows, pasted text arrives as individual KEY_EVENT records that
+            // trickle through the input thread channel. If the drain loop only catches
+            // part of the paste, coalescing fails and Enter submits mid-paste — remaining
+            // chars then trigger globals (e.g. Shift+P → OpenProjects). Extend the drain
+            // when we suspect a paste is in progress:
+            // 1. Last key is Enter → remaining paste chars may follow
+            // 2. Batch has ≥3 key presses → many keys in one drain = probable paste
+            // Wait 5ms (imperceptible to humans, paste events arrive in microseconds).
             if batch.len() > 1 {
-                let last_is_enter = batch
-                    .iter()
-                    .rev()
-                    .find_map(|e| {
-                        if let Event::Key(k) = e {
-                            Some(k.code == KeyCode::Enter)
-                        } else {
-                            None
+                let mut key_press_count = 0usize;
+                let mut last_key_is_enter = false;
+                for evt in &batch {
+                    if let Event::Key(k) = evt {
+                        if k.kind == crossterm::event::KeyEventKind::Press {
+                            key_press_count += 1;
+                            last_key_is_enter = k.code == KeyCode::Enter;
                         }
-                    })
-                    .unwrap_or(false);
-                if last_is_enter {
-                    if let Ok(extra) = input_rx.recv_timeout(Duration::from_millis(2)) {
+                    }
+                }
+                if last_key_is_enter || key_press_count >= 3 {
+                    if let Ok(extra) = input_rx.recv_timeout(Duration::from_millis(5)) {
                         batch.push(extra);
                         while let Ok(evt) = input_rx.try_recv() {
                             batch.push(evt);

@@ -238,6 +238,12 @@ pub fn handle_input_mode(
                 let input = app.input.clone();
                 app.clear_input();
                 app.prompt_mode = false;
+                // Guard: on Windows, multiline paste arrives as individual key events
+                // that may span drain cycles. If Enter exits prompt_mode mid-paste,
+                // remaining chars (e.g. Shift+P) could trigger globals like OpenProjects.
+                // Brief 20ms guard suppresses single-letter globals after submit.
+                app.paste_guard_until =
+                    std::time::Instant::now() + std::time::Duration::from_millis(20);
 
                 // RCR mode: route prompts to the feature branch worktree where
                 // the rebase is happening, resume the RCR session

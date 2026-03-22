@@ -79,6 +79,11 @@ pub struct App {
     pub view_mode: ViewMode,
     pub focus: Focus,
     pub prompt_mode: bool,
+    /// Brief guard after prompt submit to suppress globals during paste remnants.
+    /// On Windows, multiline paste arrives as individual key events that may span
+    /// multiple drain cycles. If Enter submits mid-paste, remaining chars would be
+    /// processed with prompt_mode=false, triggering globals like OpenProjects.
+    pub paste_guard_until: std::time::Instant,
     pub should_quit: bool,
     pub status_message: Option<String>,
     /// Claude event receivers keyed by slot_id (PID string). One per running process.
@@ -631,6 +636,7 @@ impl App {
             view_mode: ViewMode::Session,
             focus: Focus::FileTree,
             prompt_mode: false,
+            paste_guard_until: std::time::Instant::now(),
             should_quit: false,
             status_message: None,
             agent_receivers: HashMap::new(),
