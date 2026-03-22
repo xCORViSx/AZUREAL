@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **FileTree `target` and `node_modules` are now configurable** — Previously, `target/` (Rust build artifacts) and `node_modules/` were always hidden from the file tree. They are now configurable options in the FileTree Options overlay (`O` key), hidden by default. Users can toggle them on or off alongside the existing options (`.git`, `.claude`, `.azureal`, `.DS_Store`, `worktrees`). Modified: `src/app/state/helpers.rs`, `src/azufig.rs`, `src/tui/draw_file_tree.rs`.
+
 ### Fixed
 - **Multiline paste on Windows** — On Windows, crossterm's `ReadConsoleInputW` delivers pasted text as individual key events (each newline fires Enter, submitting the prompt). The event loop now detects paste patterns in the drain batch and coalesces them into a single `Event::Paste`. Detection: ≥5 char/Enter Press events with characters appearing after an Enter (impossible via human typing — Enter submits the prompt before subsequent characters can arrive in the same drain cycle). Drain extension: when a batch contains ≥3 events and ends with a Char Press, the loop waits up to 5ms for more events (paste events trickle across drain boundaries on Windows). Works across all three input contexts: prompt (inserts at cursor with newlines), terminal (forwards to PTY with bracketed paste wrapping), and viewer edit (character-by-character insertion). Modified: `src/tui/event_loop.rs`, `src/tui/event_loop/process_input.rs`.
 - **Prompt multiline paste** — Pasting multiline text into the Claude prompt input (⌘V / Ctrl+V) now preserves newlines. Previously, all newlines were stripped and joined with spaces, making it impossible to paste multi-line prompts. Line endings normalized (`\r\n` → `\n`, `\r` → `\n`). Modified: `src/app/input.rs`.

@@ -33,10 +33,6 @@ fn build_file_tree_recursive(
         .filter_map(|e| e.ok())
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            // Skip common build/dependency directories (too noisy)
-            if name == "target" || name == "node_modules" {
-                return false;
-            }
             // Hide entries configured in Filetree Options overlay
             if hidden_dirs.contains(&name) {
                 return false;
@@ -217,10 +213,11 @@ mod tests {
         let root = tmp.path();
         fs::create_dir(root.join("target")).unwrap();
         fs::write(root.join("target/debug"), "bin").unwrap();
-        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &HashSet::new());
+        let hidden: HashSet<String> = ["target".into()].into_iter().collect();
+        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &hidden);
         assert!(
             !entries.iter().any(|e| e.name == "target"),
-            "target dir should be filtered out"
+            "target dir should be filtered out when in hidden_dirs"
         );
     }
 
@@ -229,7 +226,8 @@ mod tests {
         let tmp = make_test_tree();
         let root = tmp.path();
         fs::create_dir(root.join("node_modules")).unwrap();
-        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &HashSet::new());
+        let hidden: HashSet<String> = ["node_modules".into()].into_iter().collect();
+        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &hidden);
         assert!(!entries.iter().any(|e| e.name == "node_modules"));
     }
 
@@ -717,7 +715,8 @@ mod tests {
         // The filter removes ANY entry named "target" — file or dir
         fs::write(root.join("target"), "not a directory").unwrap();
         fs::write(root.join("other.txt"), "").unwrap();
-        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &HashSet::new());
+        let hidden: HashSet<String> = ["target".into()].into_iter().collect();
+        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &hidden);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "other.txt");
     }
@@ -756,7 +755,8 @@ mod tests {
         // The filter removes ANY entry named "node_modules" — file or dir
         fs::write(root.join("node_modules"), "it's a file").unwrap();
         fs::write(root.join("keep.txt"), "").unwrap();
-        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &HashSet::new());
+        let hidden: HashSet<String> = ["node_modules".into()].into_iter().collect();
+        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &hidden);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "keep.txt");
     }

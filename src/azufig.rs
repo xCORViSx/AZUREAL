@@ -95,6 +95,8 @@ fn default_hidden() -> Vec<String> {
         ".claude".into(),
         ".azureal".into(),
         ".DS_Store".into(),
+        "target".into(),
+        "node_modules".into(),
     ]
 }
 
@@ -411,7 +413,9 @@ mod tests {
         assert!(hidden.contains(&".claude".to_string()));
         assert!(hidden.contains(&".azureal".to_string()));
         assert!(hidden.contains(&".DS_Store".to_string()));
-        assert_eq!(hidden.len(), 5);
+        assert!(hidden.contains(&"target".to_string()));
+        assert!(hidden.contains(&"node_modules".to_string()));
+        assert_eq!(hidden.len(), 7);
     }
 
     // ── AzufigFiletree default ──
@@ -419,7 +423,7 @@ mod tests {
     #[test]
     fn test_filetree_default() {
         let ft = AzufigFiletree::default();
-        assert_eq!(ft.hidden.len(), 5);
+        assert_eq!(ft.hidden.len(), 7);
     }
 
     // ── GlobalAzufig default ──

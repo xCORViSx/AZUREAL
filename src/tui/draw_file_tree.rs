@@ -363,7 +363,15 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
 
 /// Names that can be toggled visible/hidden in the options overlay.
 /// Order here = display order. All hidden by default on first launch.
-const FT_OPTIONS: &[&str] = &["worktrees", ".git", ".claude", ".azureal", ".DS_Store"];
+const FT_OPTIONS: &[&str] = &[
+    "worktrees",
+    ".git",
+    ".claude",
+    ".azureal",
+    ".DS_Store",
+    "target",
+    "node_modules",
+];
 
 /// Draw the file tree options overlay — replaces normal tree content when
 /// app.file_tree_options_mode is true. Shows toggleable checkboxes for each
