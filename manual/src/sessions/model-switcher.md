@@ -51,7 +51,7 @@ These colors appear in the model badge on the status bar and in the right-aligne
 
 ## Auto-Spawned Processes
 
-When AZUREAL spawns agent processes automatically -- such as for Recursive Conflict Resolution (RCR), God File Mitigation (GFM), or Documentation Health (DH) -- those processes also follow the currently selected model. If you switch from opus to gpt-5.4 and then trigger a conflict resolution, the RCR agent will use the Codex backend with gpt-5.4.
+When AZUREAL spawns agent processes automatically -- such as for Rebase Conflict Resolution (RCR), God File Mitigation (GFM), or Documentation Health (DH) -- those processes also follow the currently selected model. If you switch from opus to gpt-5.4 and then trigger a conflict resolution, the RCR agent will use the Codex backend with gpt-5.4.
 
 ---
 
