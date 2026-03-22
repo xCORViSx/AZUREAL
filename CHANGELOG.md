@@ -2,6 +2,13 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Prompt multiline paste** — Pasting multiline text into the Claude prompt input (⌘V / Ctrl+V) now preserves newlines. Previously, all newlines were stripped and joined with spaces, making it impossible to paste multi-line prompts. Line endings normalized (`\r\n` → `\n`, `\r` → `\n`). Modified: `src/app/input.rs`.
+- **Terminal pane multiline paste** — Pasting multiline text into the embedded terminal (⌘V / Ctrl+V) now works correctly. Previously, paste was not handled in terminal type mode at all. Now reads from system clipboard, normalizes line endings to `\r`, and wraps content in bracketed paste escape sequences (`\x1b[200~`...`\x1b[201~`) so PowerShell/PSReadLine, bash, and zsh treat the entire block as a single paste operation instead of executing each line individually. Modified: `src/tui/input_terminal.rs`.
+- **Viewer edit mode paste line endings** — Pasting text in the viewer edit mode now normalizes `\r\n` and `\r` line endings to `\n` before splitting into lines, preventing trailing `\r` characters from appearing in file content on Windows. Modified: `src/app/state/viewer_edit.rs`.
+
 ## [1.0.0] — 2026-03-21
 
 ### Documentation

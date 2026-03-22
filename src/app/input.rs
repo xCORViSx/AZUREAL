@@ -297,13 +297,13 @@ impl App {
             self.delete_input_selection();
         }
 
-        // Insert paste text at cursor (single line only - strip newlines)
-        let paste_single = paste_text.lines().collect::<Vec<_>>().join(" ");
+        // Normalize line endings: \r\n → \n, lone \r → \n
+        let normalized = paste_text.replace("\r\n", "\n").replace('\r', "\n");
         let chars: Vec<char> = self.input.chars().collect();
         let before: String = chars[..self.input_cursor.min(chars.len())].iter().collect();
         let after: String = chars[self.input_cursor.min(chars.len())..].iter().collect();
-        self.input = before + &paste_single + &after;
-        self.input_cursor += paste_single.chars().count();
+        self.input = before + &normalized + &after;
+        self.input_cursor += normalized.chars().count();
     }
 
     /// Delete selected text without copying

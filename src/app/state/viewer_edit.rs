@@ -503,6 +503,9 @@ impl App {
             return;
         }
 
+        // Normalize line endings: \r\n → \n, bare \r → \n
+        let paste_text = paste_text.replace("\r\n", "\n").replace('\r', "\n");
+
         // Delete selection first if any
         if self.has_edit_selection() {
             self.delete_selection_text();

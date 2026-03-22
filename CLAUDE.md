@@ -889,6 +889,7 @@ Key mappings:
 - Mouse drag (terminal pane): Select text with auto-scroll at edges; selection stored as `terminal_selection` in scrollback-adjusted absolute coordinates
 - Mouse wheel (terminal pane): Scroll terminal history (clears selection)
 - `⌘C`/`⌃C` with active `terminal_selection`: Copy selected terminal text to clipboard
+- `⌘V`/`Ctrl+V` (terminal type mode): Paste from system clipboard with bracketed paste (`\x1b[200~`...`\x1b[201~`) so shells treat multiline content as a single paste operation, not line-by-line execution. Line endings normalized to `\r`.
 - All other keystrokes in terminal type mode forward directly to PTY (clears selection)
 
 Implementation:

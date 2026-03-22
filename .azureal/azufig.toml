@@ -14,3 +14,4 @@ dirs = []
 [presetprompts]
 
 [git]
+"auto-rebase/azureal/sessionadd" = "true"
