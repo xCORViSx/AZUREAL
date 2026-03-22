@@ -132,8 +132,10 @@ impl App {
             .unwrap_or(false);
         if !(is_current && was_active) {
             if let Some(ref b) = branch {
-                if let Some(uuid) = self.agent_session_ids.get(slot_id) {
-                    self.unread_session_ids.insert(uuid.clone());
+                // Use store session ID (matches session_files keys and
+                // viewed_session_id() output) so unread clearing works.
+                if let Some((sid, _, _, _)) = self.pid_session_target.get(slot_id) {
+                    self.unread_session_ids.insert(sid.to_string());
                 }
                 self.unread_sessions.insert(b.clone());
             }
@@ -273,8 +275,10 @@ impl App {
 
         // Mark as unread in the snapshot (user will see it when they switch back)
         if let Some(ref b) = branch {
-            if let Some(uuid) = self.agent_session_ids.get(slot_id) {
-                snapshot.unread_session_ids.insert(uuid.clone());
+            // Use store session ID (matches session_files keys) so unread
+            // clearing works when the user switches back to this project.
+            if let Some((sid, _, _, _)) = snapshot.pid_session_target.get(slot_id) {
+                snapshot.unread_session_ids.insert(sid.to_string());
             }
             snapshot.unread_sessions.insert(b.clone());
         }

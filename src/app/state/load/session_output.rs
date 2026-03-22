@@ -105,7 +105,18 @@ impl App {
                 if let Some(sid) = store_session_id {
                     self.unread_session_ids.remove(&sid.to_string());
                 }
-                if self.unread_session_ids.is_empty() {
+                // Check per-branch: only clear the branch unread flag if no
+                // remaining sessions on this branch are still unread.
+                let still_unread = self
+                    .session_files
+                    .get(&branch_name)
+                    .map(|files| {
+                        files
+                            .iter()
+                            .any(|(id, _, _)| self.unread_session_ids.contains(id))
+                    })
+                    .unwrap_or(false);
+                if !still_unread {
                     self.unread_sessions.remove(&branch_name);
                 }
             }
