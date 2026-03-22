@@ -34,7 +34,7 @@ use super::super::input_dialogs::{
 use super::super::input_file_tree::handle_file_tree_input;
 use super::super::input_git_actions::handle_git_actions_input;
 use super::super::input_health::handle_health_input;
-use super::super::input_output::handle_session_input;
+use super::super::input_output::{handle_session_input, handle_session_list_input};
 use super::super::input_projects::handle_projects_input;
 use super::super::input_terminal::handle_input_mode;
 use super::super::input_viewer::handle_viewer_input;
@@ -540,10 +540,12 @@ pub fn handle_key_event(
         return handle_session_input(key, app);
     }
 
-    // Session list overlay: bypass keybinding system so Up/Down/j/k navigate the list
-    // instead of being intercepted as JumpNextBubble/JumpPrevBubble
+    // Session list overlay: handle list-specific keys (j/k nav, Enter select, etc.)
+    // Unhandled keys fall through to lookup_action() so globals work while list is open.
     if app.show_session_list {
-        return handle_session_input(key, app);
+        if handle_session_list_input(key, app)? {
+            return Ok(());
+        }
     }
 
     // Text input modals bypass keybinding resolution entirely — they consume

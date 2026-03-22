@@ -20,10 +20,8 @@ pub fn handle_session_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
         return handle_session_find_input(key, app);
     }
 
-    // Session list overlay: j/k navigate, Enter selects, s/Esc closes, / filters
-    if app.show_session_list {
-        return handle_session_list_input(key, app);
-    }
+    // Session list overlay is handled in actions.rs — unhandled keys fall through
+    // to lookup_action() so globals (G, H, P, ], [, ⌃q) work while the list is open.
 
     // n/N: cycle through session find matches (after Enter confirmed search)
     if !app.session_find_matches.is_empty() && !app.session_find_active {
@@ -190,17 +188,21 @@ pub fn jump_prev_match(app: &mut App) {
 }
 
 /// Handle keyboard input for the session list overlay
-fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
+/// Returns `true` if the key was consumed by the session list, `false` to let
+/// globals (G, H, P, ], [, ⌃q, etc.) fall through to `lookup_action()`.
+pub fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<bool> {
     use event::{KeyCode, KeyModifiers};
 
     // Session rename input is active: route text input to the rename handler
     if app.session_rename_active {
-        return handle_session_rename_input(key, app);
+        handle_session_rename_input(key, app)?;
+        return Ok(true);
     }
 
     // Session filter bar is active: route text input to the filter
     if app.session_filter_active {
-        return handle_session_filter_input(key, app);
+        handle_session_filter_input(key, app)?;
+        return Ok(true);
     }
 
     // Count sessions for current worktree (from store-backed session_files cache)
@@ -210,42 +212,49 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
         .map(|f| f.len())
         .unwrap_or(0);
 
-    match (key.modifiers, key.code) {
+    let consumed = match (key.modifiers, key.code) {
         // /: activate session filter (name search); // activates content search
         (KeyModifiers::NONE, KeyCode::Char('/')) => {
             app.session_filter_active = true;
             app.session_filter.clear();
             app.session_content_search = false;
             app.session_search_results.clear();
+            true
         }
         // j/↓: next row
         (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
             if app.session_list_selected + 1 < total_rows {
                 app.session_list_selected += 1;
             }
+            true
         }
         // k/↑: prev row
         (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
             app.session_list_selected = app.session_list_selected.saturating_sub(1);
+            true
         }
         // J: page down
         (KeyModifiers::NONE, KeyCode::Char('J')) => {
             let page = app.session_viewport_height.saturating_sub(2);
             app.session_list_selected =
                 (app.session_list_selected + page).min(total_rows.saturating_sub(1));
+            true
         }
         // K: page up
         (KeyModifiers::NONE, KeyCode::Char('K')) => {
             let page = app.session_viewport_height.saturating_sub(2);
             app.session_list_selected = app.session_list_selected.saturating_sub(page);
+            true
         }
         // Enter: load the selected session file
         (KeyModifiers::NONE, KeyCode::Enter) => {
             select_session_at_row(app);
+            true
         }
         // r: rename selected session
         (KeyModifiers::NONE, KeyCode::Char('r')) => {
             start_session_rename(app);
+            true
         }
         // a: add new session (same as 'a' from session view)
         (KeyModifiers::NONE, KeyCode::Char('a')) => {
@@ -255,6 +264,7 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
             app.session_content_search = false;
             app.session_search_results.clear();
             app.start_new_session();
+            true
         }
         // s or Esc: close overlay
         (KeyModifiers::NONE, KeyCode::Char('s')) | (_, KeyCode::Esc) => {
@@ -263,10 +273,11 @@ fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
             app.session_filter_active = false;
             app.session_content_search = false;
             app.session_search_results.clear();
+            true
         }
-        _ => {}
-    }
-    Ok(())
+        _ => false,
+    };
+    Ok(consumed)
 }
 
 /// Handle text input for the session filter bar (both / name filter and // content search)

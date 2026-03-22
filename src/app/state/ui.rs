@@ -164,6 +164,12 @@ impl App {
         let (commits_behind_remote, commits_ahead_remote) = Git::get_remote_divergence(&wt_path);
 
         self.force_full_redraw = true;
+        // Close session list overlay if open — git panel takes over the layout
+        self.show_session_list = false;
+        self.session_filter.clear();
+        self.session_filter_active = false;
+        self.session_content_search = false;
+        self.session_search_results.clear();
         let cached_staged_count = changed_files.iter().filter(|f| f.staged).count();
         let cached_total_add = changed_files.iter().map(|f| f.additions).sum();
         let cached_total_del = changed_files.iter().map(|f| f.deletions).sum();
@@ -662,6 +668,9 @@ impl App {
 
     /// Open the Projects panel overlay (loads entries from ~/.azureal/projects.txt)
     pub fn open_projects_panel(&mut self) {
+        // Close session list overlay if open
+        self.show_session_list = false;
+        self.session_filter_active = false;
         let entries = load_projects();
         self.projects_panel = Some(ProjectsPanel::new(entries));
     }

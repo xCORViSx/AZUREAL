@@ -208,6 +208,9 @@ impl App {
     /// Uses persisted scope from `[healthscope]` in .azureal/azufig.toml if it exists;
     /// otherwise falls back to auto-detected source roots.
     pub fn open_health_panel(&mut self) {
+        // Close session list overlay if open
+        self.show_session_list = false;
+        self.session_filter_active = false;
         let god_files = if let Some(ref project) = self.project {
             if let Some(dirs) = load_health_scope(&project.path) {
                 let translated = self.translate_scope_dirs(&dirs);
