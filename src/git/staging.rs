@@ -88,7 +88,7 @@ impl Git {
     /// Silently no-ops if nothing matches or if any git command fails.
     pub fn untrack_gitignored_files(path: &Path) {
         let ls = Command::new("git")
-            .args(["ls-files", "-i", "--exclude-standard"])
+            .args(["ls-files", "-ic", "--exclude-standard"])
             .current_dir(path)
             .output();
         let files: Vec<String> = match ls {
@@ -198,5 +198,9 @@ impl Git {
             .args(["commit", "-m", &msg])
             .current_dir(repo_root)
             .output();
+
+        // Untrack files that are now gitignored but still in the index
+        // (e.g. .azureal/sessions.azs committed before .azureal/ was gitignored)
+        Self::untrack_gitignored_files(repo_root);
     }
 }

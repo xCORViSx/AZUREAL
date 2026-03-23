@@ -702,6 +702,8 @@ mod tests {
                 codex_executable: None,
                 default_permission_mode: "approve".to_string(),
                 verbose: true,
+                skip_version: None,
+                last_update_check: None,
             },
             projects: {
                 let mut m = HashMap::new();
@@ -779,6 +781,8 @@ mod tests {
             codex_executable: None,
             default_permission_mode: "ask".to_string(),
             verbose: true,
+            skip_version: None,
+            last_update_check: None,
         };
         let toml_str = toml::to_string_pretty(&cfg).unwrap();
         let parsed: AzufigConfig = toml::from_str(&toml_str).unwrap();
@@ -836,7 +840,7 @@ MyProj = "~/dev/myproj"
 "#;
         let parsed: ProjectAzufig = toml::from_str(toml_str).unwrap();
         assert_eq!(parsed.git.get("auto-rebase/main").unwrap(), "true");
-        assert_eq!(parsed.filetree.hidden.len(), 5); // defaults
+        assert_eq!(parsed.filetree.hidden.len(), 7); // defaults
         assert!(parsed.runcmds.is_empty());
     }
 
@@ -972,6 +976,8 @@ verbose = true
             codex_executable: None,
             default_permission_mode: "ignore".into(),
             verbose: false,
+            skip_version: None,
+            last_update_check: None,
         };
         let cloned = cfg.clone();
         assert_eq!(cloned.anthropic_api_key, cfg.anthropic_api_key);

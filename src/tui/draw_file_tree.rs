@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_ft_options_count() {
-        assert_eq!(FT_OPTIONS.len(), 5);
+        assert_eq!(FT_OPTIONS.len(), 7);
     }
 
     #[test]
