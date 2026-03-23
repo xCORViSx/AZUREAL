@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
                     "\t<key>CFBundleName</key>\n\t<string>AZUREAL</string>\n",
                     "\t<key>CFBundleDisplayName</key>\n\t<string>AZUREAL</string>\n",
                     "\t<key>CFBundleExecutable</key>\n\t<string>azureal</string>\n",
-                    "\t<key>CFBundleIconFile</key>\n\t<string>Azureal</string>\n",
+                    "\t<key>CFBundleIconFile</key>\n\t<string>AZUREAL</string>\n",
                     "\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n",
                     "\t<key>LSUIElement</key>\n\t<true/>\n",
                     "</dict>\n</plist>\n",
@@ -237,7 +237,7 @@ async fn main() -> Result<()> {
                 .join("Microsoft")
                 .join("Windows Terminal")
                 .join("Fragments")
-                .join("Azureal");
+                .join("AZUREAL");
             let frag_path = frag_dir.join("azureal.json");
             let icon = toast_png.to_string_lossy().replace('\\', "/");
             let exe = std::env::current_exe()
@@ -245,7 +245,7 @@ async fn main() -> Result<()> {
                 .to_string_lossy()
                 .replace('\\', "/");
             let json = format!(
-                r#"{{"profiles":[{{"name":"Azureal","commandline":"\"{}\"","icon":"{}","hidden":false}}]}}"#,
+                r#"{{"profiles":[{{"name":"AZUREAL","commandline":"\"{}\"","icon":"{}","hidden":false}}]}}"#,
                 exe, icon
             );
             let _ = std::fs::create_dir_all(&frag_dir);

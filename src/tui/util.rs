@@ -1,10 +1,10 @@
 //! Small utility functions for TUI rendering
 //!
 //! The AZURE constant defines the app's signature color (#007FFF) used
-//! everywhere Cyan was previously used, aligning with the "Azureal" name.
+//! everywhere Cyan was previously used, aligning with the "AZUREAL" name.
 
 /// Azure blue (#3399FF) — the app's signature accent color, replacing all
-/// uses of ANSI Cyan for a cohesive visual identity matching the name "Azureal".
+/// uses of ANSI Cyan for a cohesive visual identity matching the name "AZUREAL".
 pub const AZURE: ratatui::style::Color = ratatui::style::Color::Rgb(51, 153, 255);
 
 /// Git brand orange (#F05032) — used for Git Actions panel border and accents

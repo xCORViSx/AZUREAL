@@ -345,10 +345,10 @@ impl App {
         let label = if session_name.is_empty() {
             worktree.to_string()
         } else {
-            format!("{}:{}", worktree, session_name)
+            format!("{}::{}", worktree, session_name)
         };
 
-        let body = if self.auto_continue_after_compaction || self.compaction_needed.is_some() {
+        let message = if self.auto_continue_after_compaction || self.compaction_needed.is_some() {
             "Compacting context"
         } else {
             match code {
@@ -358,8 +358,15 @@ impl App {
             }
         };
 
-        let title = label;
-        let body = body.to_string();
+        let project_name = self
+            .project
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let title = format!("AZUREAL @ {}", project_name);
+        let body = format!("{}\n{}", label, message);
+        #[cfg(target_os = "windows")]
+        let message = message.to_string();
         std::thread::spawn(move || {
             #[cfg(target_os = "windows")]
             {
@@ -379,10 +386,11 @@ impl App {
                 };
                 let xml = format!(
                     "<toast><visual><binding template=\"ToastGeneric\">\
-                     <text>{}</text><text>{}</text>{}\
+                     <text>{}</text><text>{}</text><text>{}</text>{}\
                      </binding></visual></toast>",
                     title.replace('&', "&amp;").replace('<', "&lt;"),
-                    body.replace('&', "&amp;").replace('<', "&lt;"),
+                    label.replace('&', "&amp;").replace('<', "&lt;"),
+                    message.replace('&', "&amp;").replace('<', "&lt;"),
                     icon_xml,
                 );
                 let ps = format!(
