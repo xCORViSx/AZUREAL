@@ -138,7 +138,7 @@ Any user action that triggers blocking I/O (session parse, file read, health sca
 
 Implementation: `src/app/state/app.rs` (DeferredAction enum + fields), `src/tui/run/overlays.rs` (`draw_loading_indicator()`), `src/tui/event_loop.rs` (deferred execution block + squash merge receiver poll), `src/tui/event_loop/actions/deferred.rs` (`execute_deferred_action()`)
 
-**Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "Azureal" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
+**Color Identity:** All accent colors use the `AZURE` constant (`#3399FF`, defined in `src/tui/util.rs`) instead of ANSI Cyan, aligning the visual identity with the "AZUREAL" name. Import via `use super::util::AZURE;` (TUI modules) or `use crate::tui::util::AZURE;` (non-TUI modules).
 
 **Viewer Dual Purpose:**
 - When file selected in FileTree → shows syntax-highlighted file content with line numbers
@@ -232,7 +232,7 @@ Display: `KeyCombo::display()` shows `⌃⌥⇧⌘` symbols on macOS, `Ctrl+Alt+
 - Shell detection (`src/app/terminal.rs`): On Windows, prefers `pwsh.exe` (PS7) → `powershell.exe` → `COMSPEC`/`cmd.exe` (verifies exit status, not just spawn success); on Unix uses `SHELL`/`/bin/bash`. PowerShell spawned with `-NoLogo`. `TERM=xterm-256color` set for all shells. Initial form feed (`0x0c`) skipped on Windows (Windows shells don't reprint prompt after clear). **Critical PTY init order:** `try_clone_reader()` and `take_writer()` must be called BEFORE `spawn_command()` — on Windows ConPTY, obtaining handles after spawn+slave-drop produces inconsistent pipe state. After spawn, `drop(pair.slave)` releases the slave so master reads unblock. The child process handle is stored in `App::terminal_child` / `SessionTerminal::child` to keep the process alive.
 - Process killing (`src/app/state/ui.rs`, `claude.rs`): `kill` on Unix, `taskkill /PID /F` on Windows. Claude subprocess spawned with `.stdin(Stdio::null())` to prevent console stdin handle sharing on Windows (causes input event competition between TUI and child).
 - macOS `.app` bundle (`src/main.rs`): `#[cfg(target_os = "macos")]` — Activity Monitor icon support
-- Windows `.ico`/`.png` extraction + WT profile fragment (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `AZUREAL.ico` to `~/.azureal/` for Explorer/Alt+Tab, and `AZUREAL_toast.png` for toast notifications and the WT tab icon (PNG renders crisply; `.ico` is blurry). Writes a Windows Terminal profile fragment (`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Azureal\azureal.json`) on every startup (not just when missing) referencing the PNG, so icon/exe path changes propagate automatically. `GetConsoleWindow()` returns null in WT (ConPTY has no window), so `WM_SETICON` cannot work.
+- Windows `.ico`/`.png` extraction + WT profile fragment (`src/main.rs`): `#[cfg(target_os = "windows")]` — extracts embedded `AZUREAL.ico` to `~/.azureal/` for Explorer/Alt+Tab, and `AZUREAL_toast.png` for toast notifications and the WT tab icon (PNG renders crisply; `.ico` is blurry). Writes a Windows Terminal profile fragment (`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\AZUREAL\azureal.json`) on every startup (not just when missing) referencing the PNG, so icon/exe path changes propagate automatically. `GetConsoleWindow()` returns null in WT (ConPTY has no window), so `WM_SETICON` cannot work.
 - Windows exe icon embedding (`build.rs`): `#[cfg(target_os = "windows")]` — `winres` embeds `.ico` as Win32 resource for Explorer/Alt+Tab file icon
 - Notification platform guards (`src/app/state/claude/process_lifecycle.rs`): `.sound_name("Glass")` gated to `#[cfg(target_os = "macos")]`; `.app_id("AZUREAL")` + `.icon()` gated to `#[cfg(target_os = "windows")]`
 - Kitty keyboard protocol (`src/tui/run.rs` entry point): `PushKeyboardEnhancementFlags` (DISAMBIGUATE_ESCAPE_CODES + REPORT_EVENT_TYPES) gated to `#[cfg(not(target_os = "windows"))]` — conflicts with mouse capture on Windows Terminal. Detection: crossterm DSR query ORed with `term_program_supports_kitty()` env var check (iTerm.app/kitty/ghostty) to catch false negatives. WezTerm deliberately excluded — it accepts the push silently but doesn't honor the protocol on macOS.
@@ -342,8 +342,7 @@ for (line_idx, span_idx, tool_use_id) in &app.animation_line_indices {
 - `min_poll_interval = 500ms` (session file polling)
 - `poll_ms = 16ms` when busy (render in-flight / Claude streaming), `100ms` when idle
 - **Render submit throttle: 50ms** — `last_render_submit` in App state. Without this, every `poll_render_result()` completion immediately triggers another `submit_render_request()` (since `rendered_lines_dirty` is re-set by arriving events), cloning the full events array at ~60Hz. The 50ms floor batches streaming events into ~20 render cycles/sec.
-- **Extended typing deferral (300ms window):** `typing_recently` (true when `last_key_time.elapsed() < 300ms`) suppresses `terminal.draw()` calls during active typing when fast-path is available. `fast_draw_input()` (~0.1ms) provides instant keystroke feedback; session pane updates wait for the next full ratatui draw cycle. Event loop profiler logs to `~/.azureal/event_loop_profile.log` for diagnostics.
-
+- **Extended typing deferral (300ms window):** `typing_recently` (true when `last_key_time.elapsed() < 300ms`) suppresses `terminal.draw()` calls during active typing when fast-path is available. `fast_draw_input()` (~0.1ms) provides instant keystroke feedback; session pane updates wait for the next full ratatui draw cycle. 
 ### 14. True Single JSON Parse Per Claude Event
 
 ```rust
@@ -1542,24 +1541,22 @@ Implementation: `src/wizard.rs` (wizard state), `src/tui/draw_wizard.rs` (render
 
 Cross-platform notification sent when any agent instance finishes its response. Fires for every session exit (not just the currently viewed one), so the user sees alerts even when working in another app.
 
-**Notification format:**
-- Title: `worktree:session_name`
-- Body: "Compacting context" (mid-turn compaction), "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
+**Notification format (3-line):**
+- Title: `AZUREAL @ <project_name>`
+- Body line 1: `<worktree>::<session_name>`
+- Body line 2: "Compacting context" (mid-turn compaction), "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
+- Windows toast uses 3 separate `<text>` elements for native 3-line layout
 - Session name uses custom name from `sessions` if set, otherwise first 8 chars of UUID
-- Branded Azureal icon on all platforms (not Finder/Terminal/generic)
+- Branded AZUREAL icon on all platforms (not Finder/Terminal/generic)
 
 **Platform-specific notification setup:**
 
 *macOS:*
 - Uses `notify-rust` crate with `set_application("com.xcorvisx.azureal")` for branded icon
-- `.app` bundle auto-created at `~/.azureal/AZUREAL.app` on first launch — zero manual setup
-- `.icns` icon embedded in binary via `include_bytes!()` and extracted to bundle on first run
-- Binary copied into bundle (`Contents/MacOS/azureal`) — NOT symlinked, because `proc_pidpath()` resolves symlinks and Activity Monitor needs the real path inside the `.app` to show the custom icon
-- On startup, process re-execs through the bundle copy via `Command::exec()` so `proc_pidpath()` returns the bundle path
+- `.app` bundle at `~/.azureal/AZUREAL.app` — created by the self-installer (`install.rs`), which copies the real binary into the bundle and writes a shell script trampoline at `/usr/local/bin/azureal` (`#!/bin/sh\nexec <bundle_exec> "$@"`). The real binary lives only inside the bundle (~40MB saved vs duplicating). Dev mode (`cargo run`) also creates/updates the bundle in `main.rs` for Activity Monitor icon support.
+- `.icns` icon embedded in binary via `include_bytes!()` and extracted to bundle on creation
 - `TransformProcessType(psn, kProcessTransformToUIElementAppType)` registers the process with the macOS window server — without this, `NSRunningApplication` returns nil and Activity Monitor shows a generic icon despite correct `proc_pidpath()`
-- `AZUREAL_REEXEC` env var prevents infinite re-exec loop; `already_in_bundle` check provides secondary guard
-- Bundle ad-hoc codesigned after binary copy (source has linker ad-hoc signature that fails validation inside a `.app` bundle)
-- Bundle registered with macOS Launch Services via `lsregister` on creation/update
+- Bundle ad-hoc codesigned after binary copy, registered with macOS Launch Services via `lsregister`
 - Activity Monitor shows "AZUREAL" as process name with branded icon
 - Notification permissions auto-enabled on first launch by writing `ALLOW_NOTIFICATIONS|BANNERS|SOUND|BADGE|PREVIEW_ALWAYS` flags to `~/Library/Preferences/com.apple.ncprefs.plist` via Python's `plistlib` (the only reliable way to edit macOS binary plists). Marker file `~/.azureal/.notif_enabled` prevents overriding user's preference on subsequent launches
 - `.sound_name("Glass")` for macOS notification sound (platform-gated via `#[cfg(target_os = "macos")]`)
@@ -1567,7 +1564,7 @@ Cross-platform notification sent when any agent instance finishes its response. 
 *Windows:*
 - `.ico` file (6 sizes: 256/128/64/48/32/16) embedded in binary via `include_bytes!()` and extracted to `~/.azureal/AZUREAL.ico` on startup; `AZUREAL_toast.png` also embedded via `include_bytes!()` and extracted to `~/.azureal/AZUREAL_toast.png` on first run — ensures the toast icon is always present without manual copying
 - `build.rs` uses `winres` crate to embed the `.ico` as a Win32 resource — Explorer, pinned taskbar, and Alt+Tab show the icon for the `.exe` file itself
-- At startup, writes a Windows Terminal profile fragment at `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Azureal\azureal.json` — registers an "Azureal" profile with `AZUREAL_toast.png` (PNG, not `.ico`) as the tab icon for crisper rendering. Rewritten on every startup (not just when missing) so icon/exe path changes propagate automatically. (`GetConsoleWindow()` returns null in WT because ConPTY uses a hidden pseudo-console with no window handle.)
+- At startup, writes a Windows Terminal profile fragment at `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\AZUREAL\azureal.json` — registers an "AZUREAL" profile with `AZUREAL_toast.png` (PNG, not `.ico`) as the tab icon for crisper rendering. Rewritten on every startup (not just when missing) so icon/exe path changes propagate automatically. (`GetConsoleWindow()` returns null in WT because ConPTY uses a hidden pseudo-console with no window handle.)
 - Notifications shell out to PowerShell using WinRT toast APIs — `notify-rust`'s `.app_id("AZUREAL")` silently drops toasts because the AUMID isn't registered via a Start Menu shortcut. PowerShell's own AUMID (`{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe`) is always registered, so toasts reliably appear. `CREATE_NO_WINDOW` (0x08000000) prevents console flash.
 - Toast XML uses `appLogoOverride` image placement with `~/.azureal/AZUREAL_toast.png` for a crisp branded icon — the `.ico` file renders blurry in Windows toasts, PNG renders crisply
 - Windows uses its own default notification sound (no `.sound_name()`)
@@ -1578,7 +1575,7 @@ Cross-platform notification sent when any agent instance finishes its response. 
 - Called from `handle_claude_exited()` BEFORE state cleanup (needs session info still available)
 - For current session: uses cached `title_session_name`; for background sessions: looks up from `session_files` + `index.json` display names
 
-Implementation: `src/app/state/claude/process_lifecycle.rs` (`send_completion_notification()`), `src/main.rs` (macOS bundle creation + re-exec, Windows ico extraction), `build.rs` (Windows icon embedding via winres)
+Implementation: `src/app/state/claude/process_lifecycle.rs` (`send_completion_notification()`), `src/main.rs` (macOS bundle creation for dev mode, Windows ico extraction), `src/install.rs` (macOS bundle + trampoline install), `build.rs` (Windows icon embedding via winres)
 
 # MANIFEST
 

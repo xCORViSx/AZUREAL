@@ -49,7 +49,7 @@ Commit history. A minimal status bar at the bottom replaces the normal one.
 ## Visual Identity
 
 All accent colors throughout the interface use the **AZURE** constant
-(`#3399FF`), tying the color palette to the "Azureal" name. Active tabs,
+(`#3399FF`), tying the color palette to the "AZUREAL" name. Active tabs,
 borders, badges, and highlighted elements all share this single brand color.
 
 ## OS Terminal Title
