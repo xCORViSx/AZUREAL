@@ -163,7 +163,7 @@ pub(super) fn handle_commit_overlay(key: event::KeyEvent, app: &mut App) -> Resu
             overlay.message.insert(byte_pos, '\n');
             overlay.cursor += 1;
         }
-        (KeyModifiers::CONTROL, KeyCode::Char('j')) if !generating => {
+        (KeyModifiers::CONTROL, KeyCode::Char('j')) | (KeyModifiers::ALT, KeyCode::Enter) if !generating => {
             let byte_pos = overlay
                 .message
                 .char_indices()

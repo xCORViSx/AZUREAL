@@ -31,6 +31,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub config: Option<String>,
 
+    /// Probe GPU Whisper initialization and exit (internal use)
+    #[arg(long, hide = true)]
+    pub probe_gpu: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

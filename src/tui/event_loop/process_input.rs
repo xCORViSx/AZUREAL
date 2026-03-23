@@ -79,8 +79,12 @@ pub fn process_input_event(
                         app.mouse_drag_start = Some((cl, cc, 1));
                     }
                 } else if app.input_area.contains(mpos) && app.terminal_mode {
-                    // Terminal pane: anchor in scrollback-adjusted row/col
-                    let tr = mr.saturating_sub(app.input_area.y + 1) as usize
+                    // Terminal pane: anchor in "distance from bottom" coordinates.
+                    // from_bottom = (inner_height - 1 - vis_row) + scroll
+                    // This is stable across scroll changes (doesn't drift).
+                    let vis_row = mr.saturating_sub(app.input_area.y + 1) as usize;
+                    let inner_h = app.terminal_rows as usize;
+                    let tr = (inner_h.saturating_sub(1).saturating_sub(vis_row))
                         + app.terminal_scroll;
                     let tc = mc.saturating_sub(app.input_area.x + 1) as usize;
                     app.mouse_drag_start = Some((tr, tc, 4));

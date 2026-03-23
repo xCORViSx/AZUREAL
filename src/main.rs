@@ -33,6 +33,14 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Hidden --probe-gpu flag: attempt to load the Whisper model with GPU
+    // acceleration and exit. Used by the STT module to test Vulkan/Metal/CUDA
+    // init in a subprocess — if this crashes (C++ foreign exception), the
+    // parent falls back to CPU-only inference.
+    if cli.probe_gpu {
+        return stt::probe_gpu();
+    }
+
     let log_level = if cli.verbose {
         "azureal=debug"
     } else {

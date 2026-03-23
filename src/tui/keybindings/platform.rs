@@ -77,7 +77,9 @@ pub fn is_cmd_key(
     letter: char,
 ) -> bool {
     if let crossterm::event::KeyCode::Char(c) = code {
-        if is_cmd(modifiers) && c == letter {
+        // Case-insensitive match: Ctrl+Shift+C delivers uppercase 'C' on some
+        // terminals, and Linux users habitually press Ctrl+Shift for copy/paste.
+        if is_cmd(modifiers) && c.eq_ignore_ascii_case(&letter) {
             return true;
         }
         #[cfg(target_os = "macos")]

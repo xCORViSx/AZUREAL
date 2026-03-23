@@ -8,6 +8,26 @@
 use super::App;
 
 impl App {
+    /// Copy text to system clipboard via persistent handle. Falls back to
+    /// internal clipboard if system clipboard is unavailable.
+    pub fn copy_to_clipboard(&mut self, text: &str) {
+        self.clipboard = text.to_string();
+        if let Some(ref mut cb) = self.system_clipboard {
+            let _ = cb.set_text(text);
+        }
+    }
+
+    /// Read text from system clipboard via persistent handle. Falls back to
+    /// internal clipboard if system clipboard is unavailable.
+    pub fn paste_from_clipboard(&mut self) -> String {
+        if let Some(ref mut cb) = self.system_clipboard {
+            if let Ok(text) = cb.get_text() {
+                return text;
+            }
+        }
+        self.clipboard.clone()
+    }
+
     /// Convert char index to byte offset in self.input
     fn char_to_byte(&self, char_idx: usize) -> usize {
         self.input
@@ -259,14 +279,7 @@ impl App {
         let Some(text) = self.get_input_selected_text() else {
             return false;
         };
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            if cb.set_text(&text).is_ok() {
-                self.clipboard = text;
-                return true;
-            }
-        }
-        // Fallback to internal clipboard only
-        self.clipboard = text;
+        self.copy_to_clipboard(&text);
         true
     }
 
@@ -275,18 +288,12 @@ impl App {
         let Some(text) = self.delete_input_selection() else {
             return;
         };
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            let _ = cb.set_text(&text);
-        }
-        self.clipboard = text;
+        self.copy_to_clipboard(&text);
     }
 
     /// Paste from system clipboard
     pub fn input_paste(&mut self) {
-        let paste_text = arboard::Clipboard::new()
-            .ok()
-            .and_then(|mut cb| cb.get_text().ok())
-            .unwrap_or_else(|| self.clipboard.clone());
+        let paste_text = self.paste_from_clipboard();
 
         if paste_text.is_empty() {
             return;

@@ -393,29 +393,36 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     // Input/Terminal pane — enter prompt mode or position cursor
     if app.input_area.contains(pos) {
         if app.terminal_mode {
-            // Enter type mode, scroll to bottom, and reposition cursor on same row
+            // Clear any existing selection on new click
+            app.terminal_selection = None;
             if !app.prompt_mode {
                 app.prompt_mode = true;
             }
-            app.scroll_terminal_to_bottom();
             app.focus = Focus::Input;
 
-            // Map click to terminal-inner coordinates
-            let click_col = col.saturating_sub(app.input_area.x + 1) as u16;
-            let click_row = row.saturating_sub(app.input_area.y + 1) as u16;
-            let (cur_row, cur_col) = app.terminal_cursor_position();
+            // Only scroll to bottom and reposition cursor if the user clicks
+            // on the bottom visible row (near the prompt). Clicking elsewhere
+            // starts a selection without jumping — the cursor repositioning
+            // only makes sense when the shell prompt is visible at the bottom.
+            let inner_height = app.input_area.height.saturating_sub(2) as usize;
+            let click_row_in_pane = row.saturating_sub(app.input_area.y + 1) as usize;
+            let is_at_bottom = app.terminal_scroll == 0;
 
-            // Only reposition horizontally when clicking on the cursor's row
-            if click_row == cur_row {
-                if click_col > cur_col {
-                    // Send Right arrow sequences
-                    for _ in 0..(click_col - cur_col) {
-                        app.write_to_terminal(b"\x1b[C");
-                    }
-                } else if click_col < cur_col {
-                    // Send Left arrow sequences
-                    for _ in 0..(cur_col - click_col) {
-                        app.write_to_terminal(b"\x1b[D");
+            if is_at_bottom && click_row_in_pane >= inner_height.saturating_sub(1) {
+                // Click near the prompt line — reposition cursor
+                let click_col = col.saturating_sub(app.input_area.x + 1) as u16;
+                let click_row = row.saturating_sub(app.input_area.y + 1) as u16;
+                let (cur_row, cur_col) = app.terminal_cursor_position();
+
+                if click_row == cur_row {
+                    if click_col > cur_col {
+                        for _ in 0..(click_col - cur_col) {
+                            app.write_to_terminal(b"\x1b[C");
+                        }
+                    } else if click_col < cur_col {
+                        for _ in 0..(cur_col - click_col) {
+                            app.write_to_terminal(b"\x1b[D");
+                        }
                     }
                 }
             }
@@ -438,10 +445,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     if app.pane_status.contains(pos) {
         if let Some(ref msg) = app.status_message {
             let text = msg.clone();
-            if let Ok(mut cb) = arboard::Clipboard::new() {
-                let _ = cb.set_text(&text);
-            }
-            app.clipboard = text;
+            app.copy_to_clipboard(&text);
             app.set_status("Copied to clipboard");
         }
         return true;
@@ -566,7 +570,7 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
             }
             false
         }
-        // --- Terminal pane: anchor = (scrollback_row, col) ---
+        // --- Terminal pane: anchor = (from_bottom, col) ---
         4 => {
             // Auto-scroll when dragging above/below terminal pane
             if row < app.input_area.y + 1 {
@@ -574,17 +578,21 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
             } else if row >= app.input_area.y + app.input_area.height.saturating_sub(1) {
                 app.scroll_terminal_down(1);
             }
-            // Compute current drag position in scrollback-adjusted coordinates
+            // Compute current drag position in "distance from bottom" coordinates.
+            // from_bottom = (inner_height - 1 - vis_row) + scroll — stable across scrolls.
             let er = row
                 .max(app.input_area.y + 1)
                 .min(app.input_area.y + app.input_area.height.saturating_sub(2));
             let ec = col
                 .max(app.input_area.x + 1)
                 .min(app.input_area.x + app.input_area.width.saturating_sub(2));
-            let drag_row = (er - app.input_area.y - 1) as usize + app.terminal_scroll;
+            let vis_row = (er - app.input_area.y - 1) as usize;
+            let inner_h = app.terminal_rows as usize;
+            let drag_row = (inner_h.saturating_sub(1).saturating_sub(vis_row))
+                + app.terminal_scroll;
             let drag_col = (ec - app.input_area.x - 1) as usize;
-            // Normalize so start <= end
-            let sel = if anchor_line < drag_row
+            // Normalize: higher from_bottom = earlier content = start
+            let sel = if anchor_line > drag_row
                 || (anchor_line == drag_row && anchor_col <= drag_col)
             {
                 (anchor_line, anchor_col, drag_row, drag_col)
@@ -658,10 +666,7 @@ pub fn copy_viewer_selection(app: &mut App) {
     if text.is_empty() {
         return;
     }
-    if let Ok(mut cb) = arboard::Clipboard::new() {
-        let _ = cb.set_text(&text);
-    }
-    app.clipboard = text;
+    app.copy_to_clipboard(&text);
     app.set_status("Copied to clipboard");
 }
 
@@ -676,10 +681,7 @@ pub fn copy_session_selection(app: &mut App) {
     if text.is_empty() {
         return;
     }
-    if let Ok(mut cb) = arboard::Clipboard::new() {
-        let _ = cb.set_text(&text);
-    }
-    app.clipboard = text;
+    app.copy_to_clipboard(&text);
     app.set_status("Copied to clipboard");
 }
 
@@ -726,35 +728,83 @@ fn extract_session_text(
 }
 
 /// Copy text selected in the terminal pane to clipboard.
-/// Temporarily adjusts scrollback to read text from the vt100 screen buffer.
+/// Selection coordinates are "distance from bottom" (higher = earlier content).
+/// Reads in screen-sized chunks since contents_between only works on visible rows.
 pub fn copy_terminal_selection(app: &mut App) {
+    // sl = start (higher from_bottom, earlier), el = end (lower, later)
     let Some((sl, sc, el, ec)) = app.terminal_selection else {
         return;
     };
-    let (rows, _) = app.terminal_parser.screen().size();
-    // Selection rows are absolute (visible_row + scrollback_at_click_time).
-    // contents_between works on visible rows, so we need to set scrollback
-    // such that the selection start is the top of the visible area.
     let saved_scroll = app.terminal_scroll;
-    // Set scrollback so row `sl` is visible row 0
-    app.terminal_parser.screen_mut().set_scrollback(sl);
-    let actual_scroll = app.terminal_parser.screen().scrollback();
-    // Map absolute rows to visible rows relative to actual_scroll
-    let vis_sl = sl.saturating_sub(actual_scroll) as u16;
-    let vis_el = el.saturating_sub(actual_scroll) as u16;
-    let text = if vis_sl == vis_el {
-        // Single row
+    let inner_h = app.terminal_rows as usize;
+    if inner_h == 0 {
+        return;
+    }
+    let (screen_rows, _) = app.terminal_parser.screen().size();
+    let total_sel_rows = sl - el + 1;
+
+    let mut all_lines: Vec<String> = Vec::with_capacity(total_sel_rows);
+
+    // Read the selection in screen-sized chunks, from top (earliest, highest from_bottom)
+    // to bottom (latest, lowest from_bottom).
+    // At each step: set scrollback so the chunk's top is at vis_row 0, read visible lines.
+    let mut remaining_top = sl; // from_bottom of next chunk's top row
+
+    while remaining_top >= el {
+        // Set scrollback so from_bottom `remaining_top` appears at vis_row 0
+        let need_scroll = remaining_top.saturating_sub(inner_h.saturating_sub(1));
         app.terminal_parser
+            .screen_mut()
+            .set_scrollback(need_scroll);
+        let actual_scroll = app.terminal_parser.screen().scrollback();
+
+        // How many rows of the selection are visible in this chunk?
+        // Visible from_bottoms: [actual_scroll .. actual_scroll + inner_h - 1]
+        let vis_top_fb = actual_scroll + inner_h - 1; // from_bottom of vis_row 0
+        let vis_bot_fb = actual_scroll; // from_bottom of vis_row inner_h-1
+
+        // Clamp to selection range
+        let chunk_top_fb = vis_top_fb.min(sl);
+        let chunk_bot_fb = vis_bot_fb.max(el);
+
+        if chunk_top_fb < chunk_bot_fb {
+            break; // shouldn't happen, safety exit
+        }
+
+        // Convert to visible rows
+        let vis_start = (inner_h - 1).saturating_sub(chunk_top_fb - actual_scroll) as u16;
+        let vis_end = (inner_h - 1).saturating_sub(chunk_bot_fb - actual_scroll) as u16;
+        let vis_end = vis_end.min(screen_rows.saturating_sub(1));
+
+        // Determine column bounds for this chunk
+        let start_col = if chunk_top_fb == sl { sc as u16 } else { 0 };
+        let end_col = if chunk_bot_fb == el {
+            ec as u16
+        } else {
+            u16::MAX // full line width — contents_between handles clamping
+        };
+
+        let chunk = app
+            .terminal_parser
             .screen()
-            .contents_between(vis_sl, sc as u16, vis_el, ec as u16)
-    } else {
-        app.terminal_parser.screen().contents_between(
-            vis_sl,
-            sc as u16,
-            vis_el.min(rows.saturating_sub(1)),
-            ec as u16,
-        )
-    };
+            .contents_between(vis_start, start_col, vis_end, end_col);
+
+        // Split into lines and append
+        for line in chunk.split('\n') {
+            all_lines.push(line.to_string());
+        }
+
+        if chunk_bot_fb <= el {
+            break;
+        }
+        remaining_top = chunk_bot_fb.saturating_sub(1);
+    }
+
+    // Trim trailing empty lines
+    while all_lines.last().map(|s| s.is_empty()).unwrap_or(false) {
+        all_lines.pop();
+    }
+    let text = all_lines.join("\n");
     // Restore original scrollback
     app.terminal_parser
         .screen_mut()
@@ -763,10 +813,7 @@ pub fn copy_terminal_selection(app: &mut App) {
     if text.is_empty() {
         return;
     }
-    if let Ok(mut cb) = arboard::Clipboard::new() {
-        let _ = cb.set_text(&text);
-    }
-    app.clipboard = text;
+    app.copy_to_clipboard(&text);
     app.set_status("Copied to clipboard");
 }
 

@@ -64,26 +64,60 @@ pub fn draw_terminal(f: &mut Frame, app: &mut App, area: Rect) {
         .into_text()
         .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(&content).to_string()));
 
-    // Apply selection highlighting if active
+    // Apply selection highlighting if active.
+    // Selection coordinates are "distance from bottom" (higher = earlier content).
+    // sl = start (higher from_bottom, earlier), el = end (lower from_bottom, later).
     if let Some((sl, sc, el, ec)) = app.terminal_selection {
         let scroll = app.terminal_scroll;
+        let inner_h = inner_height as usize;
+        let sel_bg = ratatui::style::Style::default().bg(Color::Rgb(60, 60, 100));
         for (vis_idx, line) in text.lines.iter_mut().enumerate() {
-            let abs_row = vis_idx + scroll;
-            if abs_row < sl || abs_row > el {
+            let from_bottom = (inner_h.saturating_sub(1).saturating_sub(vis_idx)) + scroll;
+            if from_bottom > sl || from_bottom < el {
                 continue;
             }
-            let line_content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            let new_spans = super::draw_viewer::apply_selection_to_line(
-                std::mem::take(&mut line.spans),
-                &line_content,
-                abs_row,
-                sl,
-                sc,
-                el,
-                ec,
-                0, // no gutter
-            );
-            line.spans = new_spans;
+            // Determine column range for this row
+            let (col_start, col_end) = if from_bottom == sl && from_bottom == el {
+                // Single-row selection
+                (sc.min(ec), sc.max(ec))
+            } else if from_bottom == sl {
+                // First row of selection (earliest content): highlight from sc to end
+                (sc, usize::MAX)
+            } else if from_bottom == el {
+                // Last row of selection (latest content): highlight from 0 to ec
+                (0, ec)
+            } else {
+                // Middle row: highlight entire line
+                (0, usize::MAX)
+            };
+            // Apply highlight to spans within the column range
+            let mut result: Vec<ratatui::text::Span<'static>> = Vec::new();
+            let mut char_pos = 0usize;
+            for span in std::mem::take(&mut line.spans) {
+                let span_len = span.content.chars().count();
+                let span_end = char_pos + span_len;
+                if span_end <= col_start || char_pos >= col_end {
+                    result.push(span);
+                } else {
+                    let chars: Vec<char> = span.content.chars().collect();
+                    if char_pos < col_start {
+                        let before: String = chars[..(col_start - char_pos)].iter().collect();
+                        result.push(ratatui::text::Span::styled(before, span.style));
+                    }
+                    let s = col_start.saturating_sub(char_pos);
+                    let e = (col_end - char_pos).min(span_len);
+                    if s < e {
+                        let sel: String = chars[s..e].iter().collect();
+                        result.push(ratatui::text::Span::styled(sel, span.style.patch(sel_bg)));
+                    }
+                    if span_end > col_end {
+                        let after: String = chars[(col_end - char_pos)..].iter().collect();
+                        result.push(ratatui::text::Span::styled(after, span.style));
+                    }
+                }
+                char_pos = span_end;
+            }
+            line.spans = result;
         }
     }
 

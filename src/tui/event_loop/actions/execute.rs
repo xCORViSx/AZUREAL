@@ -55,10 +55,7 @@ pub(super) fn execute_action(
                 // Git mode fallback: copy status box result message
                 if let Some((ref msg, _)) = p.result_message {
                     let text = msg.clone();
-                    if let Ok(mut cb) = arboard::Clipboard::new() {
-                        let _ = cb.set_text(&text);
-                    }
-                    app.clipboard = text;
+                    app.copy_to_clipboard(&text);
                     app.set_status("Copied to clipboard");
                 }
             }

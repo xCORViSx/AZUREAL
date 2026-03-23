@@ -94,6 +94,7 @@ pub struct App {
     /// Enter handler to skip deferral and submit immediately. Without this,
     /// the re-injected Enter would be caught by the deferred resolution block
     /// and treated as "another paste Enter" → infinite newline insertion.
+    #[cfg(target_os = "windows")]
     pub paste_submit_now: bool,
     pub should_quit: bool,
     pub status_message: Option<String>,
@@ -423,6 +424,9 @@ pub struct App {
     pub viewer_edit_highlight_ver: usize,
     /// Clipboard for copy/cut/paste operations
     pub clipboard: String,
+    /// Persistent system clipboard handle — kept alive so Linux clipboard
+    /// managers have time to grab content (arboard drops content on Drop).
+    pub system_clipboard: Option<arboard::Clipboard>,
     /// Text selection for read-only viewer: (start_visual_line, start_col, end_visual_line, end_col)
     pub viewer_selection: Option<(usize, usize, usize, usize)>,
     /// Text selection for session pane: (start_visual_line, start_col, end_visual_line, end_col)
@@ -657,6 +661,7 @@ impl App {
             prompt_mode: false,
             paste_guard_until: std::time::Instant::now(),
             paste_deferred_enter: None,
+            #[cfg(target_os = "windows")]
             paste_submit_now: false,
             should_quit: false,
             status_message: None,
@@ -808,6 +813,7 @@ impl App {
             viewer_edit_highlight_cache: Vec::new(),
             viewer_edit_highlight_ver: usize::MAX,
             clipboard: String::new(),
+            system_clipboard: arboard::Clipboard::new().ok(),
             viewer_selection: None,
             session_selection: None,
             terminal_selection: None,

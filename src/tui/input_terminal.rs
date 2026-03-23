@@ -22,10 +22,7 @@ pub fn handle_input_mode(
             // Paste from clipboard (⌘V / Ctrl+V) — check before character match
             if let KeyCode::Char(_) = key.code {
                 if is_cmd_key(key.modifiers, key.code, 'v') {
-                    let paste_text = arboard::Clipboard::new()
-                        .ok()
-                        .and_then(|mut cb| cb.get_text().ok())
-                        .unwrap_or_default();
+                    let paste_text = app.paste_from_clipboard();
                     if !paste_text.is_empty() {
                         // Convert \n to \r (terminal convention) and normalize \r\n
                         let text = paste_text.replace("\r\n", "\r").replace('\n', "\r");

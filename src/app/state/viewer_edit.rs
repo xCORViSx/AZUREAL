@@ -471,11 +471,7 @@ impl App {
         let Some(text) = self.get_selected_text() else {
             return false;
         };
-        // Try system clipboard first, fall back to internal
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            let _ = clipboard.set_text(&text);
-        }
-        self.clipboard = text;
+        self.copy_to_clipboard(&text);
         true
     }
 
@@ -484,20 +480,12 @@ impl App {
         let Some(text) = self.delete_selection_text() else {
             return;
         };
-        // Try system clipboard first, fall back to internal
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            let _ = clipboard.set_text(&text);
-        }
-        self.clipboard = text;
+        self.copy_to_clipboard(&text);
     }
 
     /// Paste from system clipboard (falls back to internal clipboard)
     pub fn viewer_edit_paste(&mut self) {
-        // Try system clipboard first, fall back to internal
-        let paste_text = arboard::Clipboard::new()
-            .ok()
-            .and_then(|mut cb| cb.get_text().ok())
-            .unwrap_or_else(|| self.clipboard.clone());
+        let paste_text = self.paste_from_clipboard();
 
         if paste_text.is_empty() {
             return;

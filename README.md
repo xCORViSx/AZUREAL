@@ -156,8 +156,8 @@ Your agent will handle downloading, installing dependencies, and setting up your
 - **Codex CLI** (for Codex backend, optional) — `npm install -g @openai/codex`
 - **Git** (2.15+, worktree support) — macOS: `xcode-select --install` · Linux: `sudo apt install git` · Windows: [git-scm.com](https://git-scm.com/downloads)
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) with at least regular, bold, and italic variants installed, so AZUREAL can show file tree icons and the full range of text styling differences; emoji fallback when not detected
-- **LLVM/Clang + CMake + Ninja** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` and `[Environment]::SetEnvironmentVariable("CMAKE_GENERATOR", "Ninja", "User")` in PowerShell (restart terminal after). Ninja is required on Windows because the default VS generator's MSBuild strips CUDA include paths
-- **NVIDIA CUDA Toolkit** (Windows build dependency, for GPU-accelerated Whisper) — `winget install Nvidia.CUDA` (restart terminal after install to pick up `CUDA_PATH`)
+- **LLVM/Clang + CMake** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` in PowerShell (restart terminal after)
+- **Vulkan SDK** (Linux/Windows build dependency, for GPU-accelerated Whisper) — Linux: `sudo apt install libvulkan-dev` · Windows: install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) or `winget install KhronosGroup.VulkanSDK`
 - **Whisper model** (optional, for speech) — Create `~/.azureal/speech/` and download [ggml-small.en.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin) into it
 
 ### Platform Support
@@ -165,8 +165,8 @@ Your agent will handle downloading, installing dependencies, and setting up your
 | Platform | Status |
 |----------|--------|
 | macOS | Primary — Metal GPU for Whisper, `.app` bundle icon |
-| Linux | Supported — CPU Whisper, all features |
-| Windows | Supported — ConPTY, `cmd.exe`/PowerShell shell, CUDA GPU Whisper, branded console icon (terminal tab + taskbar) |
+| Linux | Supported — Vulkan GPU Whisper, all features |
+| Windows | Supported — ConPTY, `cmd.exe`/PowerShell shell, Vulkan GPU Whisper, branded console icon (terminal tab + taskbar) |
 
 ## Installation
 

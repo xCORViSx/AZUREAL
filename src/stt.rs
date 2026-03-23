@@ -12,6 +12,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use anyhow::Result;
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 /// Command sent from main thread to STT background thread
@@ -77,6 +79,46 @@ impl SttHandle {
     }
 }
 
+/// Subprocess entry point for `--probe-gpu`. Attempts to load the Whisper model
+/// with GPU acceleration. Exits 0 on success, crashes or exits non-zero on failure.
+/// The parent process uses the exit code to decide GPU vs CPU for real inference.
+pub fn probe_gpu() -> Result<()> {
+    let model_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("no home dir"))?
+        .join(".azureal")
+        .join("speech");
+    let model_path = model_dir.join("ggml-small.en.bin");
+    if !model_path.exists() {
+        // No model — nothing to probe, exit success (GPU question is moot)
+        return Ok(());
+    }
+    whisper_rs::install_logging_hooks();
+    let mut params = whisper_rs::WhisperContextParameters::default();
+    params.use_gpu(true);
+    let _ctx =
+        whisper_rs::WhisperContext::new_with_params(model_path.to_str().unwrap_or(""), params)
+            .map_err(|e| anyhow::anyhow!("GPU probe failed: {}", e))?;
+    Ok(())
+}
+
+/// Probe GPU availability by spawning self with `--probe-gpu`.
+/// Returns true if GPU Whisper init succeeded, false if it crashed or failed.
+fn probe_gpu_available() -> bool {
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    match std::process::Command::new(exe)
+        .arg("--probe-gpu")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+    {
+        Ok(status) => status.success(),
+        Err(_) => false,
+    }
+}
+
 /// Background thread main loop. Blocks on recv() when idle (zero CPU).
 /// Manages recording state and WhisperContext lifetime.
 fn stt_loop(cmd_rx: Receiver<SttCommand>, event_tx: Sender<SttEvent>) {
@@ -97,6 +139,8 @@ fn stt_loop(cmd_rx: Receiver<SttCommand>, event_tx: Sender<SttEvent>) {
     let mut state = State::Idle;
     // Cached WhisperContext — loaded once on first transcription, reused forever
     let mut whisper_ctx: Option<whisper_rs::WhisperContext> = None;
+    // GPU probe result — computed once on first transcription
+    let mut gpu_probed: Option<bool> = None;
 
     // Block on commands — zero CPU when idle
     while let Ok(cmd) = cmd_rx.recv() {
@@ -151,7 +195,9 @@ fn stt_loop(cmd_rx: Receiver<SttCommand>, event_tx: Sender<SttEvent>) {
                 // Lazy-load Whisper model on first transcription
                 if whisper_ctx.is_none() {
                     let _ = event_tx.send(SttEvent::ModelLoading);
-                    match load_whisper_model() {
+                    // Probe GPU on first use — subprocess tests Vulkan/Metal/CUDA init
+                    let use_gpu = *gpu_probed.get_or_insert_with(probe_gpu_available);
+                    match load_whisper_model(use_gpu) {
                         Ok(ctx) => {
                             whisper_ctx = Some(ctx);
                             let _ = event_tx.send(SttEvent::ModelReady);
@@ -233,8 +279,9 @@ fn start_recording() -> Result<(cpal::Stream, Arc<Mutex<Vec<f32>>>, u32), String
 }
 
 /// Load the Whisper model from ~/.azureal/speech/ggml-small.en.bin.
-/// Returns a descriptive error message with download instructions if the file is missing.
-fn load_whisper_model() -> Result<whisper_rs::WhisperContext, String> {
+/// `use_gpu` controls whether GPU acceleration is attempted — determined by
+/// the subprocess probe to avoid C++ exception crashes from failed Vulkan init.
+fn load_whisper_model(use_gpu: bool) -> Result<whisper_rs::WhisperContext, String> {
     let model_dir = dirs::home_dir()
         .ok_or("Cannot find home directory")?
         .join(".azureal")
@@ -253,7 +300,8 @@ fn load_whisper_model() -> Result<whisper_rs::WhisperContext, String> {
     // Without log_backend/tracing_backend features, logs are silently dropped.
     whisper_rs::install_logging_hooks();
 
-    let params = whisper_rs::WhisperContextParameters::default();
+    let mut params = whisper_rs::WhisperContextParameters::default();
+    params.use_gpu(use_gpu);
     whisper_rs::WhisperContext::new_with_params(model_path.to_str().unwrap_or(""), params)
         .map_err(|e| format!("Failed to load Whisper model: {}", e))
 }

@@ -115,6 +115,19 @@ impl KeyCombo {
                 }
             }
         }
+        // Linux/Windows: Ctrl+Shift+letter matches Ctrl+letter bindings.
+        // Linux terminals conventionally use Ctrl+Shift+C/V/A for copy/paste/
+        // select-all (Ctrl+C alone is SIGINT in normal terminals). In raw mode
+        // TUI apps both work, but users have Ctrl+Shift muscle memory. Tolerate
+        // the extra SHIFT for any Ctrl+letter binding.
+        #[cfg(not(target_os = "macos"))]
+        if self.modifiers == KeyModifiers::CONTROL && modifiers.contains(KeyModifiers::CONTROL) && modifiers.contains(KeyModifiers::SHIFT) {
+            if let (KeyCode::Char(bind_c), KeyCode::Char(pressed_c)) = (self.code, code) {
+                if bind_c.is_ascii_alphabetic() && bind_c.eq_ignore_ascii_case(&pressed_c) {
+                    return true;
+                }
+            }
+        }
         false
     }
 
