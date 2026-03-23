@@ -201,9 +201,6 @@ impl App {
         let az = crate::azufig::load_project_azufig(&repo_root);
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
 
-        // Load auto-rebase enabled branches from each worktree's azufig
-        self.auto_rebase_enabled = crate::azufig::load_auto_rebase_from_worktrees(&self.worktrees);
-
         // Untrack any files that match .gitignore but are still in the index
         // (e.g. .DS_Store committed before gitignore was added).
         Git::untrack_gitignored_files(&repo_root);
@@ -217,6 +214,10 @@ impl App {
         // Detached HEAD repair and orphaned rebase cleanup now handled
         // inside load_worktrees() so every refresh (not just startup) benefits.
         self.load_worktrees()?;
+
+        // Load auto-rebase enabled branches from each worktree's azufig
+        // (must be after load_worktrees() so self.worktrees is populated)
+        self.auto_rebase_enabled = crate::azufig::load_auto_rebase_from_worktrees(&self.worktrees);
 
         Ok(())
     }
