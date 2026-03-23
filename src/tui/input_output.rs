@@ -1079,7 +1079,7 @@ mod tests {
         let mut app = App::new();
         app.show_session_list = true;
         let k = key(KeyCode::Esc);
-        let result = handle_session_input(k, &mut app);
+        let result = handle_session_list_input(k, &mut app);
         assert!(result.is_ok());
         // show_session_list unchanged — Esc is handled upstream in actions.rs
         assert!(app.show_session_list);
@@ -1092,7 +1092,7 @@ mod tests {
         let mut app = App::new();
         app.show_session_list = true;
         let k = key(KeyCode::Char('a'));
-        let result = handle_session_input(k, &mut app);
+        let result = handle_session_list_input(k, &mut app);
         assert!(result.is_ok());
         // show_session_list unchanged — handled upstream
         assert!(app.show_session_list);

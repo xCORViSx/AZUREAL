@@ -122,6 +122,53 @@ impl Git {
         Ok(())
     }
 
+    /// Rename all branches whose prefix doesn't match the expected one.
+    /// Covers both worktree-checked-out branches and archived (local-only) branches.
+    /// E.g. if a project's prefix changed from "azureal" to "idiosonix",
+    /// "azureal/clips" → "idiosonix/clips".
+    /// `rename_branch` also pushes the new name to remote and deletes the old ref.
+    /// Returns the number of branches renamed.
+    pub fn migrate_branch_prefix(repo_path: &Path, expected_prefix: &str) -> usize {
+        let mut renamed = 0;
+        let mut already_migrated = std::collections::HashSet::new();
+
+        // Phase 1: Worktree branches (checked out in worktrees/)
+        if let Ok(worktrees) = Self::list_worktrees_detailed(repo_path) {
+            let worktrees_dir = repo_path.join("worktrees");
+            for wt in &worktrees {
+                if !wt.path.starts_with(&worktrees_dir) {
+                    continue;
+                }
+                let branch = match &wt.branch {
+                    Some(b) => b.as_str(),
+                    None => continue,
+                };
+                if let Some(new_name) = needs_prefix_migration(branch, expected_prefix) {
+                    if Self::rename_branch(repo_path, branch, &new_name).is_ok() {
+                        already_migrated.insert(new_name);
+                        renamed += 1;
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Archived branches (local branches not checked out in any worktree)
+        if let Ok(local_branches) = Self::list_local_branches(repo_path) {
+            for branch in &local_branches {
+                if let Some(new_name) = needs_prefix_migration(branch, expected_prefix) {
+                    if already_migrated.contains(&new_name) {
+                        continue;
+                    }
+                    if Self::rename_branch(repo_path, branch, &new_name).is_ok() {
+                        renamed += 1;
+                    }
+                }
+            }
+        }
+
+        renamed
+    }
+
     /// Delete a branch (local + remote + tracking ref)
     pub fn delete_branch(repo_path: &Path, branch_name: &str) -> Result<()> {
         // Delete local branch (try soft first, then force)
@@ -163,6 +210,17 @@ impl Git {
 
         Ok(())
     }
+}
+
+/// Check if a branch needs prefix migration. Returns the new name if yes, None if no.
+fn needs_prefix_migration(branch: &str, expected_prefix: &str) -> Option<String> {
+    let slash_pos = branch.find('/')?;
+    let current_prefix = &branch[..slash_pos];
+    let suffix = &branch[slash_pos + 1..];
+    if current_prefix == expected_prefix || suffix.is_empty() {
+        return None;
+    }
+    Some(format!("{}/{}", expected_prefix, suffix))
 }
 
 #[cfg(test)]
