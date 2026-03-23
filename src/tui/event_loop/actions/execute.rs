@@ -284,18 +284,79 @@ pub(super) fn execute_action(
                         // Check for uncommitted changes and unmerged commits
                         let mut warnings = Vec::new();
                         if let Some(ref wt_path) = wt.worktree_path {
-                            let dirty_count = std::process::Command::new("git")
-                                .args(["status", "--porcelain"])
-                                .current_dir(wt_path)
-                                .output()
-                                .ok()
-                                .map(|o| {
-                                    String::from_utf8_lossy(&o.stdout)
-                                        .lines()
-                                        .filter(|l| !l.is_empty())
-                                        .count()
-                                })
-                                .unwrap_or(0);
+                            // Use git diff HEAD + untracked + gitignore filter
+                            // to match the git panel's get_diff_files() logic.
+                            // Raw `git status --porcelain` inflates the count with
+                            // tracked-but-gitignored files (build artifacts, .DS_Store, etc.)
+                            let dirty_count = {
+                                let mut count = 0usize;
+                                let mut paths: Vec<String> = Vec::new();
+
+                                // Changed files vs HEAD
+                                if let Ok(o) = std::process::Command::new("git")
+                                    .args(["diff", "HEAD", "--name-only"])
+                                    .current_dir(wt_path)
+                                    .output()
+                                {
+                                    for line in String::from_utf8_lossy(&o.stdout).lines() {
+                                        let p = line.trim().to_string();
+                                        if !p.is_empty() {
+                                            paths.push(p);
+                                        }
+                                    }
+                                }
+
+                                // Untracked files (--exclude-standard respects .gitignore)
+                                if let Ok(o) = std::process::Command::new("git")
+                                    .args(["ls-files", "--others", "--exclude-standard"])
+                                    .current_dir(wt_path)
+                                    .output()
+                                {
+                                    for line in String::from_utf8_lossy(&o.stdout).lines() {
+                                        let p = line.trim().to_string();
+                                        if !p.is_empty() && !paths.contains(&p) {
+                                            paths.push(p);
+                                        }
+                                    }
+                                }
+
+                                // Filter out gitignored files (same as get_diff_files)
+                                if !paths.is_empty() {
+                                    if let Ok(mut child) = std::process::Command::new("git")
+                                        .args(["check-ignore", "--no-index", "--stdin"])
+                                        .current_dir(wt_path)
+                                        .stdin(std::process::Stdio::piped())
+                                        .stdout(std::process::Stdio::piped())
+                                        .spawn()
+                                    {
+                                        if let Some(mut stdin) = child.stdin.take() {
+                                            use std::io::Write;
+                                            let _ = stdin.write_all(
+                                                paths.join("\n").as_bytes(),
+                                            );
+                                        }
+                                        if let Ok(o) = child.wait_with_output() {
+                                            let ignored_str =
+                                                String::from_utf8_lossy(&o.stdout);
+                                            let ignored: std::collections::HashSet<&str> =
+                                                ignored_str
+                                                    .lines()
+                                                    .map(|l| l.trim())
+                                                    .filter(|l| !l.is_empty())
+                                                    .collect();
+                                            count = paths
+                                                .iter()
+                                                .filter(|p| !ignored.contains(p.as_str()))
+                                                .count();
+                                        } else {
+                                            count = paths.len();
+                                        }
+                                    } else {
+                                        count = paths.len();
+                                    }
+                                }
+                                count
+                            };
                             if dirty_count > 0 {
                                 warnings.push(format!(
                                     "{} uncommitted change{}",
