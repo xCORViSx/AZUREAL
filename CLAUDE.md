@@ -342,8 +342,7 @@ for (line_idx, span_idx, tool_use_id) in &app.animation_line_indices {
 - `min_poll_interval = 500ms` (session file polling)
 - `poll_ms = 16ms` when busy (render in-flight / Claude streaming), `100ms` when idle
 - **Render submit throttle: 50ms** — `last_render_submit` in App state. Without this, every `poll_render_result()` completion immediately triggers another `submit_render_request()` (since `rendered_lines_dirty` is re-set by arriving events), cloning the full events array at ~60Hz. The 50ms floor batches streaming events into ~20 render cycles/sec.
-- **Extended typing deferral (300ms window):** `typing_recently` (true when `last_key_time.elapsed() < 300ms`) suppresses `terminal.draw()` calls during active typing when fast-path is available. `fast_draw_input()` (~0.1ms) provides instant keystroke feedback; session pane updates wait for the next full ratatui draw cycle. Event loop profiler logs to `~/.azureal/event_loop_profile.log` for diagnostics.
-
+- **Extended typing deferral (300ms window):** `typing_recently` (true when `last_key_time.elapsed() < 300ms`) suppresses `terminal.draw()` calls during active typing when fast-path is available. `fast_draw_input()` (~0.1ms) provides instant keystroke feedback; session pane updates wait for the next full ratatui draw cycle. 
 ### 14. True Single JSON Parse Per Claude Event
 
 ```rust
@@ -1542,24 +1541,22 @@ Implementation: `src/wizard.rs` (wizard state), `src/tui/draw_wizard.rs` (render
 
 Cross-platform notification sent when any agent instance finishes its response. Fires for every session exit (not just the currently viewed one), so the user sees alerts even when working in another app.
 
-**Notification format:**
-- Title: `worktree:session_name`
-- Body: "Compacting context" (mid-turn compaction), "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
+**Notification format (3-line):**
+- Title: `AZUREAL @ <project_name>`
+- Body line 1: `<worktree>::<session_name>`
+- Body line 2: "Compacting context" (mid-turn compaction), "Response complete" (exit 0), "Exited with error" (non-zero), or "Process terminated" (signal)
+- Windows toast uses 3 separate `<text>` elements for native 3-line layout
 - Session name uses custom name from `sessions` if set, otherwise first 8 chars of UUID
-- Branded Azureal icon on all platforms (not Finder/Terminal/generic)
+- Branded AZUREAL icon on all platforms (not Finder/Terminal/generic)
 
 **Platform-specific notification setup:**
 
 *macOS:*
 - Uses `notify-rust` crate with `set_application("com.xcorvisx.azureal")` for branded icon
-- `.app` bundle auto-created at `~/.azureal/AZUREAL.app` on first launch — zero manual setup
-- `.icns` icon embedded in binary via `include_bytes!()` and extracted to bundle on first run
-- Binary copied into bundle (`Contents/MacOS/azureal`) — NOT symlinked, because `proc_pidpath()` resolves symlinks and Activity Monitor needs the real path inside the `.app` to show the custom icon
-- On startup, process re-execs through the bundle copy via `Command::exec()` so `proc_pidpath()` returns the bundle path
+- `.app` bundle at `~/.azureal/AZUREAL.app` — created by the self-installer (`install.rs`), which copies the real binary into the bundle and writes a shell script trampoline at `/usr/local/bin/azureal` (`#!/bin/sh\nexec <bundle_exec> "$@"`). The real binary lives only inside the bundle (~40MB saved vs duplicating). Dev mode (`cargo run`) also creates/updates the bundle in `main.rs` for Activity Monitor icon support.
+- `.icns` icon embedded in binary via `include_bytes!()` and extracted to bundle on creation
 - `TransformProcessType(psn, kProcessTransformToUIElementAppType)` registers the process with the macOS window server — without this, `NSRunningApplication` returns nil and Activity Monitor shows a generic icon despite correct `proc_pidpath()`
-- `AZUREAL_REEXEC` env var prevents infinite re-exec loop; `already_in_bundle` check provides secondary guard
-- Bundle ad-hoc codesigned after binary copy (source has linker ad-hoc signature that fails validation inside a `.app` bundle)
-- Bundle registered with macOS Launch Services via `lsregister` on creation/update
+- Bundle ad-hoc codesigned after binary copy, registered with macOS Launch Services via `lsregister`
 - Activity Monitor shows "AZUREAL" as process name with branded icon
 - Notification permissions auto-enabled on first launch by writing `ALLOW_NOTIFICATIONS|BANNERS|SOUND|BADGE|PREVIEW_ALWAYS` flags to `~/Library/Preferences/com.apple.ncprefs.plist` via Python's `plistlib` (the only reliable way to edit macOS binary plists). Marker file `~/.azureal/.notif_enabled` prevents overriding user's preference on subsequent launches
 - `.sound_name("Glass")` for macOS notification sound (platform-gated via `#[cfg(target_os = "macos")]`)
@@ -1578,7 +1575,7 @@ Cross-platform notification sent when any agent instance finishes its response. 
 - Called from `handle_claude_exited()` BEFORE state cleanup (needs session info still available)
 - For current session: uses cached `title_session_name`; for background sessions: looks up from `session_files` + `index.json` display names
 
-Implementation: `src/app/state/claude/process_lifecycle.rs` (`send_completion_notification()`), `src/main.rs` (macOS bundle creation + re-exec, Windows ico extraction), `build.rs` (Windows icon embedding via winres)
+Implementation: `src/app/state/claude/process_lifecycle.rs` (`send_completion_notification()`), `src/main.rs` (macOS bundle creation for dev mode, Windows ico extraction), `src/install.rs` (macOS bundle + trampoline install), `build.rs` (Windows icon embedding via winres)
 
 # MANIFEST
 

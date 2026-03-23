@@ -1,6 +1,8 @@
 //! Self-install logic — copies binary to PATH on first run
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_os = "macos"))]
+use std::path::PathBuf;
 
 /// Check if the binary needs installation. If so, install and return true (caller should exit).
 /// Returns false for normal startup (already installed or running from cargo build dir).
@@ -73,58 +75,189 @@ fn do_install(exe: &Path) -> bool {
     println!("  \x1b[36m╚══════════════════════════════════════╝\x1b[0m");
     println!();
 
-    let install_dir = pick_install_dir();
-    let install_path = install_dir.join(if cfg!(windows) {
-        "azureal.exe"
-    } else {
-        "azureal"
-    });
-
-    println!("  Installing to: \x1b[1m{}\x1b[0m", install_path.display());
-    println!();
-
-    // Create install directory
-    if !install_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(&install_dir) {
-            eprintln!("  \x1b[31mFailed to create directory: {}\x1b[0m", e);
+    // macOS: install binary into .app bundle, write shell script trampoline to PATH.
+    // The real binary lives only inside the bundle so Activity Monitor shows our icon
+    // via proc_pidpath() → .app bundle lookup. The PATH entry is a ~100 byte script.
+    #[cfg(target_os = "macos")]
+    {
+        if !install_macos(exe) {
             wait_for_enter();
             return true;
         }
-    }
-
-    // Copy binary to install location
-    if !try_copy(exe, &install_path) {
+        println!("  \x1b[32m✓ Installed successfully!\x1b[0m");
+        println!();
+        println!("  You can now run:");
+        println!();
+        println!("    \x1b[1;36mazureal\x1b[0m");
+        println!();
         wait_for_enter();
         return true;
     }
 
-    // Set executable permission on Unix
-    #[cfg(unix)]
+    // Windows/Linux: copy binary directly to PATH
+    #[cfg(not(target_os = "macos"))]
+    {
+        let install_dir = pick_install_dir();
+        let install_path = install_dir.join(if cfg!(windows) {
+            "azureal.exe"
+        } else {
+            "azureal"
+        });
+
+        println!("  Installing to: \x1b[1m{}\x1b[0m", install_path.display());
+        println!();
+
+        if !install_dir.exists() {
+            if let Err(e) = std::fs::create_dir_all(&install_dir) {
+                eprintln!("  \x1b[31mFailed to create directory: {}\x1b[0m", e);
+                wait_for_enter();
+                return true;
+            }
+        }
+
+        if !try_copy(exe, &install_path) {
+            wait_for_enter();
+            return true;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ =
+                std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
+        }
+
+        let path_updated = ensure_in_path(&install_dir);
+
+        println!("  \x1b[32m✓ Installed successfully!\x1b[0m");
+        println!();
+
+        if path_updated {
+            println!(
+                "  \x1b[33mPATH has been updated. Restart your terminal, then run:\x1b[0m"
+            );
+        } else {
+            println!("  You can now run:");
+        }
+        println!();
+        println!("    \x1b[1;36mazureal\x1b[0m");
+        println!();
+
+        wait_for_enter();
+        true
+    }
+}
+
+/// macOS install: copy binary into .app bundle, write shell script to PATH.
+#[cfg(target_os = "macos")]
+fn install_macos(exe: &Path) -> bool {
+    let config_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".azureal");
+    let bundle_dir = config_dir.join("AZUREAL.app");
+    let contents = bundle_dir.join("Contents");
+    let bundle_exec = contents.join("MacOS/azureal");
+
+    println!("  Installing to: \x1b[1m{}\x1b[0m", bundle_exec.display());
+    println!("  Trampoline:    \x1b[1m/usr/local/bin/azureal\x1b[0m");
+    println!();
+
+    // Create bundle structure
+    if let Err(e) = std::fs::create_dir_all(contents.join("MacOS")) {
+        eprintln!("  \x1b[31mFailed to create bundle: {}\x1b[0m", e);
+        return false;
+    }
+    let _ = std::fs::create_dir_all(contents.join("Resources"));
+
+    // Write bundle metadata
+    let _ = std::fs::write(
+        contents.join("Resources/AZUREAL.icns"),
+        include_bytes!("../resources/AZUREAL.icns"),
+    );
+    let _ = std::fs::write(
+        contents.join("Info.plist"),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
+            "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+            "<plist version=\"1.0\">\n<dict>\n",
+            "\t<key>CFBundleIdentifier</key>\n\t<string>com.xcorvisx.azureal</string>\n",
+            "\t<key>CFBundleName</key>\n\t<string>AZUREAL</string>\n",
+            "\t<key>CFBundleDisplayName</key>\n\t<string>AZUREAL</string>\n",
+            "\t<key>CFBundleExecutable</key>\n\t<string>azureal</string>\n",
+            "\t<key>CFBundleIconFile</key>\n\t<string>AZUREAL</string>\n",
+            "\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n",
+            "\t<key>LSUIElement</key>\n\t<true/>\n",
+            "</dict>\n</plist>\n",
+        ),
+    );
+
+    // Copy binary into bundle
+    if !try_copy(exe, &bundle_exec) {
+        return false;
+    }
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
+        let _ = std::fs::set_permissions(&bundle_exec, std::fs::Permissions::from_mode(0o755));
     }
 
-    // Ensure install dir is in PATH
-    let path_updated = ensure_in_path(&install_dir);
+    // Codesign and register with LaunchServices
+    let _ = std::process::Command::new("codesign")
+        .args(["--force", "--sign", "-", &bundle_dir.to_string_lossy()])
+        .output();
+    let _ = std::process::Command::new(
+        "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+    ).args(["-f", &bundle_dir.to_string_lossy()]).output();
 
-    println!("  \x1b[32m✓ Installed successfully!\x1b[0m");
-    println!();
+    // Write shell script trampoline to PATH
+    let trampoline = format!(
+        "#!/bin/sh\nexec \"{}\" \"$@\"\n",
+        bundle_exec.display()
+    );
+    let trampoline_path = Path::new("/usr/local/bin/azureal");
 
-    if path_updated {
-        println!("  \x1b[33mPATH has been updated. Restart your terminal, then run:\x1b[0m");
+    // Try direct write, fall back to sudo
+    let wrote = if std::fs::write(trampoline_path, &trampoline).is_ok() {
+        true
     } else {
-        println!("  You can now run:");
-    }
-    println!();
-    println!("    \x1b[1;36mazureal\x1b[0m");
-    println!();
+        println!("  \x1b[33mRequires elevated permissions. Requesting sudo...\x1b[0m");
+        let status = std::process::Command::new("sudo")
+            .args(["tee", &trampoline_path.to_string_lossy()])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(ref mut stdin) = child.stdin {
+                    stdin.write_all(trampoline.as_bytes())?;
+                }
+                child.wait()
+            });
+        matches!(status, Ok(s) if s.success())
+    };
 
-    wait_for_enter();
+    if !wrote {
+        eprintln!("  \x1b[31mFailed to write trampoline to /usr/local/bin/azureal\x1b[0m");
+        eprintln!("  Create it manually:");
+        eprintln!("    echo '#!/bin/sh' | sudo tee /usr/local/bin/azureal");
+        eprintln!(
+            "    echo 'exec \"{}\" \"$@\"' | sudo tee -a /usr/local/bin/azureal",
+            bundle_exec.display()
+        );
+        eprintln!("    sudo chmod +x /usr/local/bin/azureal");
+        return false;
+    }
+
+    // Make trampoline executable
+    let _ = std::process::Command::new("sudo")
+        .args(["chmod", "+x", &trampoline_path.to_string_lossy()])
+        .status();
+
     true
 }
 
 /// Pick the best install directory for this platform.
+#[cfg(not(target_os = "macos"))]
 fn pick_install_dir() -> PathBuf {
     if cfg!(windows) {
         // Windows: ~/.azureal/bin/ (user-writable, no UAC)
@@ -146,6 +279,7 @@ fn pick_install_dir() -> PathBuf {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 /// Test if a directory is writable by creating a temp file.
 fn is_dir_writable(path: &Path) -> bool {
     let test = path.join(".azureal_write_test");
@@ -189,6 +323,7 @@ fn try_copy(src: &Path, dst: &Path) -> bool {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 /// Ensure the install directory is in PATH. Returns true if PATH was modified.
 fn ensure_in_path(dir: &Path) -> bool {
     // Check if already in PATH
@@ -235,12 +370,13 @@ fn add_to_windows_path(dir: &str) -> bool {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn add_to_windows_path(_dir: &str) -> bool {
     false
 }
 
 /// Append an export line to the user's shell profile (~/.zshrc, ~/.bashrc, etc.).
+#[cfg(not(target_os = "macos"))]
 fn add_to_shell_profile(dir: &Path) -> bool {
     let home = match dirs::home_dir() {
         Some(h) => h,

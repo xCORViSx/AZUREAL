@@ -48,16 +48,12 @@ async fn main() -> Result<()> {
 
     config::ensure_config_dir()?;
 
-    // Create a .app bundle in ~/.azureal/ so macOS shows the Azureal icon
-    // in notifications AND Activity Monitor. The .icns is compiled into the
-    // binary via include_bytes!() — zero external files needed after install.
-    //
-    // Activity Monitor resolves icons by calling proc_pidpath() on the running
-    // process, then walking UP the directory tree looking for a .app bundle.
-    // Symlinks don't work because proc_pidpath() resolves them to the real path.
-    // So we COPY the binary into the bundle and re-exec through that copy.
-    // After re-exec, proc_pidpath() returns ~/.azureal/AZUREAL.app/Contents/MacOS/azureal
-    // and Activity Monitor finds our icon.
+    // macOS: ensure .app bundle exists so Activity Monitor shows our icon.
+    // The self-installer (install.rs) creates the bundle and a shell script
+    // trampoline at /usr/local/bin/azureal that execs the bundle binary.
+    // This block handles dev mode (cargo run): if the bundle is missing or
+    // stale, create/update it. No re-exec needed — installed users already
+    // run from inside the bundle via the trampoline.
     #[cfg(target_os = "macos")]
     {
         let bundle_dir = config::config_dir().join("AZUREAL.app");
@@ -67,13 +63,8 @@ async fn main() -> Result<()> {
             .and_then(|p| dunce::canonicalize(&p).map_err(Into::into))
             .unwrap_or_default();
 
-        // Are we already running from inside the bundle? If so, skip re-exec.
         let already_in_bundle = exe.starts_with(&bundle_dir);
-
-        // Rebuild bundle if plist is missing
         let needs_create = !contents.join("Info.plist").exists();
-        // Re-copy binary if the source changed (e.g., cargo install to new location)
-        // or if the bundle executable is older than the source binary
         let needs_copy = if already_in_bundle {
             false
         } else {
@@ -115,11 +106,6 @@ async fn main() -> Result<()> {
             );
         }
 
-        // Copy the real binary into the bundle so proc_pidpath() resolves
-        // to inside the .app — this is what makes Activity Monitor show our icon.
-        // After copying, re-sign ad-hoc so the bundle passes codesign validation
-        // (the source binary has a linker ad-hoc signature that references no
-        // resources, but inside a .app bundle macOS expects consistency).
         if needs_create || needs_copy {
             let _ = std::fs::copy(&exe, &bundle_exec);
             let _ = std::process::Command::new("codesign")
@@ -130,32 +116,9 @@ async fn main() -> Result<()> {
             ).args(["-f", &bundle_dir.to_string_lossy()]).output();
         }
 
-        // Re-exec through the bundle copy so this process's proc_pidpath()
-        // returns a path inside the .app — making Activity Monitor show our icon.
-        // AZUREAL_REEXEC env var prevents infinite loop: the re-exec'd process
-        // sees it and skips this block. Command::exec() replaces the current
-        // process (unix execvp), so if it succeeds we never reach the next line.
-        if !already_in_bundle
-            && bundle_exec.exists()
-            && std::env::var_os("AZUREAL_REEXEC").is_none()
-        {
-            use std::os::unix::process::CommandExt;
-            let args: Vec<String> = std::env::args().skip(1).collect();
-            let err = std::process::Command::new(&bundle_exec)
-                .args(&args)
-                .env("AZUREAL_REEXEC", "1")
-                .exec();
-            // exec() only returns on failure — fall through and run from original path
-            tracing::debug!("re-exec failed: {}", err);
-        }
-
-        // Register with the macOS window server so NSRunningApplication (and
-        // Activity Monitor) recognizes this process as a proper app with our
-        // bundle's icon. Without this call, proc_pidpath() returns the right
-        // path but the process isn't registered as a "user application" — so
-        // Activity Monitor shows a generic icon. TransformProcessType(psn, 4)
-        // registers us as a UI element app (same as LSUIElement=true: no Dock
-        // icon, no menu bar, but Activity Monitor shows our icon).
+        // Register with the macOS window server so Activity Monitor shows
+        // our icon. TransformProcessType(psn, 4) = kProcessTransformToUIElementAppType
+        // (no Dock icon, no menu bar, but Activity Monitor shows our icon).
         #[allow(non_upper_case_globals)]
         const kCurrentProcess: u32 = 2;
         #[repr(C)]
@@ -171,21 +134,12 @@ async fn main() -> Result<()> {
                 high: 0,
                 low: kCurrentProcess,
             };
-            // 4 = kProcessTransformToUIElementAppType
             TransformProcessType(&mut psn, 4);
         }
 
-        // Pre-enable notification permissions on first launch so the user
-        // gets completion alerts immediately. TransformProcessType (above)
-        // registers us with the window server, which causes macOS to create
-        // an ncprefs entry with notifications DISABLED by default. We flip
-        // the flags to enabled using Python's plistlib (the only reliable
-        // way to edit macOS binary plists). A marker file ensures this
-        // runs only once — users who later disable notifications in System
-        // Settings won't have their preference overridden.
+        // Pre-enable notification permissions on first launch
         let notif_marker = config::config_dir().join(".notif_enabled");
         if !notif_marker.exists() {
-            // Small delay so TransformProcessType's ncprefs entry is flushed
             std::thread::sleep(std::time::Duration::from_millis(200));
             let _ = std::process::Command::new("python3")
                 .args([
@@ -199,7 +153,6 @@ async fn main() -> Result<()> {
                         "found=False\n",
                         "for app in d.get('apps',[]):\n",
                         "  if app.get('bundle-id')==bid:\n",
-                        // 41951246 = ALLOW_NOTIFICATIONS|BANNERS|SOUND|BADGE|PREVIEW_ALWAYS|BIT_23
                         "    app['flags']=41951246;found=True;break\n",
                         "if not found:\n",
                         "  d.setdefault('apps',[]).append({'bundle-id':bid,'flags':41951246})\n",
