@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -192,16 +192,16 @@ production lines and does not appear in the results.</p>
 <p>For all other languages, the entire file length is counted.</p>
 <h3 id="source-root-detection"><a class="header" href="#source-root-detection">Source Root Detection</a></h3>
 <p>The scanner looks for well-known source directories at the project root:</p>
-<pre><code class="language-text">src/  lib/  crates/  packages/  app/  ...
+<pre><code class="language-text">src/  lib/  crates/  packages/  app/  cmd/  pkg/  internal/  ...
 </code></pre>
-<p>Approximately 55 directory names are recognized. If none are found, the scanner
+<p>Approximately 16 directory names are recognized. If none are found, the scanner
 falls back to scanning the entire project root.</p>
 <h3 id="excluded-directories"><a class="header" href="#excluded-directories">Excluded Directories</a></h3>
-<p>Approximately 60 directories are automatically skipped during scanning. These
+<p>Approximately 75 directories are automatically skipped during scanning. These
 include build output directories (<code>target/</code>, <code>node_modules/</code>, <code>dist/</code>, <code>.git/</code>,
 etc.) and other non-source paths that would produce false positives.</p>
 <h3 id="recognized-extensions"><a class="header" href="#recognized-extensions">Recognized Extensions</a></h3>
-<p>The scanner recognizes approximately 60 source file extensions (<code>.rs</code>, <code>.py</code>,
+<p>The scanner recognizes approximately 75 source file extensions (<code>.rs</code>, <code>.py</code>,
 <code>.ts</code>, <code>.js</code>, <code>.go</code>, <code>.java</code>, <code>.c</code>, <code>.cpp</code>, and many more). Files with
 unrecognized extensions are ignored.</p>
 <hr>
@@ -219,9 +219,10 @@ the project root and its production line count.</p>
 <tbody>
 <tr><td><code>j</code> / <code>k</code></td><td>Navigate up / down one entry</td></tr>
 <tr><td><code>J</code> / <code>K</code></td><td>Page down / page up</td></tr>
+<tr><td><code>Alt+Up</code> / <code>Alt+Down</code></td><td>Jump to top / bottom</td></tr>
 <tr><td><code>Space</code></td><td>Toggle checkbox on the highlighted file</td></tr>
 <tr><td><code>a</code></td><td>Toggle all checkboxes (select all / deselect all)</td></tr>
-<tr><td><code>v</code></td><td>View the highlighted file in the file viewer (opens as tabs)</td></tr>
+<tr><td><code>v</code></td><td>View all checked files as Viewer tabs (up to 12)</td></tr>
 <tr><td><code>Enter</code> or <code>m</code></td><td>Modularize all checked files</td></tr>
 </tbody>
 </table>
@@ -259,9 +260,10 @@ a separate conversation.</p>
 Tab           Switch to Documentation tab
 j/k           Navigate results
 J/K           Page down / page up
+Alt+Up/Down   Jump to top / bottom
 Space         Toggle checkbox
 a             Toggle all checkboxes
-v             View file in viewer
+v             View checked files as tabs
 Enter / m     Modularize checked files
 s             Enter Scope Mode
 </code></pre>

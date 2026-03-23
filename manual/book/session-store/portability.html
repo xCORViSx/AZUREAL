@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -202,8 +202,8 @@ worktree associations, creation timestamps, and completion status.</li>
 already in their compacted form.</li>
 <li><strong>All compaction summaries</strong> – the full text of every compaction summary
 generated during the project’s lifetime.</li>
-<li><strong>Runtime metadata</strong> – the active session ID, PID-to-session mappings, and
-schema version.</li>
+<li><strong>Runtime metadata</strong> – the schema version (active session ID and
+PID-to-session mappings are held in memory, not persisted to the store).</li>
 </ul>
 <p>There are no external files that the store depends on. The temporary JSONL
 files produced by agent processes during streaming are ingested into the store
@@ -232,14 +232,12 @@ the correct worktrees on the target machine as long as the worktree names
 match.</p>
 <hr>
 <h2 id="version-control-considerations"><a class="header" href="#version-control-considerations">Version Control Considerations</a></h2>
-<p>The <code>.azureal/</code> directory is typically added to <code>.gitignore</code> because session
-data is personal to each developer. In a team setting, each developer
-maintains their own session store with their own conversation history.</p>
-<p>If you want to share session data (e.g., for onboarding or debugging), copy
-the <code>.azs</code> file directly rather than committing it to the repository. Session
-files can grow to several megabytes in active projects, and conversation
-content may contain sensitive information (API keys in tool results, file
-contents from private repositories, etc.).</p>
+<p>The <code>.azureal/</code> directory is <strong>gitignored by default</strong>. AZUREAL automatically
+adds <code>.azureal/</code> to <code>.gitignore</code> (alongside <code>worktrees/</code>) on first load. This
+prevents the session store, worktree-level configs, and other runtime files from
+causing rebase conflicts during multi-worktree development.</p>
+<p>To share session history across machines, copy the <code>.azureal/sessions.azs</code> file
+manually or use a separate sync mechanism.</p>
 
                     </main>
 

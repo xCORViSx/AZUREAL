@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -185,17 +185,15 @@ readable without leaving the terminal.</p>
 <hr>
 <h2 id="rendered-elements"><a class="header" href="#rendered-elements">Rendered Elements</a></h2>
 <h3 id="headers"><a class="header" href="#headers">Headers</a></h3>
-<p>Headers are rendered with a gradient block prefix that varies by level:</p>
-<pre><code class="language-text">████ H1 Heading
-▓▓▓░ H2 Heading
-▒▒░  H3 Heading
-░░   H4 Heading
-░    H5 Heading
-     H6 Heading
+<p>Headers are rendered with a single block prefix character that varies by level:</p>
+<pre><code class="language-text">█ H1 Heading       (AZURE, bold, underlined)
+▓ H2 Heading       (AZURE, bold)
+▒ H3 Heading       (Green, bold)
+░ H4-H6 Heading    (Green)
 </code></pre>
-<p>The <code>BLOCK FULL</code> / <code>DARK SHADE</code> / <code>MEDIUM SHADE</code> / <code>LIGHT SHADE</code> characters
-create a visual weight that distinguishes heading levels at a glance. Header
-text is rendered bold.</p>
+<p>The descending block density (<code>FULL</code> &gt; <code>DARK SHADE</code> &gt; <code>MEDIUM SHADE</code> &gt;
+<code>LIGHT SHADE</code>) creates visual weight that distinguishes heading levels at a
+glance. Header text is rendered bold (H1-H3) with H1 additionally underlined.</p>
 <h3 id="bullets-and-lists"><a class="header" href="#bullets-and-lists">Bullets and Lists</a></h3>
 <ul>
 <li><strong>Unordered lists</strong> render with standard bullet characters, indented per

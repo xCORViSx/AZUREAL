@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -206,8 +206,9 @@ sequence to ensure a clean, linear history on main:</p>
 operation.</p>
 <h3 id="step-2-stash-dirty-working-tree"><a class="header" href="#step-2-stash-dirty-working-tree">Step 2: Stash Dirty Working Tree</a></h3>
 <p>If the working tree has uncommitted changes, they are stashed automatically.
-The stash is popped on all exit paths (success, failure, conflict) so your
-uncommitted work is never lost.</p>
+The stash is popped on success and failure exit paths. On conflict, the stash
+remains until the conflict is resolved (popped after RCR accept or abort) so
+your uncommitted work is never lost.</p>
 <h3 id="step-3-rebase-feature-onto-main"><a class="header" href="#step-3-rebase-feature-onto-main">Step 3: Rebase Feature onto Main</a></h3>
 <p>The feature branch is rebased onto main using <code>exec_rebase_inner</code>. This ensures
 that any upstream changes on main are incorporated before the merge, avoiding

@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -208,8 +208,8 @@ from their respective files independently.</p>
 <h2 id="format-conventions"><a class="header" href="#format-conventions">Format Conventions</a></h2>
 <p>Both files follow the same TOML conventions:</p>
 <ul>
-<li><strong>Section headers</strong> use <code>[section]</code> notation. Subsections use
-<code>[section.subsection]</code> (e.g., <code>[git.auto-rebase]</code>).</li>
+<li><strong>Section headers</strong> use single-bracket <code>[section]</code> notation (e.g., <code>[config]</code>,
+<code>[git]</code>, <code>[filetree]</code>).</li>
 <li><strong>Key-value pairs</strong> use <code>key = "value"</code> format. Keys that qualify as TOML bare
 keys (alphanumeric, dashes, underscores) are written unquoted. Values are
 always quoted strings.</li>
@@ -234,8 +234,10 @@ process is interrupted.</p>
 inside <code>.azureal/</code>. Because git worktrees share a common <code>.git</code> directory, the
 project config is effectively shared by all worktrees in the project. You do not
 create separate configs per worktree.</p>
-<p>The <code>.azureal/</code> directory is gitignored. Configuration is local to the machine
-and is not committed to the repository.</p>
+<p>The <code>.azureal/</code> directory is <strong>gitignored by default</strong> – AZUREAL automatically
+adds <code>.azureal/</code> to <code>.gitignore</code> (alongside <code>worktrees/</code>) on first load. This
+prevents the session store, worktree-level configs, and other runtime files from
+causing rebase conflicts.</p>
 <hr>
 <h2 id="chapter-contents"><a class="header" href="#chapter-contents">Chapter Contents</a></h2>
 <ul>

@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -224,7 +224,7 @@ artifacts in complex border intersections or half-block character rendering.</p>
 <tr><td>Kitty keyboard protocol</td><td>Yes</td><td>Yes</td><td>No</td></tr>
 <tr><td><code>fast_draw_input()</code></td><td>Yes</td><td>No</td><td>No</td></tr>
 <tr><td><code>.app</code> bundle</td><td>Yes</td><td>N/A</td><td>N/A</td></tr>
-<tr><td>Notifications</td><td>NSUserNotification</td><td>N/A</td><td>Toast (PowerShell)</td></tr>
+<tr><td>Notifications</td><td>NSUserNotification</td><td>D-Bus (notify-rust)</td><td>Toast (PowerShell)</td></tr>
 <tr><td>Modifier key for destructive actions</td><td>Cmd</td><td>Ctrl</td><td>Alt</td></tr>
 </tbody>
 </table>
@@ -262,7 +262,7 @@ speech-to-text dependency. Platform-specific build requirements:</p>
 <tbody>
 <tr><td>macOS</td><td>Xcode Command Line Tools</td></tr>
 <tr><td>Linux</td><td><code>libclang-dev</code>, <code>cmake</code></td></tr>
-<tr><td>Windows</td><td><code>LLVM.LLVM</code>, <code>CMake</code>, <code>LIBCLANG_PATH</code> environment variable</td></tr>
+<tr><td>Windows</td><td><code>LLVM.LLVM</code>, <code>CMake</code>, <code>Ninja</code>, <code>LIBCLANG_PATH</code> environment variable, NVIDIA CUDA Toolkit</td></tr>
 </tbody>
 </table>
 </div>

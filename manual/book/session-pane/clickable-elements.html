@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -195,8 +195,6 @@ what the agent changed without navigating to the file manually.</p>
 column, the file path string, and (for Edit tools) the old/new edit strings.
 When a path wraps across multiple lines, the <code>wrap_line_count</code> field tells the
 click handler how many cache lines to check.</p>
-<p><strong>Hover highlight:</strong> When the mouse hovers over a clickable file path, the
-path region is highlighted to indicate it is interactive.</p>
 <hr>
 <h2 id="assistant-markdown-file-links"><a class="header" href="#assistant-markdown-file-links">Assistant Markdown File Links</a></h2>
 <p>When the assistant mentions file paths in its prose text (outside of tool
@@ -226,9 +224,9 @@ precise hit-testing for the click.</p>
 <p>All clickable regions are tracked through typed tuples stored alongside the
 render cache:</p>
 <ul>
-<li><strong><code>ClickablePath</code>:</strong> <code>(line_idx, start_col, end_col, file_path, old_string, new_string, wrap_line_count)</code> – identifies a clickable file path with
+<li><strong><code>ClickablePath</code>:</strong> <code>(line_idx, start_col, end_col, file_path, old_string,  new_string, wrap_line_count)</code> – identifies a clickable file path with
 optional Edit diff context.</li>
-<li><strong><code>ClickableTable</code>:</strong> <code>(cache_line_start, cache_line_end, raw_markdown_text)</code> – identifies a clickable table region.</li>
+<li><strong><code>ClickableTable</code>:</strong> <code>(cache_line_start, cache_line_end,  raw_markdown_text)</code> – identifies a clickable table region.</li>
 </ul>
 <p>On a mouse click, the event handler translates the screen coordinates to cache
 line and column positions (accounting for scroll offset), then checks against

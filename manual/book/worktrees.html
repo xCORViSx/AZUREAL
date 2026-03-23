@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -191,10 +191,11 @@ worktree through AZUREAL, three things happen:</p>
 <ol>
 <li><strong>A git worktree is created</strong> under <code>&lt;repo&gt;/worktrees/&lt;name&gt;</code>, giving you a
 full working directory on a new branch named <code>azureal/&lt;name&gt;</code>.</li>
-<li><strong>A session slot is allocated</strong> in the SQLite session store, ready to hold
-agent conversations for that branch.</li>
 <li><strong>The tab row updates</strong> to show the new worktree alongside your existing
 ones.</li>
+<li><strong>A session is created on demand</strong> when you send your first prompt or
+explicitly create one via the session dialog – the SQLite store is not
+pre-populated at worktree creation time.</li>
 </ol>
 <p>From that point on, the worktree is a self-contained development environment.
 Switching between worktrees (with <code>[</code>/<code>]</code> or by clicking tabs) swaps the file
@@ -203,7 +204,7 @@ tree, viewer, session history, terminal, and git state all at once.</p>
 <h2 id="main-branch"><a class="header" href="#main-branch">Main Branch</a></h2>
 <p>The main branch (typically <code>main</code> or <code>master</code>) is not a worktree in the
 traditional sense – it is the original repository checkout. AZUREAL treats it
-specially: it always appears as the first tab (<code>[* main]</code>), it cannot be
+specially: it always appears as the first tab (<code>[★ main]</code>), it cannot be
 deleted or archived, and its git panel offers pull/commit/push instead of
 squash/rebase. You can browse and work on main at any time via <code>Shift+M</code>.</p>
 <p>See <a href="./worktrees/main-browse.html">Main Branch Browse</a> for the full details.</p>

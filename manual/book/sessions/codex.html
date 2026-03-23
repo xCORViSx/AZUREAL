@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -181,14 +181,10 @@
 <p>The Codex backend wraps the <strong>OpenAI Codex CLI</strong> (<code>codex</code> command) to execute prompts against OpenAI’s GPT models. Like the Claude backend, AZUREAL uses a non-interactive execution mode that exits after producing a response.</p>
 <hr>
 <h2 id="command-structure"><a class="header" href="#command-structure">Command Structure</a></h2>
-<p>Codex invocations differ depending on whether the session is new or being resumed.</p>
-<h3 id="new-session"><a class="header" href="#new-session">New Session</a></h3>
+<p>Every Codex invocation follows this pattern:</p>
 <pre><code class="language-sh">codex exec --json "&lt;prompt&gt;"
 </code></pre>
-<h3 id="resume-session"><a class="header" href="#resume-session">Resume Session</a></h3>
-<pre><code class="language-sh">codex exec --json resume &lt;UUID&gt; "&lt;prompt&gt;"
-</code></pre>
-<p>When a Codex session has a thread ID from a previous exchange, AZUREAL passes it via the <code>resume &lt;UUID&gt;</code> argument. This tells the Codex CLI to continue an existing conversation thread. Unlike the Claude backend (which uses context injection exclusively), the Codex backend uses the CLI’s native resume mechanism for thread continuity.</p>
+<p>Like the Claude backend, AZUREAL does <strong>not</strong> use the Codex CLI’s native <code>resume</code> mechanism. Conversation continuity is handled entirely through context injection from the SQLite session store. Each prompt spawns a fresh process with the full context prepended.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -197,14 +193,13 @@
 <tbody>
 <tr><td><code>exec</code></td><td>Non-interactive execution mode.</td></tr>
 <tr><td><code>--json</code></td><td>Emits structured JSON output for machine parsing.</td></tr>
-<tr><td><code>resume &lt;UUID&gt;</code></td><td>Continues an existing conversation thread (optional, omitted for the first prompt).</td></tr>
 </tbody>
 </table>
 </div>
 <hr>
 <h2 id="session-id-capture"><a class="header" href="#session-id-capture">Session ID Capture</a></h2>
-<p>When a Codex process starts a new thread, it emits a <code>thread.started</code> event containing a <code>thread_id</code> field. AZUREAL captures this ID and stores it for use in subsequent <code>resume</code> commands within the same session.</p>
-<p>The thread ID persists across prompts, enabling the Codex CLI to maintain its own conversation state. This is in addition to AZUREAL’s own context injection – both mechanisms contribute to continuity.</p>
+<p>When a Codex process starts a new thread, it emits a <code>thread.started</code> event containing a <code>thread_id</code> field. AZUREAL captures this ID and associates it with the active session slot.</p>
+<p>The thread ID is used for display and diagnostics. It is not used for resumption – context injection replaces that role, just as with the Claude backend.</p>
 <hr>
 <h2 id="permission-modes"><a class="header" href="#permission-modes">Permission Modes</a></h2>
 <p>Codex CLI supports two permission modes:</p>
@@ -239,7 +234,7 @@
 <h2 id="streaming-and-event-parsing"><a class="header" href="#streaming-and-event-parsing">Streaming and Event Parsing</a></h2>
 <p>The <code>--json</code> flag causes Codex CLI to emit structured JSON events. AZUREAL reads these events from the process output and converts them into the same <code>AgentEvent</code> and <code>DisplayEvent</code> types used by the Claude backend. The key events include:</p>
 <ul>
-<li><strong>thread.started</strong> – thread creation, carrying the <code>thread_id</code> used for subsequent resume commands.</li>
+<li><strong>thread.started</strong> – thread creation, carrying the <code>thread_id</code> for session identification.</li>
 <li><strong>Assistant text</strong> – incremental response text from the model.</li>
 <li><strong>Tool calls and results</strong> – file operations, command execution, and their outcomes.</li>
 <li><strong>Error</strong> – error conditions reported by the CLI.</li>
@@ -249,7 +244,7 @@
 <h2 id="process-lifecycle"><a class="header" href="#process-lifecycle">Process Lifecycle</a></h2>
 <p>Each Codex process follows the same lifecycle as Claude:</p>
 <ol>
-<li><strong>Spawn</strong>: A new <code>codex exec</code> process is started with the prompt and, if available, a thread ID for resumption.</li>
+<li><strong>Spawn</strong>: A new <code>codex exec</code> process is started with the context-injected prompt.</li>
 <li><strong>Stream</strong>: JSON events are read and parsed in real time.</li>
 <li><strong>Exit</strong>: The process exits when the response is complete.</li>
 <li><strong>Ingest</strong>: Events are appended to the SQLite store and temporary output files are cleaned up.</li>

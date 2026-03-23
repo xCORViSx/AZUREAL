@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -187,11 +187,12 @@ project).</p>
 <h2 id="opening-the-picker"><a class="header" href="#opening-the-picker">Opening the Picker</a></h2>
 <p>Press <strong><code>r</code></strong> (global keybinding) to open the run command picker. If only one
 command is defined, it executes immediately without showing the picker.</p>
-<p>Press <strong><code>Alt+r</code></strong> to open the new command dialog directly, bypassing the picker.</p>
+<p>Press <strong><code>Shift+R</code></strong> to open the new command dialog directly, bypassing the
+picker.</p>
 <hr>
 <h2 id="the-picker"><a class="header" href="#the-picker">The Picker</a></h2>
-<p>The picker lists all defined run commands for the current scope. Each entry shows
-its position number and name.</p>
+<p>The picker lists all defined run commands. Each entry shows its position number,
+name, and a <strong>G</strong> (global) or <strong>P</strong> (project) scope badge.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -209,7 +210,7 @@ its position number and name.</p>
 </div>
 <hr>
 <h2 id="creating-a-command"><a class="header" href="#creating-a-command">Creating a Command</a></h2>
-<p>The new command dialog (opened via <code>Alt+r</code> or <code>a</code> from the picker) has two
+<p>The new command dialog (opened via <code>Shift+R</code> or <code>a</code> from the picker) has two
 fields:</p>
 <ol>
 <li><strong>Name</strong> – A short label for the command (e.g., “Build”, “Test”, “Deploy”).</li>
@@ -243,8 +244,9 @@ automatically reloaded into your run command list.</li>
 </table>
 </div>
 <p>Press <strong><code>Ctrl+S</code></strong> in the dialog to toggle between global and project scope.</p>
-<p>Both scopes are merged in the picker, with project-local commands taking
-precedence if names collide.</p>
+<p>Both scopes are merged in the picker – global commands appear first, followed
+by project-local commands. Each command shows a <strong>G</strong> (global) or <strong>P</strong>
+(project) scope badge.</p>
 <hr>
 <h2 id="storage-format"><a class="header" href="#storage-format">Storage Format</a></h2>
 <p>Commands are stored under the <code>[runcmds]</code> table in the respective <code>azufig.toml</code>
@@ -260,7 +262,7 @@ picker:</p>
 <hr>
 <h2 id="quick-reference"><a class="header" href="#quick-reference">Quick Reference</a></h2>
 <pre><code class="language-text">r          Open run command picker (or execute if only 1 defined)
-Alt+r      Open new command dialog
+Shift+R    Open new command dialog
 Ctrl+S     Toggle global/project scope (in dialog)
 Tab        Cycle fields / toggle Command vs Prompt mode (in dialog)
 1-9        Quick-select in picker

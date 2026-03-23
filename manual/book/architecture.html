@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -232,8 +232,9 @@ mutable references to event handlers.</p>
 <h3 id="agentprocess"><a class="header" href="#agentprocess"><code>AgentProcess</code></a></h3>
 <p>Manages the lifecycle of agent CLI processes. Holds both a <code>ClaudeProcess</code> and a
 <code>CodexProcess</code>. At spawn time, the selected model determines which backend is
-invoked. The process writes JSONL to a temporary file, which the
-<code>AgentProcessor</code> thread tails and parses.</p>
+invoked. The process streams JSON events on stdout, which are forwarded to the
+<code>AgentProcessor</code> thread for parsing. A separate reader thread also writes events
+to a temporary JSONL file for post-exit ingestion into the session store.</p>
 <h3 id="displayevent"><a class="header" href="#displayevent"><code>DisplayEvent</code></a></h3>
 <p>The unified event type that both backends produce after parsing. The session
 pane, session store, and render pipeline all consume <code>DisplayEvent</code> values. This

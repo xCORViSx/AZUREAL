@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -273,13 +273,18 @@ build.</p>
 <pre><code class="language-sh">sudo apt install libclang-dev cmake
 </code></pre>
 <p><strong>Windows:</strong></p>
-<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake
+<pre><code class="language-powershell">winget install LLVM.LLVM Kitware.CMake Ninja-build.Ninja
 </code></pre>
 <p>After installing LLVM on Windows, set the <code>LIBCLANG_PATH</code> environment variable
 to the LLVM <code>bin</code> directory (e.g., <code>C:\Program Files\LLVM\bin</code>).</p>
+<p>The Ninja build system is required because CMake’s default Visual Studio
+generator uses MSBuild, which prevents CUDA from inheriting the Windows SDK
+include paths. Set <code>CMAKE_GENERATOR=Ninja</code> in your environment, or build from
+a VS Developer Command Prompt with Ninja in PATH.</p>
 <h3 id="nvidia-cuda-toolkit-windows"><a class="header" href="#nvidia-cuda-toolkit-windows">NVIDIA CUDA Toolkit (Windows)</a></h3>
-<p>Required on Windows for GPU-accelerated Whisper inference. Without CUDA, Whisper
-falls back to CPU-only mode which is significantly slower.</p>
+<p>Required on Windows for GPU-accelerated Whisper inference. The Windows build
+compiles Whisper with CUDA support, so the CUDA Toolkit must be present at
+build time.</p>
 <pre><code class="language-powershell">winget install Nvidia.CUDA
 </code></pre>
 <p>Restart your terminal after installation so the <code>CUDA_PATH</code> environment variable

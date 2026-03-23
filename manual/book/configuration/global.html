@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -197,9 +197,9 @@ save a setting through the UI.</p>
 <h3 id="config"><a class="header" href="#config"><code>[config]</code></a></h3>
 <p>Core application settings.</p>
 <pre><code class="language-toml">[config]
-api_key = "sk-ant-..."
-claude_path = "/usr/local/bin/claude"
-permission_mode = "plan"
+anthropic_api_key = "sk-ant-..."
+claude_executable = "/usr/local/bin/claude"
+default_permission_mode = "ignore"
 </code></pre>
 <div class="table-wrapper">
 <table>
@@ -207,17 +207,19 @@ permission_mode = "plan"
 <tr><th>Key</th><th>Description</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>api_key</code></td><td>Anthropic API key. Used by Claude Code CLI for authentication.</td><td>(none)</td></tr>
-<tr><td><code>claude_path</code></td><td>Absolute path to the Claude Code CLI binary. AZUREAL uses this to spawn agent processes.</td><td>Auto-detected from <code>$PATH</code></td></tr>
-<tr><td><code>permission_mode</code></td><td>Permission mode passed to Claude Code via <code>--permission-mode</code>. Valid values: <code>"default"</code>, <code>"plan"</code>, <code>"bypasstool"</code>.</td><td><code>"default"</code></td></tr>
+<tr><td><code>anthropic_api_key</code></td><td>Anthropic API key. Used by Claude Code CLI for authentication.</td><td>(none)</td></tr>
+<tr><td><code>claude_executable</code></td><td>Absolute path to the Claude Code CLI binary. AZUREAL uses this to spawn agent processes.</td><td>Auto-detected from <code>$PATH</code></td></tr>
+<tr><td><code>codex_executable</code></td><td>Absolute path to the Codex CLI binary.</td><td>Auto-detected from <code>$PATH</code></td></tr>
+<tr><td><code>default_permission_mode</code></td><td>Permission mode for agent sessions. Valid values: <code>"approve"</code>, <code>"ignore"</code>, <code>"ask"</code>.</td><td><code>"ignore"</code></td></tr>
+<tr><td><code>verbose</code></td><td>Enable verbose logging.</td><td><code>false</code></td></tr>
 </tbody>
 </table>
 </div>
-<p>The <code>permission_mode</code> controls how Claude Code handles tool use permissions:</p>
+<p>The <code>default_permission_mode</code> controls how Claude Code handles tool use permissions:</p>
 <ul>
-<li><code>"default"</code> – Claude Code asks for permission on each tool use.</li>
-<li><code>"plan"</code> – Claude Code plans tool use but does not execute without approval.</li>
-<li><code>"bypasstool"</code> – Claude Code executes tools without asking for permission.</li>
+<li><code>"ignore"</code> – Claude Code skips permissions entirely (<code>--dangerously-skip-permissions</code>).</li>
+<li><code>"approve"</code> – Claude Code approves all tool use automatically.</li>
+<li><code>"ask"</code> – Claude Code asks for permission on each tool use (default Claude behavior).</li>
 </ul>
 <h3 id="projects"><a class="header" href="#projects"><code>[projects]</code></a></h3>
 <p>Registered projects. Each entry maps a display name to a filesystem path.</p>
@@ -260,9 +262,9 @@ field when selected.</p>
 <h2 id="example-file"><a class="header" href="#example-file">Example File</a></h2>
 <p>A complete global config:</p>
 <pre><code class="language-toml">[config]
-api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"
-claude_path = "/opt/homebrew/bin/claude"
-permission_mode = "bypasstool"
+anthropic_api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"
+claude_executable = "/opt/homebrew/bin/claude"
+default_permission_mode = "ignore"
 
 [projects]
 AZUREAL = "~/AZUREAL"

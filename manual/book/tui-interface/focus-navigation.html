@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -224,8 +224,9 @@ tab in yellow).</li>
 <h2 id="git-mode-navigation"><a class="header" href="#git-mode-navigation">Git Mode Navigation</a></h2>
 <p>In Git Mode (Shift+G), the focus cycle changes to match the git panel layout:</p>
 <ul>
-<li><strong>Tab</strong> / <strong>Shift+Tab</strong> cycles through the git-specific panes (Actions,
-Files, Viewer, Commits).</li>
+<li><strong>Tab</strong> / <strong>Shift+Tab</strong> cycles through the three git-specific panes
+(Actions, Files, Commits). The Viewer always shows the diff for the
+selected file or commit but is not a separate focus target.</li>
 <li>The bottom bar shows <code>Tab/⇧Tab:cycle | Enter</code> as a reminder.</li>
 <li><strong>Shift+G</strong> or <strong>Esc</strong> exits Git Mode and returns to the normal focus
 cycle.</li>
@@ -238,9 +239,9 @@ cycle.</li>
 <tr><th>Pane</th><th>Navigation</th></tr>
 </thead>
 <tbody>
-<tr><td>FileTree</td><td><code>j/k</code> to move, <code>Enter</code> to open, <code>h/l</code> or arrows to collapse/expand</td></tr>
-<tr><td>Viewer</td><td><code>j/k</code> or arrows to scroll, <code>g/G</code> for top/bottom, <code>/</code> to search</td></tr>
-<tr><td>Session</td><td><code>j/k</code> or arrows to scroll, <code>s</code> for session list, <code>g/G</code> for top/bottom</td></tr>
+<tr><td>FileTree</td><td><code>j/k</code> to move, <code>Enter</code> to open, <code>h/l</code> to collapse/expand</td></tr>
+<tr><td>Viewer</td><td><code>j/k</code> to scroll, <code>Alt+Up</code>/<code>Alt+Down</code> for top/bottom</td></tr>
+<tr><td>Session</td><td><code>j/k</code> to scroll, <code>s</code> for session list, <code>Alt+Up</code>/<code>Alt+Down</code> for top/bottom</td></tr>
 <tr><td>Input</td><td>Standard text editing, <code>Enter</code> to send prompt</td></tr>
 </tbody>
 </table>

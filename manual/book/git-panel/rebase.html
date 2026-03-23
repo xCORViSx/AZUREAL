@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -230,7 +230,9 @@ actions.</p>
 </tbody>
 </table>
 </div>
-<p>The setting is persisted in <code>azufig.toml</code>, so it survives restarts.</p>
+<p>The setting is persisted per-worktree in
+<code>&lt;worktree_path&gt;/.azureal/azufig.toml</code> under the <code>[git]</code> section as
+<code>auto-rebase = "true"</code>, so it survives restarts.</p>
 <h3 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h3>
 <p>When auto-rebase is enabled, AZUREAL checks all worktrees every <strong>2 seconds</strong>.
 For each worktree, it evaluates whether a rebase is appropriate. A worktree is

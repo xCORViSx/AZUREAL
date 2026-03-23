@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -178,9 +178,9 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="completion-notifications"><a class="header" href="#completion-notifications">Completion Notifications</a></h1>
-<p>AZUREAL sends native macOS notifications when agent sessions complete. This lets
-you work in other applications while agents run and get notified the moment a
-response is ready – without polling the terminal.</p>
+<p>AZUREAL sends native desktop notifications when agent sessions complete. This
+lets you work in other applications while agents run and get notified the moment
+a response is ready – without polling the terminal.</p>
 <hr>
 <h2 id="what-triggers-a-notification"><a class="header" href="#what-triggers-a-notification">What Triggers a Notification</a></h2>
 <p>A notification fires for <strong>every session exit</strong>, not just the currently focused
@@ -193,6 +193,7 @@ you receive a notification when each one finishes.</p>
 <tr><th>Condition</th><th>Body Text</th></tr>
 </thead>
 <tbody>
+<tr><td>Context compaction</td><td>“Compacting context”</td></tr>
 <tr><td>Normal completion</td><td>“Response complete”</td></tr>
 <tr><td>Error exit</td><td>“Exited with error”</td></tr>
 <tr><td>Process terminated</td><td>“Process terminated”</td></tr>
@@ -203,35 +204,45 @@ you receive a notification when each one finishes.</p>
 making it easy to identify which agent finished from the notification banner
 alone.</p>
 <hr>
-<h2 id="branding"><a class="header" href="#branding">Branding</a></h2>
-<p>Notifications display the AZUREAL icon. The icon infrastructure is set up
-automatically:</p>
+<h2 id="platform-details"><a class="header" href="#platform-details">Platform Details</a></h2>
+<h3 id="macos"><a class="header" href="#macos">macOS</a></h3>
 <ul>
+<li>Notifications sent via the <code>notify-rust</code> crate.</li>
 <li>An <code>.icns</code> icon file is <strong>embedded in the binary</strong> at compile time via
 <code>include_bytes!()</code>.</li>
 <li>On first launch, AZUREAL creates a minimal <code>.app</code> bundle at
 <strong><code>~/.azureal/AZUREAL.app</code></strong> containing the extracted icon. This bundle is
 what macOS associates with the notification, allowing the branded icon to
 appear.</li>
+<li>Notification permissions are automatically enabled by writing to the
+<code>ncprefs.plist</code> file, avoiding the need for users to manually grant
+permissions through System Settings on first use.</li>
+<li>The <code>.app</code> bundle is created once and reused on subsequent launches.</li>
+<li>Notification sound: “Glass”.</li>
 </ul>
-<p>The <code>.app</code> bundle is created once and reused on subsequent launches.</p>
-<hr>
-<h2 id="notification-permissions"><a class="header" href="#notification-permissions">Notification Permissions</a></h2>
-<p>AZUREAL automatically enables notification permissions by writing to the
-<code>ncprefs.plist</code> file. This avoids the need for users to manually grant
-notification permissions through System Settings on first use.</p>
+<h3 id="windows"><a class="header" href="#windows">Windows</a></h3>
+<ul>
+<li>Notifications are sent via <strong>PowerShell WinRT toast APIs</strong>. The <code>notify-rust</code>
+crate is not used on Windows because its custom <code>.app_id()</code> requires a
+registered AppUserModelID (AUMID), which silently drops toasts when
+unregistered.</li>
+<li>PowerShell’s own pre-registered AUMID is used instead, ensuring reliable
+delivery.</li>
+<li><code>CREATE_NO_WINDOW</code> (<code>0x08000000</code>) prevents a console window from flashing
+when the PowerShell process spawns.</li>
+<li>Toast XML uses <code>appLogoOverride</code> with <code>~/.azureal/AZUREAL_toast.png</code> for a
+crisp branded icon (PNG renders clearly in toasts; <code>.ico</code> renders blurry).</li>
+</ul>
+<h3 id="linux"><a class="header" href="#linux">Linux</a></h3>
+<ul>
+<li>Notifications sent via the <code>notify-rust</code> crate (same as macOS).</li>
+</ul>
 <hr>
 <h2 id="implementation"><a class="header" href="#implementation">Implementation</a></h2>
-<p>Notifications are sent via the <code>notify-rust</code> crate. Each notification is
-dispatched on a <strong>fire-and-forget background thread</strong> that never blocks the
-event loop. If the notification system is unavailable or the send fails, the
-failure is silently ignored – notifications are a convenience feature and must
-never interfere with the core TUI experience.</p>
-<hr>
-<h2 id="platform-note"><a class="header" href="#platform-note">Platform Note</a></h2>
-<p>Completion notifications currently target <strong>macOS only</strong>. The <code>.app</code> bundle
-mechanism and <code>ncprefs.plist</code> integration are macOS-specific. On other platforms,
-notifications are not sent.</p>
+<p>Each notification is dispatched on a <strong>fire-and-forget background thread</strong> that
+never blocks the event loop. If the notification system is unavailable or the
+send fails, the failure is silently ignored – notifications are a convenience
+feature and must never interfere with the core TUI experience.</p>
 <hr>
 <h2 id="quick-reference"><a class="header" href="#quick-reference">Quick Reference</a></h2>
 <div class="table-wrapper">
@@ -242,11 +253,11 @@ notifications are not sent.</p>
 <tbody>
 <tr><td>Trigger</td><td>Every session exit (all sessions, not just focused)</td></tr>
 <tr><td>Title format</td><td><code>worktree:session_name</code></td></tr>
-<tr><td>Notification library</td><td>notify-rust</td></tr>
-<tr><td>Icon delivery</td><td><code>include_bytes!()</code> embedded <code>.icns</code></td></tr>
-<tr><td>App bundle</td><td><code>~/.azureal/AZUREAL.app</code> (auto-created on first launch)</td></tr>
+<tr><td>macOS</td><td><code>notify-rust</code> + <code>.app</code> bundle + Glass sound</td></tr>
+<tr><td>Windows</td><td>PowerShell WinRT toast + PNG icon</td></tr>
+<tr><td>Linux</td><td><code>notify-rust</code></td></tr>
 <tr><td>Threading</td><td>Fire-and-forget background thread</td></tr>
-<tr><td>Platform</td><td>macOS only</td></tr>
+<tr><td>Platform</td><td>macOS, Windows, and Linux</td></tr>
 </tbody>
 </table>
 </div>

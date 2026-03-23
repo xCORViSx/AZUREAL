@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -222,14 +222,15 @@ full history. Unpushed commits render in green; pushed commits render dimmed.</p
 far the branch has diverged from main and from its remote tracking branch:</p>
 <pre><code class="language-text"> ↑2 ↓0 main  ↑1 ↓3 remote
 </code></pre>
-<p>These badges are color-coded: green for ahead, yellow for behind.</p>
-<h3 id="bottom-status-bar"><a class="header" href="#bottom-status-bar">Bottom: Status Bar</a></h3>
-<p>A full-width status bar replaces the normal status bar. It displays:</p>
-<ul>
-<li>The current branch name</li>
-<li>Navigation hints (Tab/Shift+Tab to cycle panes, Enter to act)</li>
-<li>Operation progress messages during long-running actions</li>
-</ul>
+<p>These badges are color-coded: the main badge uses red when behind and green
+when only ahead; the remote badge uses yellow when behind and cyan when only
+ahead.</p>
+<h3 id="bottom-git-status-box"><a class="header" href="#bottom-git-status-box">Bottom: Git Status Box</a></h3>
+<p>A full-width git status box (3 rows, GIT_ORANGE double border) sits below the
+three panes. Its title bar contains keybinding hints in the same style as the
+prompt title bar. The content area shows operation result messages (green for
+success, red for errors). A minimal 1-row status bar sits beneath it, showing
+<code>Git: &lt;worktree&gt;</code> on the left and CPU/PID badge on the right.</p>
 <hr>
 <h2 id="focus-cycling"><a class="header" href="#focus-cycling">Focus Cycling</a></h2>
 <p>Three panes participate in the focus cycle:</p>

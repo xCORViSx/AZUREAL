@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -193,7 +193,8 @@ fine, but the intent is that AZUREAL owns this file.</p>
 <h3 id="lazy-initialization"><a class="header" href="#lazy-initialization">Lazy Initialization</a></h3>
 <p>The store is <strong>not</strong> created when you load a project. It is opened (and the
 file created, if absent) only when you create your first session. Projects
-that have never had a session have no <code>.azureal/</code> directory at all.</p>
+that have never had a session will not have a <code>sessions.azs</code> file (though
+the <code>.azureal/</code> directory may exist for configuration).</p>
 <h3 id="backend-agnostic"><a class="header" href="#backend-agnostic">Backend-Agnostic</a></h3>
 <p>A single session can span prompts sent to both Claude and Codex backends.
 The store does not partition by backend – it records events in the order they

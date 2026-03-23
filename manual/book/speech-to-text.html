@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fb32f9a0.js"></script>
@@ -187,13 +187,13 @@ prompt or edit buffer. No audio ever leaves your machine.</p>
 <p>The speech pipeline runs through four stages:</p>
 <ol>
 <li><strong>Capture</strong> – Audio is recorded from the default input device via the <code>cpal</code>
-library (CoreAudio on macOS). Raw samples arrive as f32 at the device’s native
-sample rate and channel count.</li>
+library (CoreAudio on macOS, WASAPI on Windows). Raw samples arrive as f32 at
+the device’s native sample rate and channel count.</li>
 <li><strong>Preprocessing</strong> – Multi-channel audio is mixed down to mono, then
 resampled to 16kHz (Whisper’s expected input rate).</li>
 <li><strong>Transcription</strong> – The accumulated audio buffer is fed to whisper.cpp with
 <code>Greedy { best_of: 1 }</code> decoding. On macOS, Metal GPU acceleration is used
-automatically.</li>
+automatically; on Windows, CUDA GPU acceleration is used.</li>
 <li><strong>Insertion</strong> – The transcribed text is inserted at the current cursor
 position with smart spacing: a space is prepended if the cursor is not at the
 start of a line or immediately after a space.</li>
@@ -202,6 +202,9 @@ start of a line or immediately after a space.</li>
 <h2 id="toggle-recording"><a class="header" href="#toggle-recording">Toggle Recording</a></h2>
 <p>Press <strong><code>Ctrl+S</code></strong> while in prompt mode or edit mode to start recording. Press
 <strong><code>Ctrl+S</code></strong> again to stop recording and trigger transcription.</p>
+<p>On <strong>Windows and Linux</strong>, the edit mode binding is <strong><code>Alt+S</code></strong> instead of
+<code>Ctrl+S</code> (because <code>Ctrl+S</code> is used for file save in edit mode on those
+platforms). The prompt mode binding remains <code>Ctrl+S</code> on all platforms.</p>
 <p>The stop keybinding resolves from <strong>any</strong> focus state or mode while recording is
 active. You do not need to navigate back to the prompt to stop – <code>Ctrl+S</code> will
 always stop an active recording regardless of where focus currently sits.</p>
@@ -234,12 +237,18 @@ session to avoid repeated model load times.</p>
 <p>AZUREAL uses the <code>ggml-small.en</code> Whisper model, stored at:</p>
 <pre><code class="language-text">~/.azureal/speech/ggml-small.en.bin
 </code></pre>
-<p>This file is approximately <strong>466 MB</strong>. It is downloaded automatically on first
-use if not already present. The <code>small.en</code> model provides a good balance between
-transcription accuracy and speed for English-language input.</p>
+<p>This file is approximately <strong>466 MB</strong>. If the model file is missing, AZUREAL
+shows an error with download instructions. You must download the model manually
+before first use:</p>
+<pre><code class="language-bash">mkdir -p ~/.azureal/speech &amp;&amp; curl -L -o ~/.azureal/speech/ggml-small.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+</code></pre>
+<p>The <code>small.en</code> model provides a good balance between transcription accuracy and
+speed for English-language input.</p>
 <hr>
 <h2 id="quick-reference"><a class="header" href="#quick-reference">Quick Reference</a></h2>
-<pre><code class="language-text">Ctrl+S    Toggle recording on/off (prompt mode or edit mode)
+<pre><code class="language-text">Ctrl+S    Toggle recording on/off (prompt mode, or edit mode on macOS)
+Alt+S     Toggle recording on/off (edit mode on Windows/Linux)
 Ctrl+S    Stop recording from ANY focus/mode (always resolves)
 </code></pre>
 <div class="table-wrapper">
@@ -248,8 +257,8 @@ Ctrl+S    Stop recording from ANY focus/mode (always resolves)
 <tr><th>Detail</th><th>Value</th></tr>
 </thead>
 <tbody>
-<tr><td>Audio library</td><td>cpal (CoreAudio on macOS)</td></tr>
-<tr><td>Transcription engine</td><td>whisper.cpp (Metal GPU on macOS)</td></tr>
+<tr><td>Audio library</td><td>cpal (CoreAudio on macOS, WASAPI on Windows)</td></tr>
+<tr><td>Transcription engine</td><td>whisper.cpp (Metal GPU on macOS, CUDA GPU on Windows)</td></tr>
 <tr><td>Sample pipeline</td><td>f32 -&gt; mono mixdown -&gt; 16kHz resample</td></tr>
 <tr><td>Decoding strategy</td><td>Greedy { best_of: 1 }</td></tr>
 <tr><td>Model file</td><td><code>~/.azureal/speech/ggml-small.en.bin</code> (~466 MB)</td></tr>

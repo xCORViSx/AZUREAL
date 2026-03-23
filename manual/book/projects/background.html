@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "navy";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5ab56d13.js";
+            window.path_to_searchindex_js = "../searchindex-370651fd.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fb32f9a0.js"></script>
@@ -206,21 +206,15 @@ applies – the session pane updates, the tab row status icon changes, and the
 status bar reflects the result. No snapshot manipulation is needed because the
 active project’s state is live.</p>
 <hr>
-<h2 id="process-isolation"><a class="header" href="#process-isolation">Process Isolation</a></h2>
-<p>Each project switch kills all Claude processes for the project being left.
-However, this only applies to the switch action itself – processes that were
-started in a project and are still running when you switch away are the
-“background processes” described above. The distinction is:</p>
-<ul>
-<li><strong>Switching projects</strong> triggers <code>kill all Claude processes</code> for the departing
-project’s active sessions that you explicitly want to stop.</li>
-<li><strong>Background processes</strong> are sessions that were already running and are
-allowed to continue. They were started before the switch and their output
-continues to be captured to disk.</li>
-</ul>
+<h2 id="process-continuity"><a class="header" href="#process-continuity">Process Continuity</a></h2>
+<p>Agent processes are <strong>not</strong> killed when you switch projects. All running
+sessions continue executing in the background. Their output is captured to
+session files on disk and handled via the background exit flow (see above).
+When you switch back, the project snapshot is restored and includes any output
+that was produced while the project was backgrounded.</p>
 <blockquote>
-<p><strong>Note:</strong> The key fact here is that session file capture ensures no output is
-ever lost, even though the background project’s display is not being updated.</p>
+<p><strong>Note:</strong> Session file capture ensures no output is ever lost, even though
+the background project’s display is not being updated in real time.</p>
 </blockquote>
 <hr>
 <h2 id="monitoring-background-activity"><a class="header" href="#monitoring-background-activity">Monitoring Background Activity</a></h2>
