@@ -49,9 +49,14 @@ impl App {
             }
         }
 
-        // Send macOS notification before cleaning up state
+        // Send notification before cleaning up state
         if let Some(ref branch) = branch {
-            self.send_completion_notification(branch, slot_id, code);
+            let proj_name = self
+                .project
+                .as_ref()
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
+            self.send_completion_notification(branch, slot_id, code, &proj_name);
         }
 
         // Remove slot from all process-tracking maps
@@ -221,9 +226,10 @@ impl App {
             .find(|(_, slots)| slots.contains(&slot_id.to_string()))
             .map(|(b, _)| b.clone());
 
-        // Send notification
+        // Send notification with the background project's name, not the active project
+        let bg_proj_name = snapshot.project.name.clone();
         if let Some(ref branch) = branch {
-            self.send_completion_notification(branch, slot_id, code);
+            self.send_completion_notification(branch, slot_id, code, &bg_proj_name);
         }
 
         // Global cleanup
@@ -314,7 +320,13 @@ impl App {
     }
 
     /// Send a notification when Claude finishes or compacts context.
-    fn send_completion_notification(&self, branch_name: &str, slot_id: &str, code: Option<i32>) {
+    fn send_completion_notification(
+        &self,
+        branch_name: &str,
+        slot_id: &str,
+        code: Option<i32>,
+        project_name: &str,
+    ) {
         let worktree = crate::models::strip_branch_prefix(branch_name);
 
         // Resolve session display name
@@ -358,11 +370,6 @@ impl App {
             }
         };
 
-        let project_name = self
-            .project
-            .as_ref()
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
         let title = format!("AZUREAL @ {}", project_name);
         let body = format!("{}\n{}", label, message);
         #[cfg(target_os = "windows")]

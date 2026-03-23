@@ -104,22 +104,29 @@ pub async fn run() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // Load global config early to check startup screen preference
+    let global_azufig = crate::azufig::load_global_azufig();
+    let show_startup_screen = global_azufig.config.show_startup_screen;
+
     // Show splash screen immediately — visible while project/session loading runs.
     // Minimum 3s display so the branding registers even on fast machines.
-    terminal.draw(draw_splash)?;
     let splash_start = std::time::Instant::now();
+    if show_startup_screen {
+        terminal.draw(draw_splash)?;
+    }
 
     // Clean up leftover .old binary from previous Windows update
     crate::updater::cleanup_old_binary();
 
     // Spawn update check on background thread (runs during splash, ~200-500ms)
     let update_rx = {
+        let skip_version = global_azufig.config.skip_version.clone();
+        let last_update_check = global_azufig.config.last_update_check;
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let global = crate::azufig::load_global_azufig();
             let result = crate::updater::check_for_update(
-                global.config.skip_version.as_deref(),
-                global.config.last_update_check,
+                skip_version.as_deref(),
+                last_update_check,
             );
             // Persist the check timestamp (unless rate-limited — already recent)
             if !matches!(result, crate::updater::UpdateCheckResult::RateLimited) {
@@ -136,6 +143,7 @@ pub async fn run() -> Result<()> {
 
     let mut app = App::new();
     app.kbd_enhanced = kbd_enhanced;
+    app.show_startup_screen = show_startup_screen;
     // WezTerm on macOS steals Alt+Enter for fullscreen toggle.
     // Detect it so hints show Ctrl+J instead of the non-functional Alt+Enter.
     app.alt_enter_stolen = matches!(
@@ -163,10 +171,12 @@ pub async fn run() -> Result<()> {
     }
 
     // Hold splash for remainder of 3s minimum (loading time counts toward it)
-    let elapsed = splash_start.elapsed();
-    let min_splash = std::time::Duration::from_secs(3);
-    if elapsed < min_splash {
-        std::thread::sleep(min_splash - elapsed);
+    if show_startup_screen {
+        let elapsed = splash_start.elapsed();
+        let min_splash = std::time::Duration::from_secs(3);
+        if elapsed < min_splash {
+            std::thread::sleep(min_splash - elapsed);
+        }
     }
 
     let result = event_loop::run_app(&mut terminal, &mut app, config).await;
@@ -376,7 +386,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_dialogs::draw_branch_dialog(f, dialog, f.area());
     }
     if app.show_help {
-        draw_dialogs::draw_help_overlay(f, app.kbd_enhanced, app.alt_enter_stolen);
+        draw_dialogs::draw_help_overlay(
+            f,
+            app.kbd_enhanced,
+            app.alt_enter_stolen,
+            app.show_startup_screen,
+        );
     }
     // Run command overlays (picker takes priority over dialog)
     if app.run_command_picker.is_some() {

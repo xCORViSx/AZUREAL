@@ -372,6 +372,10 @@ pub enum Action {
     ProjectsRename,
     ProjectsInit,
 
+    // Settings
+    #[allow(dead_code)] // Handled directly in help overlay input, not via execute_action
+    ToggleStartupScreen,
+
     // Generic
     Escape,
 }

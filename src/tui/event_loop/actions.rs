@@ -21,7 +21,7 @@ pub use deferred::execute_deferred_action;
 pub use session_list::finish_session_list_load;
 
 use anyhow::Result;
-use crossterm::event::{self, KeyCode};
+use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
@@ -492,11 +492,20 @@ pub fn handle_key_event(
         return Ok(());
     }
 
-    // Help overlay: only ? and Esc close it, everything else ignored
+    // Help overlay: ? and Esc close it, Ctrl+Alt+S toggles startup screen
     if app.show_help {
-        match key.code {
-            KeyCode::Char('?') | KeyCode::Esc => app.toggle_help(),
-            _ => {}
+        if key.modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
+            && key.code == KeyCode::Char('s')
+        {
+            app.show_startup_screen = !app.show_startup_screen;
+            crate::azufig::save_show_startup_screen(app.show_startup_screen);
+            let state = if app.show_startup_screen { "ON" } else { "OFF" };
+            app.set_status(format!("Startup screen: {}", state));
+        } else {
+            match key.code {
+                KeyCode::Char('?') | KeyCode::Esc => app.toggle_help(),
+                _ => {}
+            }
         }
         return Ok(());
     }

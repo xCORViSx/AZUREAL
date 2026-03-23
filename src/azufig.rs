@@ -37,7 +37,7 @@ pub struct GlobalAzufig {
 }
 
 /// App configuration section — mirrors the old `~/.azureal/config` TOML.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AzufigConfig {
     /// Anthropic API key (optional — Claude Code may have its own)
     pub anthropic_api_key: Option<String>,
@@ -57,6 +57,28 @@ pub struct AzufigConfig {
     /// Unix epoch seconds of last update check (rate-limit to once per 24h)
     #[serde(default)]
     pub last_update_check: Option<u64>,
+    /// Show the startup splash screen (default: true)
+    #[serde(default = "default_true")]
+    pub show_startup_screen: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for AzufigConfig {
+    fn default() -> Self {
+        Self {
+            anthropic_api_key: None,
+            claude_executable: None,
+            codex_executable: None,
+            default_permission_mode: String::new(),
+            verbose: false,
+            skip_version: None,
+            last_update_check: None,
+            show_startup_screen: true,
+        }
+    }
 }
 
 // ── Project-local azufig (.azureal/azufig.toml) ──
@@ -151,6 +173,13 @@ pub fn save_skip_version(version: &str) {
 pub fn save_last_update_check(epoch: u64) {
     let mut azufig = load_global_azufig();
     azufig.config.last_update_check = Some(epoch);
+    save_global_azufig(&azufig);
+}
+
+/// Toggle the startup screen setting in the global azufig.
+pub fn save_show_startup_screen(show: bool) {
+    let mut azufig = load_global_azufig();
+    azufig.config.show_startup_screen = show;
     save_global_azufig(&azufig);
 }
 
@@ -485,6 +514,7 @@ mod tests {
         assert!(cfg.claude_executable.is_none());
         assert_eq!(cfg.default_permission_mode, "");
         assert!(!cfg.verbose);
+        assert!(cfg.show_startup_screen);
     }
 
     // ── TOML round-trip ──
@@ -704,6 +734,7 @@ mod tests {
                 verbose: true,
                 skip_version: None,
                 last_update_check: None,
+                show_startup_screen: true,
             },
             projects: {
                 let mut m = HashMap::new();
@@ -783,6 +814,7 @@ mod tests {
             verbose: true,
             skip_version: None,
             last_update_check: None,
+            show_startup_screen: false,
         };
         let toml_str = toml::to_string_pretty(&cfg).unwrap();
         let parsed: AzufigConfig = toml::from_str(&toml_str).unwrap();
@@ -790,6 +822,7 @@ mod tests {
         assert_eq!(parsed.claude_executable.as_deref(), Some("/bin/claude"));
         assert_eq!(parsed.default_permission_mode, "ask");
         assert!(parsed.verbose);
+        assert!(!parsed.show_startup_screen);
     }
 
     // ── AzufigHealthScope default ──
@@ -978,6 +1011,7 @@ verbose = true
             verbose: false,
             skip_version: None,
             last_update_check: None,
+            show_startup_screen: true,
         };
         let cloned = cfg.clone();
         assert_eq!(cloned.anthropic_api_key, cfg.anthropic_api_key);

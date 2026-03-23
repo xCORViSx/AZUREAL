@@ -2,6 +2,14 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.78] — 2026-03-23
+
+### Added
+- **Toggleable startup screen** — `Ctrl+Alt+S` (`⌃⌥S` on macOS) in the help overlay toggles the splash screen on/off. When OFF, both the AZUREAL logo splash and the 3-second minimum display time are skipped entirely on launch. Setting persisted to global `azufig.toml`. Bottom-right border of the help panel shows `Startup Screen: ON/OFF` with green/gray color coding. Modified: `src/azufig.rs`, `src/app/state/app.rs`, `src/tui/keybindings/types.rs`, `src/tui/event_loop/actions.rs`, `src/tui/draw_dialogs/help_overlay.rs`, `src/tui/run.rs`.
+
+### Fixed
+- **Background project notification shows wrong project name** — When a session finished in a backgrounded project (e.g. iDiOSONiX), the notification title showed the active project name (AZUREAL) instead of the session's actual project. `send_completion_notification()` now accepts a `project_name` parameter: foreground exits pass `self.project.name`, background exits pass `snapshot.project.name`. Modified: `src/app/state/claude/process_lifecycle.rs`.
+
 ## [1.0.77] — 2026-03-22
 
 ### Documentation

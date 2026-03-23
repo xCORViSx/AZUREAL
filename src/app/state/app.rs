@@ -125,6 +125,7 @@ pub struct App {
     pub session_scroll: usize,
     pub syntax_highlighter: SyntaxHighlighter,
     pub show_help: bool,
+    pub show_startup_screen: bool,
     pub branch_dialog: Option<BranchDialog>,
     /// Projects panel state (full-screen overlay for project selection)
     pub projects_panel: Option<ProjectsPanel>,
@@ -680,6 +681,7 @@ impl App {
             session_scroll: usize::MAX, // Start at bottom (most recent messages)
             syntax_highlighter: SyntaxHighlighter::new(),
             show_help: false,
+            show_startup_screen: true,
             branch_dialog: None,
             projects_panel: None,
             project_snapshots: HashMap::new(),

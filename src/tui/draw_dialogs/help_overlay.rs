@@ -1,7 +1,7 @@
 //! Help overlay with auto-sized multi-column layout from centralized keybindings
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
@@ -12,7 +12,12 @@ use crate::tui::keybindings;
 use crate::tui::util::AZURE;
 
 /// Draw help overlay with auto-sized columns from centralized keybindings
-pub fn draw_help_overlay(f: &mut Frame, kbd_enhanced: bool, alt_enter_stolen: bool) {
+pub fn draw_help_overlay(
+    f: &mut Frame,
+    kbd_enhanced: bool,
+    alt_enter_stolen: bool,
+    show_startup_screen: bool,
+) {
     let area = f.area();
     let sections = keybindings::help_sections();
 
@@ -233,11 +238,31 @@ pub fn draw_help_overlay(f: &mut Frame, kbd_enhanced: bool, alt_enter_stolen: bo
         .constraints(col_constraints)
         .split(inner);
 
+    // Build startup screen toggle label for bottom-right
+    let startup_state = if show_startup_screen { "ON" } else { "OFF" };
+    let startup_label = if cfg!(target_os = "macos") {
+        format!(" ⌃⌥S Startup Screen: {} ", startup_state)
+    } else {
+        format!(" Ctrl+Alt+S Startup Screen: {} ", startup_state)
+    };
+    let startup_color = if show_startup_screen {
+        Color::Green
+    } else {
+        Color::DarkGray
+    };
+
     // Render border
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .title(" Help (? to close) ")
+        .title_bottom(
+            Line::from(Span::styled(
+                startup_label,
+                Style::default().fg(startup_color),
+            ))
+            .alignment(Alignment::Right),
+        )
         .border_style(Style::default().fg(AZURE))
         .style(Style::default().bg(Color::Reset));
     f.render_widget(block, help_area);

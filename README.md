@@ -66,6 +66,7 @@
 - **Preset Prompts** — Quick-access prompt templates with `⌥P` / `Alt+P` or `⌥1`-`⌥9` / `Alt+1`-`Alt+9` shortcuts
 - **Health Panel** — Scan for oversized files and missing documentation; spawn Claude to fix them
 - **Debug Dump** — Capture an obfuscated snapshot of internal state for troubleshooting with `⌃d` / `Ctrl+D`
+- **Startup Screen Toggle** — Skip the splash screen on launch with `Ctrl+Alt+S` in the help overlay; persisted across sessions
 - **Completion Notifications** — Cross-platform notifications with branded Azureal icon when any agent instance finishes
 - **Worktree Safety** — Delete dialog warns about uncommitted changes and unmerged commits
 
