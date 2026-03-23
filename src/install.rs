@@ -68,11 +68,12 @@ fn is_in_path(exe: &Path) -> bool {
 /// Perform the self-installation. Returns true (caller should exit after).
 fn do_install(exe: &Path) -> bool {
     println!();
-    println!("  \x1b[36m╔══════════════════════════════════════╗\x1b[0m");
+    //                  1234567890123456789012345678901234567890
+    println!("  \x1b[36m╔════════════════════════════════════════╗\x1b[0m");
     println!(
-        "  \x1b[36m║\x1b[0m     \x1b[1;36mAZUREAL\x1b[0m — First Run Setup     \x1b[36m║\x1b[0m"
+        "  \x1b[36m║\x1b[0m       \x1b[1;36mAZUREAL\x1b[0m  —  First Run Setup      \x1b[36m║\x1b[0m"
     );
-    println!("  \x1b[36m╚══════════════════════════════════════╝\x1b[0m");
+    println!("  \x1b[36m╚════════════════════════════════════════╝\x1b[0m");
     println!();
 
     // macOS: install binary into .app bundle, write shell script trampoline to PATH.
@@ -86,9 +87,16 @@ fn do_install(exe: &Path) -> bool {
         }
         println!("  \x1b[32m✓ Installed successfully!\x1b[0m");
         println!();
-        println!("  You can now run:");
+        println!("  \x1b[36mLaunching AZUREAL...\x1b[0m");
         println!();
-        println!("    \x1b[1;36mazureal\x1b[0m");
+
+        let bundle_exec = dirs::home_dir()
+            .unwrap_or_default()
+            .join(".azureal/AZUREAL.app/Contents/MacOS/azureal");
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let err = exec_binary(&bundle_exec, &args);
+        eprintln!("  \x1b[31mFailed to launch: {}\x1b[0m", err);
+        println!("  \x1b[33mRun manually:\x1b[0m  azureal");
         println!();
         wait_for_enter();
         return true;
@@ -128,19 +136,38 @@ fn do_install(exe: &Path) -> bool {
         }
 
         let path_updated = ensure_in_path(&install_dir);
+        let in_path_now = is_in_path_dir(&install_dir);
 
         println!("  \x1b[32m✓ Installed successfully!\x1b[0m");
         println!();
 
-        if path_updated {
-            println!(
-                "  \x1b[33mPATH has been updated. Restart your terminal, then run:\x1b[0m"
-            );
-        } else {
-            println!("  You can now run:");
-        }
         println!();
-        println!("    \x1b[1;36mazureal\x1b[0m");
+
+        // Exec the installed binary directly — the user ran us expecting the app,
+        // so launch it instead of making them type the command again.
+        // The new process runs from the install dir, so is_in_path() returns true
+        // and it skips installation, proceeding to normal TUI startup.
+        println!("  \x1b[36mLaunching AZUREAL...\x1b[0m");
+        println!();
+
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let err = exec_binary(&install_path, &args);
+        // exec_binary only returns on failure
+        eprintln!("  \x1b[31mFailed to launch: {}\x1b[0m", err);
+
+        if !in_path_now {
+            let shell = std::env::var("SHELL").unwrap_or_default();
+            let profile_name = if shell.contains("zsh") {
+                ".zshrc"
+            } else if shell.contains("fish") {
+                ".profile"
+            } else {
+                ".bashrc"
+            };
+            println!();
+            println!("  \x1b[33mTo activate PATH, run:\x1b[0m  source ~/{}", profile_name);
+        }
+        println!("  \x1b[33mThen run:\x1b[0m  azureal");
         println!();
 
         wait_for_enter();
@@ -323,6 +350,24 @@ fn try_copy(src: &Path, dst: &Path) -> bool {
     }
 }
 
+/// Check if a directory is currently in PATH (runtime check).
+fn is_in_path_dir(dir: &Path) -> bool {
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for d in std::env::split_paths(&path_var) {
+            if let (Ok(a), Ok(b)) = (dunce::canonicalize(&d), dunce::canonicalize(dir)) {
+                if a == b {
+                    return true;
+                }
+            }
+            // Also check without canonicalization (dir may not exist yet)
+            if d == dir {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(not(target_os = "macos"))]
 /// Ensure the install directory is in PATH. Returns true if PATH was modified.
 fn ensure_in_path(dir: &Path) -> bool {
@@ -421,6 +466,56 @@ fn add_to_shell_profile(dir: &Path) -> bool {
     }
 
     false
+}
+
+/// Replace the current process with the installed binary.
+/// On Unix, uses execv (never returns on success). On Windows, spawns and exits.
+fn exec_binary(path: &Path, args: &[String]) -> String {
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        let c_path = match CString::new(path.as_os_str().as_bytes()) {
+            Ok(p) => p,
+            Err(e) => return format!("invalid path: {}", e),
+        };
+
+        let mut c_args = vec![c_path.clone()];
+        for arg in args {
+            match CString::new(arg.as_bytes()) {
+                Ok(a) => c_args.push(a),
+                Err(e) => return format!("invalid arg: {}", e),
+            }
+        }
+
+        // execv replaces this process entirely — only returns on error
+        nix_execv(&c_path, &c_args)
+    }
+
+    #[cfg(windows)]
+    {
+        match std::process::Command::new(path).args(args).status() {
+            Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+            Err(e) => format!("{}", e),
+        }
+    }
+}
+
+/// Wrapper for libc::execv to keep unsafe contained.
+#[cfg(unix)]
+fn nix_execv(path: &std::ffi::CString, args: &[std::ffi::CString]) -> String {
+    let c_ptrs: Vec<*const libc::c_char> = args
+        .iter()
+        .map(|a| a.as_ptr())
+        .chain(std::iter::once(std::ptr::null()))
+        .collect();
+
+    unsafe {
+        libc::execv(path.as_ptr(), c_ptrs.as_ptr());
+    }
+    // execv only returns on error
+    std::io::Error::last_os_error().to_string()
 }
 
 /// Block until the user presses Enter.
