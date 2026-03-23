@@ -904,22 +904,20 @@ impl App {
         let slots: Vec<String> = self.running_sessions.drain().collect();
         for slot in &slots {
             if let Ok(pid) = slot.parse::<u32>() {
-                #[cfg(unix)]
-                {
-                    let _ = std::process::Command::new("kill")
-                        .arg(pid.to_string())
-                        .status();
-                }
-                #[cfg(windows)]
-                {
-                    let _ = std::process::Command::new("taskkill")
-                        .args(["/PID", &pid.to_string(), "/F"])
-                        .status();
-                }
+                crate::backend::kill_process_tree(pid);
             }
             self.agent_receivers.remove(slot);
             self.codex_slot_started_at.remove(slot);
         }
+        // Also kill any background compaction agents
+        let compaction_pids: Vec<String> = self.compaction_receivers.keys().cloned().collect();
+        for pid_str in &compaction_pids {
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                crate::backend::kill_process_tree(pid);
+            }
+        }
+        self.compaction_receivers.clear();
+        self.compaction_output.clear();
         self.branch_slots.clear();
         self.active_slot.clear();
     }

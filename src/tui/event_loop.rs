@@ -633,6 +633,8 @@ pub async fn run_app(
         }
 
         if app.should_quit {
+            // Kill all agent processes and their children before exiting
+            app.cancel_all_claude();
             break;
         }
     }

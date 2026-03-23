@@ -4,6 +4,9 @@ All notable changes to Azureal will be documented in this file.
 
 ## [1.0.78] — 2026-03-23
 
+### Fixed
+- **Orphaned child processes survive app quit** — When Azureal spawned a Claude/Codex agent that itself spawned child processes (e.g. `cargo test`, subagents), quitting Azureal or cancelling the agent only killed the direct Claude/Codex process — children kept running, consuming CPU indefinitely. Now spawns agents as process group leaders (`process_group(0)` on Unix) and kills the entire tree on cancel/quit (`libc::killpg()` on Unix, `taskkill /T /F` on Windows). `cancel_all_claude()` also kills compaction agents and is called on app quit. Modified: `src/claude.rs`, `src/codex.rs`, `src/backend.rs`, `src/app/state/claude/process_lifecycle.rs`, `src/app/state/ui.rs`, `src/tui/event_loop.rs`.
+
 ### Added
 - **Toggleable startup screen** — `Ctrl+Alt+S` (`⌃⌥S` on macOS) in the help overlay toggles the splash screen on/off. When OFF, both the AZUREAL logo splash and the 3-second minimum display time are skipped entirely on launch. Setting persisted to global `azufig.toml`. Bottom-right border of the help panel shows `Startup Screen: ON/OFF` with green/gray color coding. Modified: `src/azufig.rs`, `src/app/state/app.rs`, `src/tui/keybindings/types.rs`, `src/tui/event_loop/actions.rs`, `src/tui/draw_dialogs/help_overlay.rs`, `src/tui/run.rs`.
 

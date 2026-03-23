@@ -109,6 +109,28 @@ impl AgentProcess {
     }
 }
 
+/// Kill a process and all its children by PID.
+/// On Unix, uses process group kill (SIGTERM to -pgid) so all descendants die.
+/// On Windows, uses `taskkill /T` (tree kill) to terminate the process tree.
+pub fn kill_process_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        // Send SIGTERM to the entire process group. The spawned process is a
+        // process group leader (via `process_group(0)` in claude.rs / codex.rs),
+        // so killing -pgid reaches all children (cargo test, subagents, etc.).
+        unsafe {
+            libc::killpg(pid as libc::pid_t, libc::SIGTERM);
+        }
+    }
+    #[cfg(windows)]
+    {
+        // /T = terminate child processes, /F = force
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

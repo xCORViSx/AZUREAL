@@ -439,18 +439,7 @@ impl App {
         // The active slot's key IS the PID string — parse it back to u32
         if let Some(slot) = self.active_slot.get(&branch_name).cloned() {
             if let Ok(pid) = slot.parse::<u32>() {
-                #[cfg(unix)]
-                {
-                    use std::process::Command;
-                    let _ = Command::new("kill").arg(pid.to_string()).status();
-                }
-                #[cfg(windows)]
-                {
-                    use std::process::Command;
-                    let _ = Command::new("taskkill")
-                        .args(["/PID", &pid.to_string(), "/F"])
-                        .output();
-                }
+                crate::backend::kill_process_tree(pid);
                 self.set_status("Cancelled Claude");
             }
         }

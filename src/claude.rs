@@ -88,7 +88,8 @@ impl ClaudeProcess {
         }
 
         // Use standard process with separate stdout/stderr to capture hooks
-        let mut child = Command::new(self.config.claude_executable())
+        let mut cmd_builder = Command::new(self.config.claude_executable());
+        cmd_builder
             .args(
                 cmd.get_argv()
                     .iter()
@@ -98,9 +99,17 @@ impl ClaudeProcess {
             .current_dir(working_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Failed to spawn Claude")?;
+            .stderr(Stdio::piped());
+
+        // Make child its own process group leader so kill_process_tree() can
+        // kill it and all its descendants (cargo test, subagents, etc.)
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd_builder.process_group(0);
+        }
+
+        let mut child = cmd_builder.spawn().context("Failed to spawn Claude")?;
 
         let pid = child.id();
         let _ = tx.send(AgentEvent::Started { pid });

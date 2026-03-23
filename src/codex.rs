@@ -93,14 +93,23 @@ impl CodexProcess {
         // Prompt (always last positional arg)
         args.push(prompt.into());
 
-        let mut child = Command::new(executable)
+        let mut cmd_builder = Command::new(executable);
+        cmd_builder
             .args(&args)
             .current_dir(working_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Failed to spawn Codex")?;
+            .stderr(Stdio::piped());
+
+        // Make child its own process group leader so kill_process_tree() can
+        // kill it and all its descendants
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd_builder.process_group(0);
+        }
+
+        let mut child = cmd_builder.spawn().context("Failed to spawn Codex")?;
 
         let pid = child.id();
         let _ = tx.send(AgentEvent::Started { pid });
