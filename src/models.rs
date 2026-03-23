@@ -44,7 +44,7 @@ impl Project {
 /// Derive a git-safe branch prefix from the repo's remote origin name,
 /// falling back to the folder name if no remote exists.
 /// Lowercases and sanitizes for git branch naming.
-/// Examples: "git@github.com:user/iDiOSONiX.git" → "idiosonix", folder "isx" ignored
+/// Examples: "git@github.com:user/MyProject.git" → "myproject", folder "mp" ignored
 pub fn branch_prefix_for_path(path: &Path) -> String {
     let raw = crate::config::repo_name_from_origin(path)
         .map(|s| s.to_lowercase())
@@ -353,7 +353,7 @@ mod tests {
     fn test_branch_prefix_from_path() {
         assert_eq!(branch_prefix_for_path(Path::new("/Users/me/AZUREAL")), "azureal");
         assert_eq!(branch_prefix_for_path(Path::new("/home/user/My Project")), "my-project");
-        assert_eq!(branch_prefix_for_path(Path::new("/tmp/iDiOSONiX")), "idiosonix");
+        assert_eq!(branch_prefix_for_path(Path::new("/tmp/MyProject")), "myproject");
         assert_eq!(branch_prefix_for_path(Path::new("/")), "project"); // fallback
         assert_eq!(branch_prefix_for_path(Path::new("/tmp/test-repo")), "test-repo");
         assert_eq!(branch_prefix_for_path(Path::new("/tmp/123")), "123");
@@ -387,7 +387,7 @@ mod tests {
     fn test_strip_prefix_any_prefix() {
         // Any prefix before first / is stripped
         assert_eq!(strip_branch_prefix("azureal-extra/feat"), "feat");
-        assert_eq!(strip_branch_prefix("idiosonix/clips"), "clips");
+        assert_eq!(strip_branch_prefix("myproject/clips"), "clips");
         assert_eq!(strip_branch_prefix("my-project/feature"), "feature");
     }
 

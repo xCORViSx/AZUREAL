@@ -96,10 +96,25 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
     // (no receivers, no retry pending), spawn a hidden "continue" prompt with
     // fresh context injection (includes the new compaction summary). No user
     // bubble — the conversation resumes transparently.
+    //
+    // Safety net: if a Complete event appeared in display_events (the agent
+    // finished before or during the compaction), skip the auto-continue —
+    // there's nothing to continue.
     if app.auto_continue_after_compaction
         && app.compaction_receivers.is_empty()
         && app.compaction_retry_needed.is_none()
     {
+        let session_completed = app
+            .display_events
+            .iter()
+            .rev()
+            .take(20)
+            .any(|e| matches!(e, crate::events::DisplayEvent::Complete { .. }));
+        if session_completed {
+            app.auto_continue_after_compaction = false;
+            app.set_status("Compaction complete — session already finished.");
+            return true;
+        }
         app.auto_continue_after_compaction = false;
         if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
             let branch = app

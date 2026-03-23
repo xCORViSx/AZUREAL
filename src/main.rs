@@ -741,7 +741,7 @@ mod tests {
     #[test]
     fn test_models_strip_branch_prefix() {
         assert_eq!(models::strip_branch_prefix("azureal/test"), "test");
-        assert_eq!(models::strip_branch_prefix("idiosonix/clips"), "clips");
+        assert_eq!(models::strip_branch_prefix("myproject/clips"), "clips");
     }
 
     #[test]

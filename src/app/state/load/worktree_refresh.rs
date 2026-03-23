@@ -208,13 +208,7 @@ impl App {
         // (e.g. .DS_Store committed before gitignore was added).
         Git::untrack_gitignored_files(&repo_root);
 
-        // Migrate branches from old prefix (e.g. hardcoded "azureal/") to the
-        // correct project-derived prefix. Safe: only touches worktrees/ branches.
         let prefix = self.project.as_ref().map(|p| p.branch_prefix.clone()).unwrap_or_else(|| "project".to_string());
-        let migrated = Git::migrate_branch_prefix(&repo_root, &prefix);
-        if migrated > 0 {
-            self.set_status(format!("Migrated {} branch(es) to {}/", migrated, prefix));
-        }
 
         // Prune stale remote-tracking refs so branches deleted on other machines
         // don't appear as archived worktrees. Best-effort (no-op if offline).
