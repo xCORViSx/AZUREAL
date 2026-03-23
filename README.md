@@ -137,6 +137,18 @@ kitty +kitten themes Copland OS
 
 Or add `include themes/Copland_OS.conf` to your `kitty.conf`.
 
+## Quick Install via AI Agent
+
+Already using an AI coding agent? Just ask it to install Azureal for you:
+
+> Read the README at https://github.com/xCORViSx/AZUREAL and follow the install instructions to download the latest binary for my platform.
+
+or to build from source:
+
+> Read the README at https://github.com/xCORViSx/AZUREAL and clone the repo, then build and install it.
+
+Your agent will handle downloading, installing dependencies, and setting up your PATH.
+
 ## Requirements
 
 - **Rust** (latest stable) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
