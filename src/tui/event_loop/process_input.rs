@@ -5,7 +5,7 @@
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
 
-use crate::app::App;
+use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
 
 use super::actions::handle_key_event;
@@ -112,6 +112,18 @@ pub fn process_input_event(
             // Bracketed paste: terminal wraps pasted content so we receive it
             // as a single event instead of individual keystrokes. This prevents
             // newlines in pasted text from triggering Enter (which submits the prompt).
+            //
+            // Auto-enter prompt mode on paste: if the user pastes in command mode
+            // (focus on Input but prompt_mode=false), activate prompt mode so the
+            // pasted text lands in the input field instead of being silently dropped.
+            if !app.prompt_mode
+                && !app.terminal_mode
+                && !app.viewer_edit_mode
+                && matches!(app.focus, Focus::Input | Focus::Session | Focus::Viewer | Focus::FileTree | Focus::Worktrees)
+            {
+                app.prompt_mode = true;
+                app.focus = Focus::Input;
+            }
             if app.prompt_mode && !app.terminal_mode {
                 if app.has_input_selection() {
                     app.input_delete_selection();

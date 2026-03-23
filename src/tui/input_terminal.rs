@@ -115,12 +115,21 @@ pub fn handle_input_mode(
 
     // Non-terminal: vim-style prompt mode check
     if !app.prompt_mode {
-        match key.code {
-            KeyCode::Char('p') => app.prompt_mode = true,
-            KeyCode::Esc => app.focus = Focus::FileTree,
-            _ => {}
+        // Auto-enter prompt mode on Ctrl+V paste (system clipboard)
+        if let KeyCode::Char(_) = key.code {
+            if is_cmd_key(key.modifiers, key.code, 'v') {
+                app.prompt_mode = true;
+                // Fall through to the clipboard handler below
+            }
         }
-        return Ok(());
+        if !app.prompt_mode {
+            match key.code {
+                KeyCode::Char('p') => app.prompt_mode = true,
+                KeyCode::Esc => app.focus = Focus::FileTree,
+                _ => {}
+            }
+            return Ok(());
+        }
     }
 
     // Windows deferred-Enter paste detection: when an Enter was deferred (waiting

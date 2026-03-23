@@ -9,6 +9,7 @@ All notable changes to Azureal will be documented in this file.
 
 ### Fixed
 - **Background project notification shows wrong project name** — When a session finished in a backgrounded project (e.g. iDiOSONiX), the notification title showed the active project name (AZUREAL) instead of the session's actual project. `send_completion_notification()` now accepts a `project_name` parameter: foreground exits pass `self.project.name`, background exits pass `snapshot.project.name`. Modified: `src/app/state/claude/process_lifecycle.rs`.
+- **Paste from external clipboard ignored in command mode** — Both `Ctrl+V` (clipboard paste) and bracketed paste (`Ctrl+Shift+V` / terminal native paste) were silently dropped when the input pane was in command mode. `Ctrl+V` was inside the `prompt_mode == true` branch and unreachable; `Event::Paste` was gated on `prompt_mode`. Both paths now auto-enter prompt mode before inserting text. Modified: `src/tui/event_loop/process_input.rs`, `src/tui/input_terminal.rs`.
 
 ## [1.0.77] — 2026-03-22
 
