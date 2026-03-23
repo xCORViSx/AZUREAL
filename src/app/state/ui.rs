@@ -482,6 +482,9 @@ impl App {
             let _ = writer.write_all(b"\n");
             let _ = writer.flush();
         }
+        // Focus terminal so keystrokes go to the running command
+        self.focus = Focus::Input;
+        self.prompt_mode = true;
         self.set_status(format!("Running: {}", name));
     }
 

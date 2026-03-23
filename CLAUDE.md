@@ -1458,7 +1458,7 @@ User-defined shell commands that can be saved and executed from any pane. Comman
 **Picker overlay:**
 - `j/k` / `↑/↓` — Navigate selection
 - `1-9` — Quick-select by number
-- `Enter` — Execute selected command
+- `Enter` — Execute selected command (focus moves to terminal in type mode)
 - `e` — Edit selected command
 - `d` — Delete selected command (y/n confirmation)
 - `a` — Add new command
