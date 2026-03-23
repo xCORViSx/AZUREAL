@@ -87,6 +87,11 @@ whisper-rs = "0.15"
 cpal = "0.17"
 dunce = "1.0.5"
 
+# Auto-updater (download from GitHub releases)
+ureq = "3"
+tar = "0.4"
+flate2 = "1"
+
 # Platform-specific
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

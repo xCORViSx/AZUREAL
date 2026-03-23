@@ -164,6 +164,60 @@ pub fn draw_loading_indicator(f: &mut Frame, msg: &str) {
     f.render_widget(dialog, rect);
 }
 
+/// Update available dialog — centered modal showing version info and install/skip/dismiss options.
+pub fn draw_update_dialog(f: &mut Frame, info: &crate::updater::UpdateInfo) {
+    let area = f.area();
+    let key_style = Style::default().fg(AZURE).add_modifier(Modifier::BOLD);
+    let white = Style::default().fg(Color::White);
+    let dim = Style::default().fg(Color::DarkGray);
+    let green = Style::default().fg(Color::Green);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  New version available: v{}  ", info.version),
+            green.add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!("  Current: v{}  ", crate::updater::CURRENT_VERSION),
+            dim,
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("   y", key_style),
+            Span::styled("  Install now   ", white),
+        ]),
+        Line::from(vec![
+            Span::styled("   n", key_style),
+            Span::styled("  Skip this version   ", white),
+        ]),
+        Line::from(vec![
+            Span::styled("   Esc", key_style),
+            Span::styled("  Remind me tomorrow   ", dim),
+        ]),
+        Line::from(""),
+    ];
+
+    let h = lines.len() as u16 + 2;
+    let w = 40u16.min(area.width.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(AZURE))
+        .title(Span::styled(
+            " Update Available ",
+            Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+
+    f.render_widget(ratatui::widgets::Clear, rect);
+    f.render_widget(Paragraph::new(lines).block(block), rect);
+}
+
 #[cfg(test)]
 mod tests {
     use ratatui::style::Color;

@@ -109,6 +109,31 @@ pub async fn run() -> Result<()> {
     terminal.draw(draw_splash)?;
     let splash_start = std::time::Instant::now();
 
+    // Clean up leftover .old binary from previous Windows update
+    crate::updater::cleanup_old_binary();
+
+    // Spawn update check on background thread (runs during splash, ~200-500ms)
+    let update_rx = {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let global = crate::azufig::load_global_azufig();
+            let result = crate::updater::check_for_update(
+                global.config.skip_version.as_deref(),
+                global.config.last_update_check,
+            );
+            // Persist the check timestamp (unless rate-limited — already recent)
+            if !matches!(result, crate::updater::UpdateCheckResult::RateLimited) {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                crate::azufig::save_last_update_check(now);
+            }
+            let _ = tx.send(result);
+        });
+        rx
+    };
+
     let mut app = App::new();
     app.kbd_enhanced = kbd_enhanced;
     // WezTerm on macOS steals Alt+Enter for fullscreen toggle.
@@ -126,6 +151,7 @@ pub async fn run() -> Result<()> {
         app.backend = crate::app::state::backend_for_model(app.selected_model.as_deref().unwrap());
     }
     app.update_terminal_title();
+    app.update_check_receiver = Some(update_rx);
     app.load()?;
     app.load_run_commands();
     app.load_preset_prompts();
@@ -399,6 +425,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Generic loading indicator — highest z-order, shown while a deferred action runs next frame
     if let Some(ref msg) = app.loading_indicator {
         draw_loading_indicator(f, msg);
+    }
+    // Update available dialog — above all other overlays
+    if let Some(ref info) = app.update_available {
+        if let Some(ref msg) = app.update_progress_message {
+            draw_loading_indicator(f, msg);
+        } else {
+            overlays::draw_update_dialog(f, info);
+        }
     }
 }
 

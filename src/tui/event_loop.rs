@@ -466,6 +466,54 @@ pub async fn run_app(
         }
         housekeeping::drain_file_watcher(app);
 
+        // Poll update check result (one-shot, completes during splash)
+        if let Some(ref rx) = app.update_check_receiver {
+            if let Ok(result) = rx.try_recv() {
+                if let crate::updater::UpdateCheckResult::Available(info) = result {
+                    app.update_available = Some(info);
+                    needs_redraw = true;
+                }
+                app.update_check_receiver = None;
+            }
+        }
+        // Poll update download progress — take receiver to avoid borrow conflict
+        if app.update_progress_receiver.is_some() {
+            let rx = app.update_progress_receiver.take().unwrap();
+            let mut put_back = true;
+            while let Ok(progress) = rx.try_recv() {
+                match progress {
+                    crate::updater::UpdateProgress::Downloading(pct) => {
+                        app.update_progress_message =
+                            Some(format!("Downloading update... {}%", pct));
+                        needs_redraw = true;
+                    }
+                    crate::updater::UpdateProgress::Installing => {
+                        app.update_progress_message = Some("Installing update...".into());
+                        needs_redraw = true;
+                    }
+                    crate::updater::UpdateProgress::Complete => {
+                        app.update_available = None;
+                        app.update_progress_message = None;
+                        app.set_status(
+                            "Update installed — restart azureal to use the new version",
+                        );
+                        needs_redraw = true;
+                        put_back = false;
+                    }
+                    crate::updater::UpdateProgress::Failed(msg) => {
+                        app.update_available = None;
+                        app.update_progress_message = None;
+                        app.set_status(format!("Update failed: {}", msg));
+                        needs_redraw = true;
+                        put_back = false;
+                    }
+                }
+            }
+            if put_back {
+                app.update_progress_receiver = Some(rx);
+            }
+        }
+
         let now_poll = Instant::now();
 
         // Session file, file tree, worktree tabs, health panel refreshes

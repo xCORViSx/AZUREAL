@@ -97,6 +97,14 @@ pub struct App {
     pub paste_submit_now: bool,
     pub should_quit: bool,
     pub status_message: Option<String>,
+    /// Update checker: receives result from background thread spawned during splash
+    pub update_check_receiver: Option<std::sync::mpsc::Receiver<crate::updater::UpdateCheckResult>>,
+    /// Update available: shown as a dialog until dismissed
+    pub update_available: Option<crate::updater::UpdateInfo>,
+    /// Download progress receiver (active during install)
+    pub update_progress_receiver: Option<std::sync::mpsc::Receiver<crate::updater::UpdateProgress>>,
+    /// Current progress message for loading indicator
+    pub update_progress_message: Option<String>,
     /// Claude event receivers keyed by slot_id (PID string). One per running process.
     pub agent_receivers: HashMap<String, Receiver<AgentEvent>>,
     /// Set of currently running slot_ids (PID strings)
@@ -652,6 +660,10 @@ impl App {
             paste_submit_now: false,
             should_quit: false,
             status_message: None,
+            update_check_receiver: None,
+            update_available: None,
+            update_progress_receiver: None,
+            update_progress_message: None,
             agent_receivers: HashMap::new(),
             running_sessions: HashSet::new(),
             unread_sessions: HashSet::new(),

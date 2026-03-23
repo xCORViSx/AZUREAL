@@ -51,6 +51,12 @@ pub struct AzufigConfig {
     /// Enable verbose logging
     #[serde(default)]
     pub verbose: bool,
+    /// Version to skip in update checks (user chose "skip this version")
+    #[serde(default)]
+    pub skip_version: Option<String>,
+    /// Unix epoch seconds of last update check (rate-limit to once per 24h)
+    #[serde(default)]
+    pub last_update_check: Option<u64>,
 }
 
 // ── Project-local azufig (.azureal/azufig.toml) ──
@@ -132,6 +138,20 @@ pub fn save_global_azufig(azufig: &GlobalAzufig) {
     let _ = crate::config::ensure_config_dir();
     let path = crate::config::config_dir().join(AZUFIG_FILENAME);
     save_toml(&path, azufig);
+}
+
+/// Save the skip_version for update checks in the global azufig.
+pub fn save_skip_version(version: &str) {
+    let mut azufig = load_global_azufig();
+    azufig.config.skip_version = Some(version.to_string());
+    save_global_azufig(&azufig);
+}
+
+/// Save the last update check timestamp in the global azufig.
+pub fn save_last_update_check(epoch: u64) {
+    let mut azufig = load_global_azufig();
+    azufig.config.last_update_check = Some(epoch);
+    save_global_azufig(&azufig);
 }
 
 /// Load the project-local azufig from `.azureal/azufig.toml` within the given project root.

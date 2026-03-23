@@ -85,6 +85,36 @@ pub fn handle_key_event(
         return Ok(());
     }
 
+    // Update available dialog — blocks all input except y/n/Esc
+    if app.update_available.is_some() && app.update_progress_receiver.is_none() {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let info = app.update_available.as_ref().unwrap().clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                app.update_progress_receiver = Some(rx);
+                app.update_progress_message = Some("Starting download...".into());
+                std::thread::spawn(move || {
+                    crate::updater::download_and_install(&info, tx);
+                });
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                if let Some(ref info) = app.update_available {
+                    crate::azufig::save_skip_version(&info.version);
+                }
+                app.update_available = None;
+            }
+            KeyCode::Esc => {
+                app.update_available = None;
+            }
+            _ => {} // swallow all other keys
+        }
+        return Ok(());
+    }
+    // Update in progress — block all input while downloading/installing
+    if app.update_progress_receiver.is_some() {
+        return Ok(());
+    }
+
     // Welcome modal — only dialog-listed keys are allowed: M (BrowseMain),
     // W leader (AddWorktree), P (OpenProjects), Ctrl+Q (Quit). All others consumed.
     if app.needs_welcome_modal() {
