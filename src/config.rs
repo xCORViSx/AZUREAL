@@ -730,7 +730,7 @@ pub fn register_project(repo_path: &std::path::Path) {
 /// Extract repository name from `git remote get-url origin`.
 /// Handles SSH (`git@github.com:user/repo.git`) and HTTPS (`https://github.com/user/repo.git`).
 /// Returns just the repo name portion (e.g., "repo"), stripping `.git` suffix.
-fn repo_name_from_origin(repo_path: &std::path::Path) -> Option<String> {
+pub(crate) fn repo_name_from_origin(repo_path: &std::path::Path) -> Option<String> {
     let output = std::process::Command::new("git")
         .args(["remote", "get-url", "origin"])
         .current_dir(repo_path)

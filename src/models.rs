@@ -1,6 +1,6 @@
 use crate::tui::util::AZURE;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A project represents a git repository (derived from current working directory)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +8,14 @@ pub struct Project {
     pub name: String,
     pub path: PathBuf,
     pub main_branch: String,
+    /// Git branch prefix derived from the repo folder name (lowercase, sanitized).
+    /// Branches are created as `{branch_prefix}/feature-name`.
+    #[serde(default = "default_branch_prefix")]
+    pub branch_prefix: String,
+}
+
+fn default_branch_prefix() -> String {
+    "azureal".to_string()
 }
 
 impl Project {
@@ -19,15 +27,52 @@ impl Project {
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unnamed".to_string())
         });
+        let branch_prefix = branch_prefix_for_path(&path);
         Self {
             name,
             path,
             main_branch,
+            branch_prefix,
         }
     }
 
     pub fn worktrees_dir(&self) -> PathBuf {
         self.path.join("worktrees")
+    }
+}
+
+/// Derive a git-safe branch prefix from the repo's remote origin name,
+/// falling back to the folder name if no remote exists.
+/// Lowercases and sanitizes for git branch naming.
+/// Examples: "git@github.com:user/iDiOSONiX.git" → "idiosonix", folder "isx" ignored
+pub fn branch_prefix_for_path(path: &Path) -> String {
+    let raw = crate::config::repo_name_from_origin(path)
+        .map(|s| s.to_lowercase())
+        .unwrap_or_else(|| {
+            path.file_name()
+                .map(|s| s.to_string_lossy().to_lowercase())
+                .unwrap_or_else(|| "project".to_string())
+        });
+
+    let mut result = String::new();
+    let mut last_dash = false;
+    for c in raw.chars() {
+        if c.is_ascii_alphanumeric() {
+            result.push(c);
+            last_dash = false;
+        } else if !last_dash && !result.is_empty() {
+            result.push('-');
+            last_dash = true;
+        }
+    }
+    while result.ends_with('-') {
+        result.pop();
+    }
+
+    if result.is_empty() {
+        "project".to_string()
+    } else {
+        result
     }
 }
 
@@ -78,17 +123,14 @@ impl WorktreeStatus {
     }
 }
 
-/// Branch prefix for worktree branches (e.g. "azureal" → branches named "azureal/feature").
-/// Used for branch creation, listing, and display name stripping.
-pub const BRANCH_PREFIX: &str = "azureal";
-
 /// Strip the branch prefix from a full branch name for display.
-/// Returns the original string unchanged if it doesn't have the prefix.
+/// Strips everything up to and including the first `/`.
+/// Returns the original string unchanged if it has no `/`.
 pub fn strip_branch_prefix(branch: &str) -> &str {
-    branch
-        .strip_prefix(BRANCH_PREFIX)
-        .and_then(|s| s.strip_prefix('/'))
-        .unwrap_or(branch)
+    match branch.find('/') {
+        Some(idx) => &branch[idx + 1..],
+        None => branch,
+    }
 }
 
 /// A worktree represents a git worktree paired with an optional Claude session.
@@ -192,7 +234,8 @@ mod tests {
 
     #[test]
     fn test_strip_prefix_different_prefix() {
-        assert_eq!(strip_branch_prefix("other/feature"), "other/feature");
+        // Any prefix is stripped (strips at first /)
+        assert_eq!(strip_branch_prefix("other/feature"), "feature");
     }
 
     // ── WorktreeStatus::as_str ──
@@ -304,11 +347,16 @@ mod tests {
         assert_eq!(wt.status(false), WorktreeStatus::Pending);
     }
 
-    // ── BRANCH_PREFIX constant ──
+    // ── branch_prefix_for_path ──
 
     #[test]
-    fn test_branch_prefix_value() {
-        assert_eq!(BRANCH_PREFIX, "azureal");
+    fn test_branch_prefix_from_path() {
+        assert_eq!(branch_prefix_for_path(Path::new("/Users/me/AZUREAL")), "azureal");
+        assert_eq!(branch_prefix_for_path(Path::new("/home/user/My Project")), "my-project");
+        assert_eq!(branch_prefix_for_path(Path::new("/tmp/iDiOSONiX")), "idiosonix");
+        assert_eq!(branch_prefix_for_path(Path::new("/")), "project"); // fallback
+        assert_eq!(branch_prefix_for_path(Path::new("/tmp/test-repo")), "test-repo");
+        assert_eq!(branch_prefix_for_path(Path::new("/tmp/123")), "123");
     }
 
     // ── strip_branch_prefix: more edge cases ──
@@ -336,18 +384,18 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_prefix_partial_match() {
-        // "azureal-extra/feat" does not start with "azureal/"
-        assert_eq!(
-            strip_branch_prefix("azureal-extra/feat"),
-            "azureal-extra/feat"
-        );
+    fn test_strip_prefix_any_prefix() {
+        // Any prefix before first / is stripped
+        assert_eq!(strip_branch_prefix("azureal-extra/feat"), "feat");
+        assert_eq!(strip_branch_prefix("idiosonix/clips"), "clips");
+        assert_eq!(strip_branch_prefix("my-project/feature"), "feature");
     }
 
     #[test]
-    fn test_strip_prefix_case_sensitive() {
-        assert_eq!(strip_branch_prefix("Azureal/feat"), "Azureal/feat");
-        assert_eq!(strip_branch_prefix("AZUREAL/feat"), "AZUREAL/feat");
+    fn test_strip_prefix_case_insensitive() {
+        // All prefixes stripped regardless of case
+        assert_eq!(strip_branch_prefix("Azureal/feat"), "feat");
+        assert_eq!(strip_branch_prefix("AZUREAL/feat"), "feat");
     }
 
     #[test]
@@ -365,7 +413,8 @@ mod tests {
 
     #[test]
     fn test_strip_prefix_only_slash() {
-        assert_eq!(strip_branch_prefix("/"), "/");
+        // "/" → empty string after the slash
+        assert_eq!(strip_branch_prefix("/"), "");
     }
 
     #[test]
@@ -860,7 +909,7 @@ mod tests {
             claude_session_id: None,
             archived: false,
         };
-        assert_eq!(wt.name(), "/");
+        assert_eq!(wt.name(), "");
     }
 
     // ── WorktreeStatus: as_str / symbol consistency ──

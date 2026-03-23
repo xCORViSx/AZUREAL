@@ -438,8 +438,9 @@ pub fn handle_key_event(
                 } else if new_suffix == dialog.old_name {
                     app.set_status("Name unchanged");
                 } else {
+                    let prefix = app.project.as_ref().map(|p| p.branch_prefix.as_str()).unwrap_or("project");
                     let new_branch =
-                        format!("{}/{}", crate::models::BRANCH_PREFIX, new_suffix);
+                        format!("{}/{}", prefix, new_suffix);
                     if let Err(e) = app.rename_current_worktree(&new_branch) {
                         app.set_status(format!("Rename failed: {}", e));
                     }

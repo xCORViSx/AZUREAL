@@ -70,8 +70,8 @@ impl Git {
     /// List all prefixed branches (for archived session detection).
     /// Includes both local branches and remote branches (from origin).
     /// Remote branches appear as archived worktrees when no local checkout exists.
-    pub fn list_azureal_branches(repo_path: &Path) -> Result<Vec<String>> {
-        let pattern = format!("{}/*", crate::models::BRANCH_PREFIX);
+    pub fn list_azureal_branches(repo_path: &Path, prefix: &str) -> Result<Vec<String>> {
+        let pattern = format!("{}/*", prefix);
 
         // Local branches: azureal/*
         let local_output = Command::new("git")
@@ -86,8 +86,8 @@ impl Git {
             .filter(|s| !s.is_empty())
             .collect();
 
-        // Remote branches: origin/azureal/* (strip origin/ prefix to get branch name)
-        let remote_pattern = format!("origin/{}/*", crate::models::BRANCH_PREFIX);
+        // Remote branches: origin/<prefix>/* (strip origin/ prefix to get branch name)
+        let remote_pattern = format!("origin/{}/*", prefix);
         let remote_output = Command::new("git")
             .args([
                 "branch",
@@ -121,15 +121,14 @@ impl Git {
     /// 2. Deletes local azureal/* branches that are fully merged to main
     ///    AND have no remote counterpart (deleted on another machine).
     /// Best-effort: silently ignored if offline or no remote configured.
-    pub fn prune_remote_refs(repo_path: &Path) {
+    pub fn prune_remote_refs(repo_path: &Path, prefix: &str) {
         // Prune stale origin/* refs
         let _ = Command::new("git")
             .args(["remote", "prune", "origin"])
             .current_dir(repo_path)
             .output();
 
-        // Find local azureal/* branches with no remote counterpart
-        let prefix = crate::models::BRANCH_PREFIX;
+        // Find local prefixed branches with no remote counterpart
         let pattern = format!("{}/*", prefix);
         let local = Command::new("git")
             .args(["branch", "--list", &pattern, "--format=%(refname:short)"])

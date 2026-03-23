@@ -866,7 +866,8 @@ impl App {
 
             // Session store opened lazily via ensure_session_store()
 
-            Git::prune_remote_refs(&path);
+            let prefix = self.project.as_ref().map(|p| p.branch_prefix.as_str()).unwrap_or("project");
+            Git::prune_remote_refs(&path, prefix);
             let _ = self.load_worktrees();
 
             self.load_session_output();

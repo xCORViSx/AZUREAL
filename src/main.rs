@@ -725,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_models_module_accessible() {
-        let _ = models::BRANCH_PREFIX;
+        let _ = models::branch_prefix_for_path(std::path::Path::new("/tmp/test"));
     }
 
     #[test]
@@ -741,6 +741,7 @@ mod tests {
     #[test]
     fn test_models_strip_branch_prefix() {
         assert_eq!(models::strip_branch_prefix("azureal/test"), "test");
+        assert_eq!(models::strip_branch_prefix("idiosonix/clips"), "clips");
     }
 
     #[test]

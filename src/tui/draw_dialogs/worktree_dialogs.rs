@@ -277,9 +277,10 @@ pub fn draw_rename_worktree_dialog(
     f: &mut Frame,
     dialog: &crate::app::types::RenameWorktreeDialog,
     area: Rect,
+    branch_prefix: &str,
 ) {
     let title = format!(" Rename '{}' ", dialog.old_name);
-    let prefix = format!("{}/", crate::models::BRANCH_PREFIX);
+    let prefix = format!("{}/", branch_prefix);
 
     // Build the input line with cursor highlight
     let before_cursor = &dialog.input[..dialog.cursor];

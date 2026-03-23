@@ -369,7 +369,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_dialogs::draw_delete_worktree_dialog(f, dialog, f.area());
     }
     if let Some(ref dialog) = app.rename_worktree_dialog {
-        draw_dialogs::draw_rename_worktree_dialog(f, dialog, f.area());
+        let prefix = app.project.as_ref().map(|p| p.branch_prefix.as_str()).unwrap_or("project");
+        draw_dialogs::draw_rename_worktree_dialog(f, dialog, f.area(), prefix);
     }
     if let Some(ref dialog) = app.branch_dialog {
         draw_dialogs::draw_branch_dialog(f, dialog, f.area());

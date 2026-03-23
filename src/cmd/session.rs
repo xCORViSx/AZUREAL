@@ -29,7 +29,7 @@ fn discover_project() -> Result<Project> {
 /// Discover sessions from git worktrees and branches
 fn discover_worktrees(project: &Project) -> Result<Vec<Worktree>> {
     let worktrees = Git::list_worktrees_detailed(&project.path)?;
-    let azureal_branches = Git::list_azureal_branches(&project.path)?;
+    let azureal_branches = Git::list_azureal_branches(&project.path, &project.branch_prefix)?;
     let mut sessions = Vec::new();
     let mut active_branches: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -153,7 +153,7 @@ pub fn handle_session_new(
     // Generate session name from prompt
     let name = generate_session_name(&prompt);
     let worktree_name = sanitize_for_branch(&name);
-    let branch_name = format!("{}/{}", crate::models::BRANCH_PREFIX, worktree_name);
+    let branch_name = format!("{}/{}", project.branch_prefix, worktree_name);
     let worktree_path = project.worktrees_dir().join(&worktree_name);
 
     if worktree_path.exists() {

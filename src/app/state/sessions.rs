@@ -180,7 +180,7 @@ impl App {
             anyhow::bail!("No project loaded")
         };
 
-        let branch_name = format!("{}/{}", crate::models::BRANCH_PREFIX, worktree_name);
+        let branch_name = format!("{}/{}", project.branch_prefix, worktree_name);
         let worktree_path = project.worktrees_dir().join(&worktree_name);
 
         if worktree_path.exists() {
@@ -929,6 +929,7 @@ mod tests {
             name: "test".to_string(),
             path: PathBuf::from("/tmp/project"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         });
         app.worktrees.push(Worktree {
             branch_name: "main".to_string(),
@@ -955,6 +956,7 @@ mod tests {
             name: "test".to_string(),
             path: PathBuf::from("/tmp/project"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         });
         app.worktrees.push(Worktree {
             branch_name: "main".to_string(),

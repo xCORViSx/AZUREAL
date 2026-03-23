@@ -92,7 +92,7 @@ pub fn handle_project_show(project_arg: Option<String>, output_format: OutputFor
             }
 
             // Count azureal branches
-            if let Ok(branches) = Git::list_azureal_branches(&project.path) {
+            if let Ok(branches) = Git::list_azureal_branches(&project.path, &project.branch_prefix) {
                 println!("\nAzureal branches: {}", branches.len());
             }
         }
@@ -299,6 +299,7 @@ mod tests {
             name: "test".to_string(),
             path: PathBuf::from("/home/user/project"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         assert_eq!(
             project.worktrees_dir(),
@@ -312,6 +313,7 @@ mod tests {
             name: "root".to_string(),
             path: PathBuf::from("/"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         assert_eq!(project.worktrees_dir(), PathBuf::from("/worktrees"));
     }
@@ -322,6 +324,7 @@ mod tests {
             name: "test".to_string(),
             path: PathBuf::from("/tmp/test"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         let cloned = project.clone();
         assert_eq!(cloned.name, "test");
@@ -335,6 +338,7 @@ mod tests {
             name: "my-project".to_string(),
             path: PathBuf::from("/home/user/projects/my-project"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         let json = serde_json::to_string(&project).unwrap();
         let parsed: Project = serde_json::from_str(&json).unwrap();
@@ -349,6 +353,7 @@ mod tests {
             name: "old-project".to_string(),
             path: PathBuf::from("/tmp/old"),
             main_branch: "master".to_string(),
+            branch_prefix: "test".to_string(),
         };
         let json = serde_json::to_string(&project).unwrap();
         assert!(json.contains("master"));
@@ -360,6 +365,7 @@ mod tests {
             name: "debug-test".to_string(),
             path: PathBuf::from("/tmp/debug"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         let debug = format!("{:?}", project);
         assert!(debug.contains("debug-test"));
@@ -372,6 +378,7 @@ mod tests {
             name: "my cool project".to_string(),
             path: PathBuf::from("/tmp/my cool project"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         assert_eq!(project.name, "my cool project");
     }
@@ -382,6 +389,7 @@ mod tests {
             name: "nested".to_string(),
             path: PathBuf::from("/home/user/a/b/c/project"),
             main_branch: "develop".to_string(),
+            branch_prefix: "test".to_string(),
         };
         assert_eq!(
             project.worktrees_dir(),
@@ -468,11 +476,13 @@ mod tests {
                 name: "a".to_string(),
                 path: PathBuf::from("/a"),
                 main_branch: "main".to_string(),
+                branch_prefix: "a".to_string(),
             },
             Project {
                 name: "b".to_string(),
                 path: PathBuf::from("/b"),
                 main_branch: "main".to_string(),
+                branch_prefix: "b".to_string(),
             },
         ];
         let json = serde_json::to_string_pretty(&projects).unwrap();
@@ -502,6 +512,7 @@ mod tests {
             name: "dev".to_string(),
             path: PathBuf::from("/dev"),
             main_branch: "develop".to_string(),
+            branch_prefix: "test".to_string(),
         };
         assert_eq!(project.main_branch, "develop");
     }
@@ -512,6 +523,7 @@ mod tests {
             name: "test".to_string(),
             path: PathBuf::from("/home/user/project/"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         // PathBuf normalizes trailing slashes
         assert!(project
@@ -526,6 +538,7 @@ mod tests {
             name: String::new(),
             path: PathBuf::from("/tmp"),
             main_branch: "main".to_string(),
+            branch_prefix: "test".to_string(),
         };
         assert!(project.name.is_empty());
     }
@@ -536,6 +549,7 @@ mod tests {
             name: "test".to_string(),
             path: PathBuf::from("/tmp"),
             main_branch: String::new(),
+            branch_prefix: "tmp".to_string(),
         };
         assert!(project.main_branch.is_empty());
     }

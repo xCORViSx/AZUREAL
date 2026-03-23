@@ -18,6 +18,7 @@ pub fn compute_worktree_refresh(
     main_branch: String,
     worktrees_dir: PathBuf,
     _backend: Backend,
+    branch_prefix: String,
 ) -> anyhow::Result<WorktreeRefreshResult> {
     let worktrees = Git::list_worktrees_detailed(&project_path)?;
 
@@ -108,7 +109,7 @@ pub fn compute_worktree_refresh(
         }
     }
 
-    let azureal_branches = Git::list_azureal_branches(&project_path)?;
+    let azureal_branches = Git::list_azureal_branches(&project_path, &branch_prefix)?;
 
     let wt_paths: Vec<_> = worktrees.iter().map(|w| w.path.clone()).collect();
     crate::config::migrate_project_dirs(&wt_paths);
@@ -209,7 +210,8 @@ impl App {
 
         // Prune stale remote-tracking refs so branches deleted on other machines
         // don't appear as archived worktrees. Best-effort (no-op if offline).
-        Git::prune_remote_refs(&repo_root);
+        let prefix = self.project.as_ref().map(|p| p.branch_prefix.as_str()).unwrap_or("project");
+        Git::prune_remote_refs(&repo_root, prefix);
 
         // Detached HEAD repair and orphaned rebase cleanup now handled
         // inside load_worktrees() so every refresh (not just startup) benefits.
@@ -233,6 +235,7 @@ impl App {
             project.main_branch.clone(),
             project.worktrees_dir(),
             self.backend,
+            project.branch_prefix.clone(),
         )?;
         self.apply_worktree_result(result);
         Ok(())

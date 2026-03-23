@@ -114,6 +114,7 @@ pub fn poll_refreshes(
             let main_branch = project.main_branch.clone();
             let wt_dir = project.worktrees_dir();
             let backend = app.backend;
+            let prefix = project.branch_prefix.clone();
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let result = crate::app::state::load::compute_worktree_refresh(
@@ -121,6 +122,7 @@ pub fn poll_refreshes(
                     main_branch,
                     wt_dir,
                     backend,
+                    prefix,
                 );
                 let _ = tx.send(result);
             });
