@@ -28,6 +28,29 @@ pub fn maybe_self_install() -> bool {
         return false;
     }
 
+    // Skip if already at the install destination (exec'd after first install,
+    // but PATH hasn't been sourced yet in this shell session)
+    #[cfg(not(target_os = "macos"))]
+    {
+        let install_dir = pick_install_dir();
+        let install_path = install_dir.join(if cfg!(windows) {
+            "azureal.exe"
+        } else {
+            "azureal"
+        });
+        if exe == install_path {
+            return false;
+        }
+        // Also check with canonicalization for symlinks
+        if install_path.exists() {
+            if let Ok(canon) = dunce::canonicalize(&install_path) {
+                if exe == canon {
+                    return false;
+                }
+            }
+        }
+    }
+
     // Skip if `azureal` is already findable in PATH (installed elsewhere)
     let bin_name = if cfg!(windows) {
         "azureal.exe"
@@ -135,7 +158,7 @@ fn do_install(exe: &Path) -> bool {
                 std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
         }
 
-        let path_updated = ensure_in_path(&install_dir);
+        let _path_updated = ensure_in_path(&install_dir);
         let in_path_now = is_in_path_dir(&install_dir);
 
         println!("  \x1b[32m✓ Installed successfully!\x1b[0m");
