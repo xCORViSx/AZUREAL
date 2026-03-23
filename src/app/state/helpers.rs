@@ -503,9 +503,10 @@ mod tests {
     fn test_build_file_tree_hidden_dir_name_exact_match() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
-        fs::create_dir(root.join("target")).unwrap(); // should be filtered by built-in
+        fs::create_dir(root.join("target")).unwrap(); // filtered via hidden_dirs
         fs::create_dir(root.join("target2")).unwrap(); // should NOT be filtered
-        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &HashSet::new());
+        let hidden: HashSet<String> = ["target".into()].into_iter().collect();
+        let entries = build_file_tree(&root.to_path_buf(), &HashSet::new(), &hidden);
         assert!(entries.iter().any(|e| e.name == "target2"));
         assert!(!entries.iter().any(|e| e.name == "target"));
     }

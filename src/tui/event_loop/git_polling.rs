@@ -170,12 +170,19 @@ pub fn poll_background_ops(app: &mut App) -> bool {
             BackgroundOpOutcome::Created { branch } => {
                 app.save_live_display_events();
                 app.save_current_terminal();
+                // Exit main browse if active — we're switching to the new worktree
+                if app.browsing_main {
+                    app.browsing_main = false;
+                }
                 let _ = app.refresh_worktrees();
                 if let Some(idx) =
                     app.worktrees.iter().position(|s| s.branch_name == branch)
                 {
                     app.selected_worktree = Some(idx);
                     app.load_session_output();
+                    // Enter prompt mode so the user can immediately start working
+                    app.prompt_mode = true;
+                    app.focus = crate::app::types::Focus::Input;
                 }
                 // Enable auto-rebase by default for new worktrees
                 if let Some(wt_path) = app.worktrees.iter()

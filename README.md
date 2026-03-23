@@ -75,7 +75,7 @@
 - **Fast Input** (macOS) — Prompt keystrokes render via `fast_draw_input()` (~0.1ms) bypassing ratatui's full diff for instant typing feedback. Disabled on Windows where direct VT writes conflict with the console input parser
 - **Smart Redraw** — Animation ticks only trigger redraws when spinners are visible on screen; git sidebar stats are cached and recomputed only at mutation points
 - **Incremental Everything** — Session files parsed incrementally; renders send only new content
-- **Minimal Footprint** — Single-file SQLite session store (`.azs`), two small TOML config files, and runtime git/Claude discovery
+- **Minimal Footprint** — Per-worktree SQLite session store (`.azs`), two small TOML config files, and runtime git/Claude discovery
 
 ## Recommended Terminals
 
@@ -237,7 +237,7 @@ azureal
 
 ## Architecture
 
-Azureal is **mostly stateless** — runtime state is derived from git worktrees and branches. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is derived from the active model (`gpt-*` → Codex, everything else → Claude). Sessions are stored in a single SQLite database (`.azureal/sessions.azs`) — portable, self-contained, and transferable between machines by copying one file. Agent JSONL session files are temporary — parsed during live streaming, ingested into the store on exit, then deleted.
+Azureal is **mostly stateless** — runtime state is derived from git worktrees and branches. Persistent config lives in two `azufig.toml` files (global + project-local). Backend selection (`claude` or `codex`) is derived from the active model (`gpt-*` → Codex, everything else → Claude). Sessions are stored in per-worktree SQLite databases (`.azureal/sessions.azs`) — each worktree has its own independent session store with S-numbered sessions starting at S1. Agent JSONL session files are temporary — parsed during live streaming, ingested into the store on exit, then deleted.
 
 All keybindings are defined once in a central module. Press `?` for the full help overlay.
 

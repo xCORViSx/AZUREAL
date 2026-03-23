@@ -123,9 +123,20 @@ impl App {
                     {
                         self.compaction_needed = Some((sid, wt_path));
                         self.store_append_from_display(slot_id);
-                        self.auto_continue_after_compaction = true;
-                        self.cancel_current_claude();
-                        self.set_status("Compacting context — will auto-continue...");
+                        // Only auto-continue if the agent hasn't already completed.
+                        // If the batch that crossed the threshold contains a Complete
+                        // event, the agent finished — compaction still runs but there's
+                        // nothing to continue.
+                        let session_completed = self.display_events.iter().rev().take(20).any(
+                            |e| matches!(e, crate::events::DisplayEvent::Complete { .. }),
+                        );
+                        if !session_completed {
+                            self.auto_continue_after_compaction = true;
+                            self.cancel_current_claude();
+                            self.set_status("Compacting context — will auto-continue...");
+                        } else {
+                            self.set_status("Context full — compacting (session already complete)...");
+                        }
                     }
                 }
             }
@@ -273,9 +284,21 @@ impl App {
                             // which removes the slot from pid_session_target (the
                             // exit handler won't double-store).
                             self.store_append_from_display(slot_id);
-                            self.auto_continue_after_compaction = true;
-                            self.cancel_current_claude();
-                            self.set_status("Compacting context — will auto-continue...");
+                            // Only auto-continue if the agent hasn't already completed.
+                            let session_completed = self.display_events.iter().rev().take(20).any(
+                                |e| matches!(e, crate::events::DisplayEvent::Complete { .. }),
+                            );
+                            if !session_completed {
+                                self.auto_continue_after_compaction = true;
+                                self.cancel_current_claude();
+                                self.set_status(
+                                    "Compacting context — will auto-continue...",
+                                );
+                            } else {
+                                self.set_status(
+                                    "Context full — compacting (session already complete)...",
+                                );
+                            }
                         }
                     }
                 }

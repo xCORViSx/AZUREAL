@@ -543,28 +543,35 @@ impl App {
                         let _ = store.rename_session(id, &name);
                     }
                     self.current_session_id = Some(id);
+
+                    // Populate session_files cache BEFORE load_session_output()
+                    // so the new session is discoverable via session_selected_file_idx.
+                    let id_str = id.to_string();
+                    if let Ok(sessions) = store.list_sessions(Some(&branch)) {
+                        let mut files = Vec::new();
+                        let mut new_idx = 0;
+                        for (i, s) in sessions.iter().enumerate() {
+                            let key = s.id.to_string();
+                            if key == id_str {
+                                new_idx = i;
+                            }
+                            files.push((
+                                key.clone(),
+                                std::path::PathBuf::new(),
+                                s.created.clone(),
+                            ));
+                            self.session_msg_counts.insert(key, (s.message_count, 0));
+                        }
+                        self.session_files.insert(branch.clone(), files);
+                        self.session_selected_file_idx
+                            .insert(branch.clone(), new_idx);
+                    }
                 }
                 Err(_) => self.current_session_id = None,
             }
         }
 
         self.load_session_output();
-
-        // Populate session_files cache so the session list shows the new session
-        if let Some(ref store) = self.session_store {
-            if let Some(wt) = self.current_worktree() {
-                let branch = wt.branch_name.clone();
-                let mut files = Vec::new();
-                if let Ok(sessions) = store.list_sessions(Some(&branch)) {
-                    for s in &sessions {
-                        let key = s.id.to_string();
-                        files.push((key.clone(), std::path::PathBuf::new(), s.created.clone()));
-                        self.session_msg_counts.insert(key, (s.message_count, 0));
-                    }
-                }
-                self.session_files.insert(branch, files);
-            }
-        }
 
         if self.staged_prompt.is_some() {
             self.focus = Focus::Input;
