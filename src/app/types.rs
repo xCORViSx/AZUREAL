@@ -1017,6 +1017,10 @@ pub struct IssueSession {
     pub duplicate_detected: bool,
     /// Cached issues JSON from the panel (preserved after panel closes for prompt injection)
     pub cached_issues_json: String,
+    /// SQLite store session ID created for multi-turn context (deleted on accept/abort)
+    pub store_session_id: Option<i64>,
+    /// Previous current_session_id saved before issue session (restored on accept/abort)
+    pub saved_session_id: Option<i64>,
 }
 
 /// Parsed issue data extracted from `<azureal-issue>` tags

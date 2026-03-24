@@ -1535,20 +1535,24 @@ Implementation: `src/app/state/load.rs` (`dump_debug_output()`), `src/tui/run/ov
 1. `c` in the Issues panel → caches the issues JSON, closes the panel, sets `issue_session` with empty `slot_id`, enters prompt mode with `[Issue] New` title
 2. User types their issue description and presses Enter
 3. `send_staged_prompt()` detects `issue_session` with empty `slot_id` → calls `spawn_issue_session()` instead of normal agent spawn
-4. Agent receives a hidden system prompt containing all existing issues as JSON, plus instructions to:
+4. `spawn_issue_session()` creates an **ephemeral** SQLite store session for multi-turn context injection (so the agent can ask clarifying questions and build on prior turns), saves the previous `current_session_id` into `IssueSession.saved_session_id`, and sets `current_session_id` to the ephemeral session. No entry is pushed to `pending_session_names` — the session is invisible to the session list.
+5. Agent receives a hidden system prompt containing all existing issues as JSON, plus instructions to:
    - Check for duplicates first. If found, add a +1 reaction via `gh api` and inform the user
    - If no duplicate, ask clarifying questions until sufficient clarity
    - Format the final issue with `<azureal-issue><title>...</title><body>...</body><labels>...</labels></azureal-issue>` tags
-5. On agent exit, `handle_claude_exited()` intercepts → sets `approval_pending = true`
-6. Approval dialog appears (green double border): `y` accepts, `n` discards, `Esc` dismisses for review, `⌃a` re-shows
-7. Accept → `accept_issue()` extracts tags from `display_events`, spawns background `gh issue create -R xCORViSx/AZUREAL`
-8. Submit result polled in event loop → status message shown
+6. On agent exit, `handle_claude_exited()` intercepts → sets `approval_pending = true`
+7. Approval dialog appears (green double border): `y` accepts, `n` discards, `Esc` dismisses for review, `⌃a` re-shows
+8. Accept → `accept_issue()` extracts tags from `display_events`, spawns background `gh issue create -R xCORViSx/AZUREAL`, then deletes the ephemeral store session and restores `current_session_id` from `saved_session_id`
+9. Abort → `abort_issue()` also deletes the ephemeral store session and restores `current_session_id`
+10. Submit result polled in event loop → status message shown
 
 **Visual Theming:** When an issue session is active, the session pane switches to AZURE-themed borders (matching the Issues panel accent) — AZURE Double border when active, AZURE Plain when unfocused. The center title shows `[Issue] New` in AZURE. When `approval_pending` is true and the dialog is dismissed via Esc, the `⌃a` hint appears in the session pane bottom border (same pattern as RCR). The input pane also shows an AZURE border with `[Issue] New` label when the issue session is active and the user is in prompt mode.
 
+**Ephemeral Sessions:** Issue sessions are ephemeral — a temporary SQLite store session is created for multi-turn context injection during the issue creation conversation, but it is deleted when the flow completes (accept or abort) so it never appears in the session list. The previous `current_session_id` is saved in `IssueSession.saved_session_id` and restored on completion.
+
 **State:** `issues_panel: Option<IssuesPanel>` (modal overlay), `issue_session: Option<IssueSession>` (active creation session with `cached_issues_json`), `issue_submit_receiver: Option<mpsc::Receiver<String>>` (background submit result).
 
-**Types (in `src/app/types.rs`):** `GhIssue` (fetched issue data), `IssuesPanel` (modal state with filter, scroll, fetch receiver), `IssueSession` (slot_id, session_id, approval_pending, worktree_path, cached_issues_json), `ParsedIssue` (extracted title/body/labels).
+**Types (in `src/app/types.rs`):** `GhIssue` (fetched issue data), `IssuesPanel` (modal state with filter, scroll, fetch receiver), `IssueSession` (slot_id, session_id, approval_pending, worktree_path, cached_issues_json, store_session_id: Option<i64>, saved_session_id: Option<i64>), `ParsedIssue` (extracted title/body/labels).
 
 Implementation: `src/app/state/issues.rs` (state management: open/close panel, spawn/accept/abort issue session, fetch/serialize/parse helpers), `src/tui/draw_issues.rs` (panel rendering + approval dialog), `src/tui/draw_output/session_chrome.rs` (AZURE border theming when `issue_session` active), `src/tui/draw_input.rs` (AZURE input border when issue session active), `src/tui/input_issues.rs` (input handler using `lookup_issues_action()`), `src/tui/keybindings/bindings/modals.rs` (`ISSUES_BROWSE` array), `src/tui/keybindings/lookup.rs` (`lookup_issues_action()`), `src/tui/keybindings/hints.rs` (`issues_browse_hints()`), `src/tui/event_loop/prompt.rs` (staged prompt interception), `src/app/state/claude/process_lifecycle.rs` (exit intercept + session ID tracking)
 

@@ -122,13 +122,18 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
                 Style::default().fg(Color::DarkGray)
             };
             let title_style = if is_selected {
-                Style::default()
+                let s = Style::default()
                     .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::BOLD);
+                if is_closed {
+                    s.add_modifier(Modifier::CROSSED_OUT)
+                } else {
+                    s
+                }
             } else if is_closed {
                 Style::default()
                     .fg(Color::DarkGray)
-                    .add_modifier(Modifier::DIM)
+                    .add_modifier(Modifier::DIM | Modifier::CROSSED_OUT)
             } else {
                 Style::default().fg(Color::Gray)
             };

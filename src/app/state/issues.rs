@@ -100,7 +100,10 @@ impl App {
         let selected_model = self.selected_model.clone();
         let session_name = "[Issue] New".to_string();
 
-        // Create a dedicated store session
+        // Save current session ID so we can restore it after issue creation.
+        // Create a temporary store session for multi-turn context injection
+        // (deleted on accept/abort so it never appears in the session list).
+        let saved_sid = self.current_session_id;
         self.ensure_session_store();
         let store_id = self.session_store.as_ref().and_then(|store| {
             store.create_session("issues").ok().map(|id| {
@@ -122,8 +125,6 @@ impl App {
                         .insert(slot.clone(), (sid, wt_path.clone(), 0, 0));
                     self.current_session_id = Some(sid);
                 }
-                self.pending_session_names
-                    .push((slot.clone(), session_name.clone()));
                 self.register_claude(branch, pid, rx, selected_model.as_deref());
                 self.issue_session = Some(IssueSession {
                     slot_id: slot,
@@ -132,6 +133,8 @@ impl App {
                     worktree_path: wt_path,
                     duplicate_detected: false,
                     cached_issues_json: issues_json.to_string(),
+                    store_session_id: store_id,
+                    saved_session_id: saved_sid,
                 });
                 self.title_session_name = session_name;
                 // Clear display for fresh session
@@ -171,15 +174,24 @@ impl App {
     /// Returns the receiver for the background submission result.
     pub fn accept_issue(&mut self) -> Option<mpsc::Receiver<String>> {
         let issue = self.issue_session.take()?;
-        // Clean up session file
+        // Clean up JSONL session file
         if let Some(ref sid) = issue.session_id {
             if let Some(path) = crate::config::session_file(&issue.worktree_path, sid) {
                 crate::config::remove_session_file(&path);
             }
         }
+        // Delete the ephemeral store session (never persists in session list)
+        if let Some(store_sid) = issue.store_session_id {
+            if let Some(ref store) = self.session_store {
+                let _ = store.delete_session(store_sid);
+            }
+        }
 
-        // Extract the issue from display_events
+        // Extract the issue from display_events before restoring previous session
         let parsed = extract_issue_from_events(&self.display_events);
+
+        // Restore previous session
+        self.current_session_id = issue.saved_session_id;
         self.invalidate_sidebar();
         self.load_session_output();
         self.update_title_session_name();
@@ -206,12 +218,20 @@ impl App {
             Some(i) => i,
             None => return,
         };
-        // Clean up session file
+        // Clean up JSONL session file
         if let Some(ref sid) = issue.session_id {
             if let Some(path) = crate::config::session_file(&issue.worktree_path, sid) {
                 crate::config::remove_session_file(&path);
             }
         }
+        // Delete the ephemeral store session (never persists in session list)
+        if let Some(store_sid) = issue.store_session_id {
+            if let Some(ref store) = self.session_store {
+                let _ = store.delete_session(store_sid);
+            }
+        }
+        // Restore previous session
+        self.current_session_id = issue.saved_session_id;
         self.invalidate_sidebar();
         self.load_session_output();
         self.update_title_session_name();
@@ -1101,6 +1121,8 @@ fn main() {
             worktree_path: std::path::PathBuf::from("/tmp"),
             duplicate_detected: false,
             cached_issues_json: "[]".into(),
+            store_session_id: None,
+            saved_session_id: None,
         };
         assert!(session.slot_id.is_empty());
         assert!(session.session_id.is_none());
@@ -1116,6 +1138,8 @@ fn main() {
             worktree_path: std::path::PathBuf::from("/project"),
             duplicate_detected: false,
             cached_issues_json: "[{\"number\":1}]".into(),
+            store_session_id: Some(5),
+            saved_session_id: Some(3),
         };
         assert_eq!(session.slot_id, "12345");
         assert!(session.approval_pending);

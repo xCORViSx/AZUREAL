@@ -113,6 +113,8 @@ pub fn handle_issues_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                     .unwrap_or_default(),
                 duplicate_detected: false,
                 cached_issues_json: cached_json,
+                store_session_id: None,
+                saved_session_id: app.current_session_id,
             });
             app.focus = crate::app::types::Focus::Input;
             app.prompt_mode = true;
