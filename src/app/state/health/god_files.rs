@@ -125,19 +125,20 @@ impl App {
             }
         });
 
-        // Translate project-root paths → worktree paths for file tree highlighting
+        // Translate project-root paths → worktree paths for file tree highlighting.
+        // Paths that can't be translated (wrong project, missing dir) are dropped.
         let dirs = if wt_root != project_root {
             dirs.into_iter()
-                .map(|p| {
+                .filter_map(|p| {
                     if let Ok(rel) = p.strip_prefix(&project_root) {
                         let translated = wt_root.join(rel);
                         if translated.is_dir() {
-                            translated
+                            Some(translated)
                         } else {
-                            p
+                            None
                         }
                     } else {
-                        p
+                        None
                     }
                 })
                 .collect()

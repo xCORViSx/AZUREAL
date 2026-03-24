@@ -189,16 +189,16 @@ impl App {
             return dirs.clone();
         }
         dirs.iter()
-            .map(|p| {
+            .filter_map(|p| {
                 if let Ok(rel) = p.strip_prefix(project_root) {
                     let translated = wt_root.join(rel);
                     if translated.is_dir() {
-                        translated
+                        Some(translated)
                     } else {
-                        p.clone()
+                        None // dir doesn't exist in worktree — drop it
                     }
                 } else {
-                    p.clone()
+                    None // path not under project root — drop it
                 }
             })
             .collect()
@@ -345,6 +345,8 @@ impl App {
 /// Load persisted health scope from `[healthscope]` in project azufig.
 /// Returns None if no scope is configured or all dirs are gone,
 /// signaling the caller to use auto-detection instead.
+/// Only keeps paths that actually live under `project_root` — stale paths
+/// from a different project (e.g. after config copy) are silently dropped.
 pub(crate) fn load_health_scope(project_root: &Path) -> Option<HashSet<PathBuf>> {
     let az = crate::azufig::load_project_azufig(project_root);
     let dirs: HashSet<PathBuf> = az
@@ -353,7 +355,7 @@ pub(crate) fn load_health_scope(project_root: &Path) -> Option<HashSet<PathBuf>>
         .iter()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
-        .filter(|p| p.is_dir())
+        .filter(|p| p.is_dir() && p.starts_with(project_root))
         .collect();
     if dirs.is_empty() {
         None

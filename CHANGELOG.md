@@ -2,6 +2,16 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.82] — 2026-03-24
+
+### Fixed
+- **Health scope shows "N dirs selected" but nothing highlights green** — Three path handling bugs caused scope directories to silently fail matching against file tree entries: (1) `load_health_scope()` accepted any path that `is_dir()` on the filesystem, even paths from a completely different project (e.g. `/home/user/other-project/src` stored in the current project's azufig.toml) — now also requires `starts_with(project_root)` so foreign paths are dropped; (2) `translate_scope_dirs()` kept untranslatable paths (those that couldn't be `strip_prefix`'d from project root) as-is via a fallback `else { p.clone() }` — now uses `filter_map` to drop them; (3) `enter_god_file_scope_mode()` had the same fallback, keeping paths whose translated worktree equivalent didn't exist on disk — now drops those too. Net effect: scope dirs that don't belong to the current project or can't be mapped to the current worktree are silently filtered instead of polluting `god_file_filter_dirs` with unmatchable paths. Modified: `src/app/state/health.rs`, `src/app/state/health/god_files.rs`.
+
+## [1.0.81] — 2026-03-24
+
+### Fixed
+- **Tab and Enter fire twice in Kitty terminal** — The Kitty keyboard protocol flag `REPORT_EVENT_TYPES` caused Tab, Enter, and Backspace to fire twice per keypress. Root cause: Kitty sends legacy single-byte sequences (`\t`/`\r`/`\x7F`) for both press AND release events of these keys, and crossterm's parser decodes both as `KeyEventKind::Press` — the input thread's release filter never sees them. Removed `REPORT_EVENT_TYPES` from the enhancement flags, keeping only `DISAMBIGUATE_ESCAPE_CODES` which provides Shift+Enter/Ctrl+M distinction without the double-fire issue (Kitty #8212). No behavioral downside — Press and Repeat were already treated identically. Modified: `src/tui/run.rs`.
+
 ## [1.0.80] — 2026-03-24
 
 ### Fixed

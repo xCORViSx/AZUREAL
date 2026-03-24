@@ -1,6 +1,6 @@
 [package]
 name = "azureal"
-version = "1.0.80"
+version = "1.0.82"
 edition = "2021"
 description = "Minimal multi-session Claude Code manager with git worktrees"
 authors = ["Stravu"]

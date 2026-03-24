@@ -76,7 +76,13 @@ pub async fn run() -> Result<()> {
 
     // Enable Kitty keyboard protocol so Shift+Enter is distinguishable from Enter.
     // DISAMBIGUATE alone makes Enter → CSI 13u, Shift+Enter → CSI 13;2u.
-    // REPORT_EVENT_TYPES adds Press/Release/Repeat — only Press is processed.
+    //
+    // REPORT_EVENT_TYPES is deliberately OMITTED. It makes Kitty send both
+    // press and release events, but Tab/Enter/Backspace use legacy single-byte
+    // sequences (\t/\r/\x7F) for BOTH press and release — crossterm can't
+    // distinguish them and decodes both as Press, causing double-fire.
+    // (Kitty #8212: this is spec-undefined behavior for flag combo mode 3.)
+    //
     // We intentionally omit REPORT_ALL_KEYS because it makes Shift+letter
     // arrive as (SHIFT, Char('1')) instead of (NONE, Char('!')), breaking
     // secondary character input (!, @, #, etc.).
@@ -95,7 +101,6 @@ pub async fn run() -> Result<()> {
             stdout,
             PushKeyboardEnhancementFlags(
                 KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
             )
         )?;
     }
