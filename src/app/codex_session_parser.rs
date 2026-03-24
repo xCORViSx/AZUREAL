@@ -203,6 +203,24 @@ fn parse_from(
                 }
             }
 
+            "item.started" => {
+                if let Some(item) = json.get("item") {
+                    parse_item_started(item, &mut events, &mut pending_tools, &mut tool_calls);
+                }
+            }
+
+            "item.completed" => {
+                if let Some(item) = json.get("item") {
+                    parse_item_completed(
+                        item,
+                        &mut events,
+                        &mut pending_tools,
+                        &mut failed_tools,
+                        &mut tool_calls,
+                    );
+                }
+            }
+
             _ => {} // Ignore unknown types
         }
     }
@@ -408,6 +426,217 @@ fn parse_response_item(
         }
 
         _ => {} // ghost_snapshot, etc. — skip
+    }
+}
+
+fn parse_item_started(
+    item: &serde_json::Value,
+    events: &mut Vec<DisplayEvent>,
+    pending_tools: &mut HashSet<String>,
+    tool_calls: &mut HashMap<String, (String, Option<String>)>,
+) {
+    let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let item_id = item
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if item_type == "command_execution" {
+        let command = item
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        events.push(DisplayEvent::ToolCall {
+            _uuid: String::new(),
+            tool_use_id: item_id.clone(),
+            tool_name: "Bash".to_string(),
+            file_path: None,
+            input: serde_json::json!({ "command": command }),
+        });
+        tool_calls.insert(item_id.clone(), ("Bash".to_string(), None));
+        pending_tools.insert(item_id);
+    }
+}
+
+fn parse_item_completed(
+    item: &serde_json::Value,
+    events: &mut Vec<DisplayEvent>,
+    pending_tools: &mut HashSet<String>,
+    failed_tools: &mut HashSet<String>,
+    tool_calls: &mut HashMap<String, (String, Option<String>)>,
+) {
+    let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let item_id = item
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    match item_type {
+        "reasoning" => {
+            let text = item
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if !text.is_empty() {
+                events.push(DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text,
+                });
+            }
+        }
+        "agent_message" => {
+            let text = item
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if !text.is_empty() && !recent_assistant_text_matches(events, &text) {
+                events.push(DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text,
+                });
+            }
+        }
+        "command_execution" => {
+            let command = item
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output = item
+                .get("aggregated_output")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let exit_code = item.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(0);
+            let is_error = exit_code != 0;
+
+            if !tool_calls.contains_key(&item_id) {
+                events.push(DisplayEvent::ToolCall {
+                    _uuid: String::new(),
+                    tool_use_id: item_id.clone(),
+                    tool_name: "Bash".to_string(),
+                    file_path: None,
+                    input: serde_json::json!({ "command": command }),
+                });
+            }
+            tool_calls.remove(&item_id);
+
+            let content = if output.is_empty() {
+                format!("Exit code: {}", exit_code)
+            } else {
+                output
+            };
+
+            events.push(DisplayEvent::ToolResult {
+                tool_use_id: item_id.clone(),
+                tool_name: "Bash".to_string(),
+                file_path: None,
+                content,
+                is_error,
+            });
+            pending_tools.remove(&item_id);
+            if is_error {
+                failed_tools.insert(item_id);
+            }
+        }
+        "file_change" => {
+            if let Some(changes) = item.get("changes").and_then(|v| v.as_array()) {
+                for change in changes {
+                    let path = change
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if path.is_empty() {
+                        continue;
+                    }
+                    let kind = change
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("update")
+                        .to_string();
+                    let move_path = change
+                        .get("move_path")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    let unified_diff = change
+                        .get("unified_diff")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string);
+                    let change_id = format!("{}-{}", item_id, path);
+                    let mut input = serde_json::json!({
+                        "file_path": path,
+                        "kind": kind,
+                    });
+                    if let Some(ref move_path) = move_path {
+                        input["move_path"] = serde_json::Value::String(move_path.clone());
+                    }
+                    if let Some(ref unified_diff) = unified_diff {
+                        input["unified_diff"] = serde_json::Value::String(unified_diff.clone());
+                    }
+                    let result_content = match move_path {
+                        Some(ref dst) => format!("File {}: {} -> {}", kind, path, dst),
+                        None => format!("File {}: {}", kind, path),
+                    };
+
+                    events.push(DisplayEvent::ToolCall {
+                        _uuid: String::new(),
+                        tool_use_id: change_id.clone(),
+                        tool_name: "Edit".to_string(),
+                        file_path: Some(path.clone()),
+                        input,
+                    });
+                    events.push(DisplayEvent::ToolResult {
+                        tool_use_id: change_id,
+                        tool_name: "Edit".to_string(),
+                        file_path: Some(path),
+                        content: result_content,
+                        is_error: false,
+                    });
+                }
+            }
+        }
+        "mcp_tool_call" => {
+            let server = item.get("server").and_then(|v| v.as_str()).unwrap_or("mcp");
+            let tool = item
+                .get("tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let tool_name = format!("{}:{}", server, tool);
+            let result = item
+                .get("result")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let error = item.get("error").and_then(|v| v.as_str());
+
+            events.push(DisplayEvent::ToolCall {
+                _uuid: String::new(),
+                tool_use_id: item_id.clone(),
+                tool_name: tool_name.clone(),
+                file_path: None,
+                input: item
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+            });
+            events.push(DisplayEvent::ToolResult {
+                tool_use_id: item_id,
+                tool_name,
+                file_path: None,
+                content: error.map(|e| e.to_string()).unwrap_or(result),
+                is_error: error.is_some(),
+            });
+        }
+        _ => {}
     }
 }
 
@@ -1432,6 +1661,81 @@ mod tests {
             DisplayEvent::ToolResult { tool_name, .. } => assert_eq!(tool_name, "Bash"),
             _ => panic!("Expected ToolResult"),
         }
+    }
+
+    #[test]
+    fn test_item_completed_file_change_preserves_unified_diff() {
+        let result = parse_lines(&[
+            r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"sess-1","cwd":"/tmp"}}"#,
+            r#"{"type":"item.completed","timestamp":"2026-01-01T00:00:01Z","item":{"id":"item_1","type":"file_change","changes":[{"path":"src/main.rs","kind":"update","unified_diff":"diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n"}],"status":"completed"}}"#,
+        ]);
+        assert_eq!(result.events.len(), 3);
+        match &result.events[1] {
+            DisplayEvent::ToolCall {
+                tool_name,
+                file_path,
+                input,
+                ..
+            } => {
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(file_path.as_deref(), Some("src/main.rs"));
+                assert_eq!(
+                    input.get("unified_diff").and_then(|v| v.as_str()),
+                    Some(
+                        "diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n"
+                    )
+                );
+            }
+            other => panic!("Expected ToolCall, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_incremental_parse_item_completed_file_change_appends_edit_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.jsonl");
+
+        {
+            let mut f = File::create(&path).unwrap();
+            writeln!(
+                f,
+                r#"{{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{{"id":"s1","cwd":"/tmp"}}}}"#
+            )
+            .unwrap();
+        }
+
+        let first = parse_codex_session_file(&path);
+        let offset = first.end_offset;
+
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            writeln!(
+                f,
+                r#"{{"type":"item.completed","timestamp":"2026-01-01T00:00:01Z","item":{{"id":"item_1","type":"file_change","changes":[{{"path":"src/main.rs","kind":"update","unified_diff":"@@ -1 +1 @@\n-old\n+new\n"}}],"status":"completed"}}}}"#
+            )
+            .unwrap();
+        }
+
+        let second = parse_codex_session_file_incremental(
+            &path,
+            offset,
+            &first.events,
+            &first.pending_tools,
+            &first.failed_tools,
+        );
+
+        assert_eq!(second.events.len(), 3);
+        assert!(matches!(
+            &second.events[1],
+            DisplayEvent::ToolCall { tool_name, .. } if tool_name == "Edit"
+        ));
+        assert!(matches!(
+            &second.events[2],
+            DisplayEvent::ToolResult { tool_name, .. } if tool_name == "Edit"
+        ));
     }
 
     // ── end_offset tracking ──

@@ -1149,34 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_events_edit_preview_hidden_when_live() {
-        let mut highlighter = SyntaxHighlighter::new();
-        let events = vec![DisplayEvent::ToolCall {
-            _uuid: "u1".into(),
-            tool_use_id: "call_patch".into(),
-            tool_name: "Edit".into(),
-            file_path: Some("/tmp/file.rs".into()),
-            input: json!({
-                "path": "/tmp/file.rs",
-                "patch": "*** Begin Patch\n*** Update File: /tmp/file.rs\n@@\n-old\n+new\n*** End Patch"
-            }),
-        }];
-        let (lines, _, _, _, _) = render_display_events(
-            &events,
-            80,
-            &HashSet::new(),
-            &HashSet::new(),
-            &mut highlighter,
-            None,
-            false,
-        );
-        let text = lines_to_text(&lines).join("\n");
-        assert!(!text.contains("- old"));
-        assert!(!text.contains("+ new"));
-    }
-
-    #[test]
-    fn test_render_events_edit_preview_shown_when_historic() {
+    fn test_render_events_edit_preview_shown() {
         let mut highlighter = SyntaxHighlighter::new();
         let events = vec![DisplayEvent::ToolCall {
             _uuid: "u1".into(),

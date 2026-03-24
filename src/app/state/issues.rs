@@ -98,7 +98,7 @@ impl App {
 
         let prompt = build_issue_prompt(user_description, issues_json);
         let selected_model = self.selected_model.clone();
-        let session_name = "[Issue] New".to_string();
+        let session_name = "[NEW ISSUE]".to_string();
 
         // Save current session ID so we can restore it after issue creation.
         // Create a temporary store session for multi-turn context injection

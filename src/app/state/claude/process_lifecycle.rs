@@ -523,6 +523,28 @@ impl App {
         self.agent_session_ids
             .insert(slot_id.to_string(), claude_session_id.clone());
 
+        // When the actively viewed slot reports its real session UUID, retarget
+        // live session-file tracking immediately. Codex in particular needs this
+        // so the richer JSONL `apply_patch` payload can replace placeholder live
+        // Edit events without waiting for a session reload.
+        if self.is_viewing_slot(slot_id) {
+            if let Some((_, wt_path, _, _)) = self.pid_session_target.get(slot_id) {
+                if let Some(path) = crate::config::session_file(wt_path, &claude_session_id) {
+                    let path_changed = self.session_file_path.as_ref() != Some(&path);
+                    if path_changed {
+                        let metadata = std::fs::metadata(&path).ok();
+                        self.session_file_path = Some(path);
+                        self.session_file_modified =
+                            metadata.as_ref().and_then(|m| m.modified().ok());
+                        self.session_file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+                        self.session_file_parse_offset = 0;
+                        self.session_file_dirty = true;
+                        self.sync_file_watches();
+                    }
+                }
+            }
+        }
+
         // Persist UUID in the store so orphaned JSOLNs can be recovered on restart
         if let Some((session_id, _, _, _)) = self.pid_session_target.get(slot_id) {
             if let Some(ref store) = self.session_store {
@@ -540,5 +562,76 @@ impl App {
             // Fallback: check if there's a session_id stored directly by branch
             // (from load_worktrees at startup, before any slot was created)
             .or_else(|| self.agent_session_ids.get(branch_name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::sync::mpsc;
+
+    #[test]
+    fn set_claude_session_id_retargets_viewed_codex_session_file() {
+        let mut app = App::new();
+        let (_tx, rx) = mpsc::channel();
+        let wt_path = std::path::PathBuf::from("/tmp/codex-live-session-file");
+        let branch = "main".to_string();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: branch.clone(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.register_claude(branch, 55, rx, Some("gpt-5.4"));
+        app.pid_session_target
+            .insert("55".into(), (1, wt_path, 0, 0));
+        app.session_file_path = Some(std::path::PathBuf::from("/tmp/old-session.jsonl"));
+        app.session_file_size = 123;
+        app.session_file_parse_offset = 456;
+        app.session_file_dirty = false;
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let session_id = format!("12345678-1234-1234-1234-{:012x}", unique & 0xffffffffffff);
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("rollout-{}.jsonl", session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/codex-live-session-file",
+                }
+            })
+        )
+        .unwrap();
+        drop(file);
+
+        let expected_size = std::fs::metadata(&session_path).unwrap().len();
+
+        app.set_claude_session_id("55", session_id);
+
+        assert_eq!(app.agent_session_ids.get("55"), app.get_claude_session_id("main"));
+        assert_eq!(app.session_file_path.as_ref(), Some(&session_path));
+        assert_eq!(app.session_file_size, expected_size);
+        assert_eq!(app.session_file_parse_offset, 0);
+        assert!(app.session_file_dirty);
+
+        crate::config::remove_session_file(&session_path);
     }
 }

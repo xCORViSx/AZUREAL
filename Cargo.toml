@@ -2,6 +2,7 @@
 name = "azureal"
 version = "1.0.82"
 edition = "2021"
+# Mock edit: comment-only change for diff testing.
 description = "Minimal multi-session Claude Code manager with git worktrees"
 authors = ["Stravu"]
 license = "MIT"

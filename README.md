@@ -16,6 +16,10 @@
   <a href="https://xcorvisx.github.io/AZUREAL/"><strong>📖 Manual</strong></a>
 </p>
 
+<p align="center">
+  Mock edit note: documentation-only changes are safe for workflow testing.
+</p>
+
 ---
 
 ## Features
@@ -24,6 +28,7 @@
 
 - **Multi-Worktree Sessions** — Run multiple AI agents (Claude Code or OpenAI Codex) concurrently, each in its own git worktree with independent sessions
 - **3-Pane Layout** — File tree, viewer, and session panes with Tab cycling and proportional sizing
+- **Worktree Isolation** — Per-worktree sessions, terminals, and git state keep parallel agent runs separated by default
 - **Viewer Tabs** — Tab up to 12 files for quick switching between references
 - **File Browser** — Navigate, create, rename, copy, move, and delete files with Nerd Font icons and syntax-highlighted previews; markdown files render with styled headers, tables, code blocks, and lists
 - **Image Viewer** — View PNG, JPG, GIF, and other image formats inline in the terminal

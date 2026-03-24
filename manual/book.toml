@@ -3,6 +3,7 @@ title = "AZUREAL Manual"
 authors = ["xCORViSx"]
 language = "en"
 src = "src"
+# Mock edit: comment-only change for review/testing.
 description = "Comprehensive manual for AZUREAL — Asynchronous Zoned Unified Runtime Environment for Agentic LLMs"
 
 [output.html]

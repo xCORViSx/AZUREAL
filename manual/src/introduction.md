@@ -4,6 +4,8 @@
 
 Built with [ratatui](https://ratatui.rs/), AZUREAL provides a terminal-native interface for orchestrating concurrent AI coding agents, each operating in its own git worktree with independent branches, sessions, and working directories. Instead of running one agent at a time in a single checkout, you can run several agents simultaneously across isolated feature branches, all managed from a single terminal window.
 
+This page includes a small documentation-only mock edit so workflow tests can produce a visible, harmless diff.
+
 Version **1.0.0** | MIT License | Author: xCORViSx
 
 ---

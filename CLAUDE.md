@@ -1553,7 +1553,7 @@ Implementation: `src/app/state/load.rs` (`dump_debug_output()`), `src/tui/run/ov
 - `Esc` closes the panel
 
 **Issue Creation Flow:**
-1. `c` in the Issues panel → caches the issues JSON, closes the panel, sets `issue_session` with empty `slot_id`, enters prompt mode with `[Issue] New` title
+1. `c` in the Issues panel → caches the issues JSON, closes the panel, sets `issue_session` with empty `slot_id`, enters prompt mode with `[NEW ISSUE]` title
 2. User types their issue description and presses Enter
 3. `send_staged_prompt()` detects `issue_session` with empty `slot_id` → calls `spawn_issue_session()` instead of normal agent spawn
 4. `spawn_issue_session()` creates an **ephemeral** SQLite store session for multi-turn context injection (so the agent can ask clarifying questions and build on prior turns), saves the previous `current_session_id` into `IssueSession.saved_session_id`, and sets `current_session_id` to the ephemeral session. No entry is pushed to `pending_session_names` — the session is invisible to the session list.
@@ -1567,7 +1567,7 @@ Implementation: `src/app/state/load.rs` (`dump_debug_output()`), `src/tui/run/ov
 9. Abort → `abort_issue()` also deletes the ephemeral store session and restores `current_session_id`
 10. Submit result polled in event loop → status message shown
 
-**Visual Theming:** When an issue session is active, the session pane switches to AZURE-themed borders (matching the Issues panel accent) — AZURE Double border when active, AZURE Plain when unfocused. The center title shows `[Issue] New` in AZURE. When `approval_pending` is true and the dialog is dismissed via Esc, the `⌃a` hint appears in the session pane bottom border (same pattern as RCR). The input pane also shows an AZURE border with `[Issue] New` label when the issue session is active and the user is in prompt mode.
+**Visual Theming:** When an issue session is active, the session pane switches to AZURE-themed borders (matching the Issues panel accent) — AZURE Double border when active, AZURE Plain when unfocused. The center title shows `[NEW ISSUE]` in AZURE. When `approval_pending` is true and the dialog is dismissed via Esc, the `⌃a` hint appears in the session pane bottom border (same pattern as RCR). The input pane also shows an AZURE border with `[NEW ISSUE]` label when the issue session is active and the user is in prompt mode.
 
 **Ephemeral Sessions:** Issue sessions are ephemeral — a temporary SQLite store session is created for multi-turn context injection during the issue creation conversation, but it is deleted when the flow completes (accept or abort) so it never appears in the session list. The previous `current_session_id` is saved in `IssueSession.saved_session_id` and restored on completion.
 

@@ -116,6 +116,11 @@ mod tests {
     }
 
     #[test]
+    fn truncate_preserves_unicode_char_boundaries() {
+        assert_eq!(truncate("hive 🐝 swarm", 7), "hive 🐝…");
+    }
+
+    #[test]
     fn truncate_max_1() {
         assert_eq!(truncate("hello", 1), "…");
     }

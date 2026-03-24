@@ -125,7 +125,7 @@ pub fn handle_issues_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
             app.session_scroll = usize::MAX;
             app.focus = crate::app::types::Focus::Input;
             app.prompt_mode = true;
-            app.title_session_name = "[Issue] New".to_string();
+            app.title_session_name = "[NEW ISSUE]".to_string();
         }
         Action::Confirm => {
             // Open selected issue in browser
