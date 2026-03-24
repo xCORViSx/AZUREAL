@@ -47,6 +47,7 @@ pub struct RenderRequest {
     pub pending_tools: HashSet<String>,
     pub failed_tools: HashSet<String>,
     pub pending_user_message: Option<String>,
+    pub show_edit_previews: bool,
     /// Existing cache line count for incremental renders. When > 0, the render
     /// thread produces ONLY new lines (no clone of existing cache needed). The
     /// main thread offsets indices by this count and extends its cache.
@@ -177,6 +178,7 @@ fn render_loop(
                 &req.failed_tools,
                 highlighter,
                 req.pending_user_message.as_deref(),
+                req.show_edit_previews,
                 req.pre_scan,
             );
             (total, l, a, b, c, t)
@@ -193,6 +195,7 @@ fn render_loop(
                 &req.failed_tools,
                 highlighter,
                 req.pending_user_message.as_deref(),
+                req.show_edit_previews,
                 req.pre_scan,
             );
             (total, l, a, b, c, t)
@@ -299,6 +302,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
+            show_edit_previews: false,
             existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
@@ -318,6 +322,7 @@ mod tests {
             pending_tools: HashSet::from(["tool1".into()]),
             failed_tools: HashSet::from(["tool2".into()]),
             pending_user_message: Some("hello".into()),
+            show_edit_previews: false,
             existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 5,
@@ -524,6 +529,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
+            show_edit_previews: false,
             existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
@@ -543,6 +549,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
+            show_edit_previews: false,
             existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
@@ -566,6 +573,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
+            show_edit_previews: false,
             existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,
@@ -594,6 +602,7 @@ mod tests {
             pending_tools: HashSet::new(),
             failed_tools: HashSet::new(),
             pending_user_message: None,
+            show_edit_previews: false,
             existing_line_count: 0,
             pre_scan: PreScanState::default(),
             total_events: 0,

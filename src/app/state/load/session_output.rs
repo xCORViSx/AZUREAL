@@ -175,8 +175,18 @@ impl App {
                                         .unwrap_or_default();
 
                                     // Current turn from JSONL file
-                                    let parsed =
-                                        crate::app::session_parser::parse_session_file(&jsonl_path);
+                                    let parsed = match crate::config::backend_from_session_path(
+                                        &jsonl_path,
+                                    ) {
+                                        Some(crate::backend::Backend::Codex) => {
+                                            crate::app::codex_session_parser::parse_codex_session_file(
+                                                &jsonl_path,
+                                            )
+                                        }
+                                        _ => crate::app::session_parser::parse_session_file(
+                                            &jsonl_path,
+                                        ),
+                                    };
 
                                     if !parsed.events.is_empty() || !store_events.is_empty() {
                                         let events_offset = store_events.len();
@@ -1007,5 +1017,75 @@ mod tests {
         app.awaiting_plan_approval = true;
         app.load_session_output();
         assert!(app.awaiting_plan_approval);
+    }
+
+    #[test]
+    fn load_session_output_live_codex_uses_codex_parser() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let codex_session_id = format!("load-live-codex-{}", unique);
+        let session_path = session_dir.join(format!("{}.jsonl", codex_session_id));
+        let patch =
+            "*** Begin Patch\n*** Update File: /tmp/load-live-codex.txt\n@@\n-before\n+after\n*** End Patch";
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "call_id": "call_patch",
+                    "name": "apply_patch",
+                    "input": patch,
+                }
+            })
+        )
+        .unwrap();
+
+        let worktree_path = std::env::temp_dir().join(format!("azureal-live-codex-{}", unique));
+        std::fs::create_dir_all(&worktree_path).unwrap();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(worktree_path),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert("main".into(), "55".into());
+        app.running_sessions.insert("55".into());
+        app.agent_session_ids
+            .insert("55".into(), codex_session_id.clone());
+
+        app.load_session_output();
+
+        let tool_call = app
+            .display_events
+            .iter()
+            .find(|event| matches!(event, DisplayEvent::ToolCall { .. }))
+            .expect("expected codex tool call from live load");
+        match tool_call {
+            DisplayEvent::ToolCall { tool_name, input, .. } => {
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(input.get("patch").and_then(|v| v.as_str()), Some(patch));
+            }
+            other => panic!("expected ToolCall, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_file(&session_path);
     }
 }

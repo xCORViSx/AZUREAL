@@ -52,6 +52,7 @@ pub fn render_display_events(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
+    show_edit_previews: bool,
 ) -> (
     Vec<Line<'static>>,
     Vec<(usize, usize, String)>,
@@ -66,6 +67,7 @@ pub fn render_display_events(
         failed_tools,
         syntax_highlighter,
         pending_user_message,
+        show_edit_previews,
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -86,6 +88,7 @@ pub fn render_display_events_incremental(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
+    show_edit_previews: bool,
     pre_scan: super::render_thread::PreScanState,
 ) -> (
     Vec<Line<'static>>,
@@ -103,6 +106,7 @@ pub fn render_display_events_incremental(
         failed_tools,
         syntax_highlighter,
         pending_user_message,
+        show_edit_previews,
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -122,6 +126,7 @@ fn render_display_events_with_state(
     failed_tools: &HashSet<String>,
     syntax_highlighter: &mut SyntaxHighlighter,
     pending_user_message: Option<&str>,
+    show_edit_previews: bool,
     mut lines: Vec<Line<'static>>,
     mut animation_indices: Vec<(usize, usize, String)>,
     mut bubble_positions: Vec<(usize, bool)>,
@@ -338,6 +343,7 @@ fn render_display_events_with_state(
                     bubble_width,
                     syntax_highlighter,
                     &read_offsets,
+                    show_edit_previews,
                 );
             }
             DisplayEvent::ToolResult {
@@ -434,6 +440,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(lines.is_empty());
         assert!(anim.is_empty());
@@ -457,6 +464,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Session Started")));
@@ -485,6 +493,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         // Only one "Session Started" should appear
@@ -510,6 +519,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 1);
@@ -532,6 +542,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 1);
@@ -556,6 +567,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert_eq!(clickable_paths.len(), 1);
         assert_eq!(clickable_paths[0].3, "/Users/test/render_tools.rs#L42");
@@ -584,6 +596,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|line| line.contains("Codex")));
@@ -611,6 +624,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let header = lines_to_text(&lines)
             .into_iter()
@@ -643,6 +657,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let codex_header = lines.iter().find_map(|line| {
             line.spans
@@ -675,6 +690,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let gutter_colors: Vec<_> = lines
             .iter()
@@ -721,6 +737,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let header = lines_to_text(&lines)
             .into_iter()
@@ -755,6 +772,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
             pre_scan,
         );
         let text = lines_to_text(&lines);
@@ -776,6 +794,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("pre-tool-use")));
@@ -802,6 +821,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         let hook_count = text.iter().filter(|l| l.contains("hook")).count();
@@ -822,6 +842,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("compact")));
@@ -839,6 +860,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -856,6 +878,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -873,6 +896,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Compacting")));
@@ -895,6 +919,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Completed")));
@@ -913,6 +938,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(lines.is_empty());
     }
@@ -928,6 +954,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             Some("Waiting..."),
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Waiting...")));
@@ -953,6 +980,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(lines.is_empty(), "TodoWrite tool calls should be skipped");
     }
@@ -975,6 +1003,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(lines.is_empty(), "TodoWrite results should be skipped");
     }
@@ -999,6 +1028,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(!anim.is_empty(), "Pending tool should have animation index");
     }
@@ -1018,6 +1048,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("PLAN MODE")));
@@ -1041,6 +1072,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         assert!(text.iter().any(|l| l.contains("Context compacted")));
@@ -1081,6 +1113,7 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         assert!(!lines.is_empty());
         assert_eq!(bubbles.len(), 2); // user + assistant
@@ -1108,9 +1141,63 @@ mod tests {
             &HashSet::new(),
             &mut highlighter,
             None,
+            false,
         );
         let text = lines_to_text(&lines);
         // Init should be suppressed since content was already seen
         assert!(!text.iter().any(|l| l.contains("Session Started")));
+    }
+
+    #[test]
+    fn test_render_events_edit_preview_hidden_when_live() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::ToolCall {
+            _uuid: "u1".into(),
+            tool_use_id: "call_patch".into(),
+            tool_name: "Edit".into(),
+            file_path: Some("/tmp/file.rs".into()),
+            input: json!({
+                "path": "/tmp/file.rs",
+                "patch": "*** Begin Patch\n*** Update File: /tmp/file.rs\n@@\n-old\n+new\n*** End Patch"
+            }),
+        }];
+        let (lines, _, _, _, _) = render_display_events(
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
+            false,
+        );
+        let text = lines_to_text(&lines).join("\n");
+        assert!(!text.contains("- old"));
+        assert!(!text.contains("+ new"));
+    }
+
+    #[test]
+    fn test_render_events_edit_preview_shown_when_historic() {
+        let mut highlighter = SyntaxHighlighter::new();
+        let events = vec![DisplayEvent::ToolCall {
+            _uuid: "u1".into(),
+            tool_use_id: "call_patch".into(),
+            tool_name: "Edit".into(),
+            file_path: Some("/tmp/file.rs".into()),
+            input: json!({
+                "path": "/tmp/file.rs",
+                "patch": "*** Begin Patch\n*** Update File: /tmp/file.rs\n@@\n-old\n+new\n*** End Patch"
+            }),
+        }];
+        let (lines, _, _, _, _) = render_display_events(
+            &events,
+            80,
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut highlighter,
+            None,
+            true,
+        );
+        let text = lines_to_text(&lines).join("\n");
+        assert!(text.contains("old") || text.contains("new"));
     }
 }

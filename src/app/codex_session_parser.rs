@@ -406,6 +406,20 @@ fn parse_response_item(
     }
 }
 
+fn last_event_matches_user_message(events: &[DisplayEvent], text: &str) -> bool {
+    matches!(
+        events.last(),
+        Some(DisplayEvent::UserMessage { content, .. }) if content == text
+    )
+}
+
+fn last_event_matches_assistant_text(events: &[DisplayEvent], text: &str) -> bool {
+    matches!(
+        events.last(),
+        Some(DisplayEvent::AssistantText { text: existing, .. }) if existing == text
+    )
+}
+
 /// Parse an event_msg payload
 fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) {
     let msg_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -417,7 +431,7 @@ fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) 
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if !text.is_empty() {
+            if !text.is_empty() && !last_event_matches_user_message(events, text) {
                 events.push(DisplayEvent::UserMessage {
                     _uuid: String::new(),
                     content: text.to_string(),
@@ -431,7 +445,7 @@ fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) 
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if !text.is_empty() {
+            if !text.is_empty() && !last_event_matches_assistant_text(events, text) {
                 events.push(DisplayEvent::AssistantText {
                     _uuid: String::new(),
                     _message_id: String::new(),
@@ -1060,6 +1074,32 @@ mod tests {
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:08Z","payload":{"type":"user_message","message":""}}"#,
         ]);
         assert_eq!(result.events.len(), 0);
+    }
+
+    #[test]
+    fn test_event_msg_user_message_deduped_against_response_item() {
+        let result = parse_lines(&[
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":"what does this do?"}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:08Z","payload":{"type":"user_message","message":"what does this do?"}}"#,
+        ]);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "what does this do?"),
+            _ => panic!("Expected UserMessage"),
+        }
+    }
+
+    #[test]
+    fn test_event_msg_agent_message_deduped_against_response_item() {
+        let result = parse_lines(&[
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I'll fix that for you."}]}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:09Z","payload":{"type":"agent_message","message":"I'll fix that for you."}}"#,
+        ]);
+        assert_eq!(result.events.len(), 1);
+        match &result.events[0] {
+            DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "I'll fix that for you."),
+            _ => panic!("Expected AssistantText"),
+        }
     }
 
     // ── turn_context ──

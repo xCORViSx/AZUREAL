@@ -302,6 +302,7 @@ impl App {
             &self.failed_tool_calls,
             &mut self.syntax_highlighter,
             None,
+            self.viewing_historic_session,
         );
         writeln!(file, "Total rendered lines: {}", rendered_lines.len())?;
         writeln!(file, "")?;

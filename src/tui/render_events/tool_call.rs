@@ -28,6 +28,7 @@ pub(super) fn render_tool_call(
     bubble_width: usize,
     highlighter: &mut SyntaxHighlighter,
     read_offsets: &HashMap<String, usize>,
+    show_edit_previews: bool,
 ) {
     let tool_color = AZURE;
     let is_pending = pending_tools.contains(tool_use_id);
@@ -141,7 +142,7 @@ pub(super) fn render_tool_call(
     }
 
     let tool_max = bubble_width + 10;
-    if tool_name == "Edit" {
+    if tool_name == "Edit" && show_edit_previews {
         render_edit_diff(lines, input, file_path, tool_color, tool_max, highlighter);
     }
     if tool_name == "Write" {
