@@ -190,14 +190,19 @@ impl App {
 
                                     if !parsed.events.is_empty() || !store_events.is_empty() {
                                         let events_offset = store_events.len();
-                                        // Count JSONL chars before consuming parsed events
-                                        jsonl_chars = parsed
-                                            .events
+                                        let overlap = crate::app::session_store::overlap_prefix_len(
+                                            &store_events,
+                                            &parsed.events,
+                                        );
+                                        let jsonl_suffix: Vec<_> =
+                                            parsed.events.into_iter().skip(overlap).collect();
+                                        // Count only the JSONL suffix that is not already in store.
+                                        jsonl_chars = jsonl_suffix
                                             .iter()
                                             .map(crate::app::session_store::event_char_len)
                                             .sum();
                                         self.display_events = store_events;
-                                        self.display_events.extend(parsed.events);
+                                        self.display_events.extend(jsonl_suffix);
                                         self.pending_tool_calls = parsed.pending_tools;
                                         self.failed_tool_calls = parsed.failed_tools;
                                         self.session_file_parse_offset = parsed.end_offset;

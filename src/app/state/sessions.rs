@@ -126,7 +126,12 @@ impl App {
                     })
                     .collect();
 
-                if store.append_events(*session_id, &events).is_ok() {
+                let existing_events = store.load_events(*session_id).unwrap_or_default();
+                let overlap =
+                    crate::app::session_store::overlap_prefix_len(&existing_events, &events);
+                let new_events: Vec<_> = events.into_iter().skip(overlap).collect();
+
+                if new_events.is_empty() || store.append_events(*session_id, &new_events).is_ok() {
                     crate::config::remove_session_file(&jsonl_path);
                     let _ = store.clear_session_uuid(*session_id);
                 }
@@ -633,6 +638,175 @@ mod tests {
             app.selected_worktree = Some(0);
         }
         app
+    }
+
+    #[test]
+    fn test_recover_orphaned_jsonls_skips_existing_store_prefix() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::env::temp_dir().join(format!(
+            "azureal-recover-overlap-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        std::fs::create_dir_all(&wt_path).unwrap();
+
+        app.worktrees.push(Worktree {
+            branch_name: "main".to_string(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let sid = store.create_session("main").unwrap();
+        store
+            .append_events(
+                sid,
+                &[crate::events::DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "fix this".into(),
+                }],
+            )
+            .unwrap();
+
+        let codex_session_id = format!("recover-overlap-{}-{}", std::process::id(), unique);
+        store.set_session_uuid(sid, &codex_session_id).unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("29");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("rollout-{}.jsonl", codex_session_id));
+        let patch = "*** Begin Patch\n*** Update File: /tmp/demo.txt\n@@\n-old\n+new\n*** End Patch";
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": codex_session_id,
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": "fix this",
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "call_id": "call_patch",
+                    "name": "apply_patch",
+                    "input": patch,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:03Z",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call_patch",
+                    "output": "Success. Updated the following files:\nM /tmp/demo.txt\n",
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:04Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type":"output_text","text":"done"}],
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-01-01T00:00:05Z",
+                "payload": {
+                    "type": "task_complete",
+                    "turn_id": "turn_1",
+                }
+            })
+        )
+        .unwrap();
+
+        app.recover_orphaned_jsonls();
+
+        let recovered = app.session_store.as_ref().unwrap().load_events(sid).unwrap();
+        assert_eq!(
+            recovered
+                .iter()
+                .filter(|event| matches!(
+                    event,
+                    crate::events::DisplayEvent::UserMessage { content, .. } if content == "fix this"
+                ))
+                .count(),
+            1
+        );
+        assert!(recovered.iter().any(|event| matches!(
+            event,
+            crate::events::DisplayEvent::ToolCall { tool_name, .. } if tool_name == "Edit"
+        )));
+        assert!(recovered.iter().any(|event| matches!(
+            event,
+            crate::events::DisplayEvent::AssistantText { text, .. } if text == "done"
+        )));
+        assert!(!session_path.exists());
+        assert_eq!(
+            app.session_store
+                .as_ref()
+                .unwrap()
+                .sessions_with_uuid()
+                .unwrap()
+                .len(),
+            0
+        );
     }
 
     // ── select_next_session ──

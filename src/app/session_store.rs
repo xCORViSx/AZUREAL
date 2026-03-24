@@ -890,6 +890,41 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
     }
 }
 
+pub(crate) fn event_dedup_key(event: &DisplayEvent) -> String {
+    let compacted = compact_event(event);
+    serde_json::to_string(&compacted).unwrap_or_default()
+}
+
+pub(crate) fn overlap_prefix_len(existing: &[DisplayEvent], appended: &[DisplayEvent]) -> usize {
+    let mut prefix_skip = 0usize;
+    if !existing.is_empty() {
+        while prefix_skip < appended.len() {
+            if matches!(appended[prefix_skip], DisplayEvent::Init { .. }) {
+                prefix_skip += 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    let appended = &appended[prefix_skip..];
+    let max_overlap = existing.len().min(appended.len());
+    if max_overlap == 0 {
+        return prefix_skip;
+    }
+
+    let existing_keys: Vec<String> = existing.iter().map(event_dedup_key).collect();
+    let appended_keys: Vec<String> = appended.iter().map(event_dedup_key).collect();
+
+    for overlap in (1..=max_overlap).rev() {
+        if existing_keys[existing_keys.len() - overlap..] == appended_keys[..overlap] {
+            return prefix_skip + overlap;
+        }
+    }
+
+    prefix_skip
+}
+
 /// Estimate the displayable character count of an event (for compaction threshold).
 /// Character count for a display event (used for context tracking).
 pub fn event_char_len(event: &DisplayEvent) -> usize {

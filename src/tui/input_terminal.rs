@@ -185,7 +185,14 @@ pub fn handle_input_mode(
 
     // Regular text editing
     match (key.modifiers, key.code) {
-        (_, KeyCode::Esc) => app.prompt_mode = false,
+        (_, KeyCode::Esc) => {
+            if app.issue_session.is_some() {
+                app.prompt_mode = false;
+                app.abort_issue();
+                return Ok(());
+            }
+            app.prompt_mode = false;
+        }
         // ⌃s — toggle speech-to-text recording (start/stop mic capture + Whisper transcription)
         (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
             app.toggle_stt();

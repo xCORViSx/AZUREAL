@@ -2,6 +2,11 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.84] — 2026-03-24
+
+### Fixed
+- **Esc during issue creation STILL didn't abort the flow** — The v1.0.82 fix placed the `abort_issue()` call in `dispatch_escape()` (`escape.rs`), but that code path is never reached: when focus is `Input` and `prompt_mode` is true, `lookup_action()` resolves Esc to `Action::ExitPromptMode` (not `Action::Escape`), which is classified as an input action and routed to `handle_input_mode()` instead of `execute_action()` → `dispatch_escape()`. The actual Esc handler in `handle_input_mode` (`input_terminal.rs:188`) only did `app.prompt_mode = false` with no issue session check. Now `handle_input_mode`'s Esc handler checks for `issue_session` and calls `abort_issue()` before exiting prompt mode. The dead code in `escape.rs` has been replaced with a comment explaining the routing. Modified: `src/tui/input_terminal.rs`, `src/tui/event_loop/actions/escape.rs`.
+
 ## [1.0.83] — 2026-03-24
 
 ### Changed

@@ -406,18 +406,30 @@ fn parse_response_item(
     }
 }
 
-fn last_event_matches_user_message(events: &[DisplayEvent], text: &str) -> bool {
-    matches!(
-        events.last(),
-        Some(DisplayEvent::UserMessage { content, .. }) if content == text
-    )
+fn recent_user_message_matches(events: &[DisplayEvent], text: &str) -> bool {
+    for event in events.iter().rev().take(12) {
+        match event {
+            DisplayEvent::UserMessage { content, .. } => return content == text,
+            DisplayEvent::AssistantText { .. }
+            | DisplayEvent::Complete { .. }
+            | DisplayEvent::Init { .. } => break,
+            _ => {}
+        }
+    }
+    false
 }
 
-fn last_event_matches_assistant_text(events: &[DisplayEvent], text: &str) -> bool {
-    matches!(
-        events.last(),
-        Some(DisplayEvent::AssistantText { text: existing, .. }) if existing == text
-    )
+fn recent_assistant_text_matches(events: &[DisplayEvent], text: &str) -> bool {
+    for event in events.iter().rev().take(20) {
+        match event {
+            DisplayEvent::AssistantText { text: existing, .. } => return existing == text,
+            DisplayEvent::UserMessage { .. }
+            | DisplayEvent::Complete { .. }
+            | DisplayEvent::Init { .. } => break,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Parse an event_msg payload
@@ -431,7 +443,7 @@ fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) 
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if !text.is_empty() && !last_event_matches_user_message(events, text) {
+            if !text.is_empty() && !recent_user_message_matches(events, text) {
                 events.push(DisplayEvent::UserMessage {
                     _uuid: String::new(),
                     content: text.to_string(),
@@ -445,7 +457,7 @@ fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) 
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if !text.is_empty() && !last_event_matches_assistant_text(events, text) {
+            if !text.is_empty() && !recent_assistant_text_matches(events, text) {
                 events.push(DisplayEvent::AssistantText {
                     _uuid: String::new(),
                     _message_id: String::new(),
@@ -1100,6 +1112,30 @@ mod tests {
             DisplayEvent::AssistantText { text, .. } => assert_eq!(text, "I'll fix that for you."),
             _ => panic!("Expected AssistantText"),
         }
+    }
+
+    #[test]
+    fn test_event_msg_user_message_deduped_with_tool_events_in_between() {
+        let result = parse_lines(&[
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":"what does this do?"}}"#,
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:02Z","payload":{"type":"custom_tool_call","name":"exec_command","call_id":"call_1","input":"{\"cmd\":\"pwd\"}"}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:08Z","payload":{"type":"user_message","message":"what does this do?"}}"#,
+        ]);
+        assert_eq!(result.events.len(), 2);
+        assert!(matches!(result.events[0], DisplayEvent::UserMessage { .. }));
+        assert!(matches!(result.events[1], DisplayEvent::ToolCall { .. }));
+    }
+
+    #[test]
+    fn test_event_msg_agent_message_deduped_with_tool_events_in_between() {
+        let result = parse_lines(&[
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I'll fix that for you."}]}}"#,
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:02Z","payload":{"type":"custom_tool_call","name":"exec_command","call_id":"call_1","input":"{\"cmd\":\"pwd\"}"}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:09Z","payload":{"type":"agent_message","message":"I'll fix that for you."}}"#,
+        ]);
+        assert_eq!(result.events.len(), 2);
+        assert!(matches!(result.events[0], DisplayEvent::AssistantText { .. }));
+        assert!(matches!(result.events[1], DisplayEvent::ToolCall { .. }));
     }
 
     // ── turn_context ──
