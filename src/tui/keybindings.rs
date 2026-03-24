@@ -29,20 +29,22 @@ pub use types::{Action, HelpSection, KeyCombo, Keybinding, LeaderState};
 // Binding arrays
 pub use bindings::{
     BRANCH_DIALOG, EDIT_MODE, FILE_TREE, GIT_ACTIONS, GLOBAL, HEALTH_DOCS, HEALTH_GOD_FILES,
-    HEALTH_SHARED, INPUT, PICKER, PROJECTS_BROWSE, SESSION, TERMINAL, VIEWER, WORKTREES,
+    HEALTH_SHARED, INPUT, ISSUES_BROWSE, PICKER, PROJECTS_BROWSE, SESSION, TERMINAL, VIEWER,
+    WORKTREES,
 };
 
 // Lookup functions + KeyContext
 pub use lookup::{
     lookup_action, lookup_branch_dialog_action, lookup_git_actions_action, lookup_health_action,
-    lookup_leader_action, lookup_picker_action, lookup_projects_action, KeyContext,
+    lookup_issues_action, lookup_leader_action, lookup_picker_action, lookup_projects_action,
+    KeyContext,
 };
 
 // Hint generators
 pub use hints::{
     dialog_footer_hint_pairs, find_key_adaptive, find_key_for_action, find_key_pair,
     git_actions_footer, git_actions_labels, git_files_pane_footer, health_docs_hints,
-    health_god_files_hints, help_sections, picker_title,
+    health_god_files_hints, help_sections, issues_browse_hints, picker_title,
     projects_browse_hint_pairs, prompt_command_title, prompt_type_title, terminal_command_title,
     terminal_scroll_title, terminal_type_title,
 };

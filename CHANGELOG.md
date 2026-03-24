@@ -2,6 +2,11 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.79] — 2026-03-23
+
+### Added
+- **GitHub Issues panel** (`Shift+I`) — Browse, filter, and create GitHub issues from within AZUREAL. The panel fetches issues from the repository via `gh issue list` in a background thread and displays them in a centered modal overlay with colored label badges. `j/k` navigate, `J/K` page, `/` filters by title/label, `Enter` opens the selected issue in the browser, and `R` refreshes. Press `c` to create a new issue: enters prompt mode with AZURE border and `[Issue] New` title. The first prompt spawns an agent session with a hidden system prompt containing all existing issues — the agent checks for duplicates (adding a +1 reaction if found), asks clarifying questions, then formats the issue with `<azureal-issue>` tags. On agent exit, an RCR-style approval dialog appears: `y` extracts title/body/labels from the tags and submits via `gh issue create`, `n` discards, `Esc` dismisses for review, `⌃a` re-shows the dialog. Session and input panes switch to AZURE-themed borders when the issue session is active, with `⌃a` hint for re-showing the approval dialog. New files: `src/app/state/issues.rs`, `src/tui/draw_issues.rs`, `src/tui/input_issues.rs`. Modified: `src/app/types.rs`, `src/app/state.rs`, `src/app/state/app.rs`, `src/app/state/claude/process_lifecycle.rs`, `src/tui.rs`, `src/tui/run.rs`, `src/tui/event_loop.rs`, `src/tui/event_loop/actions.rs`, `src/tui/event_loop/actions/execute.rs`, `src/tui/event_loop/prompt.rs`, `src/tui/keybindings.rs`, `src/tui/keybindings/types.rs`, `src/tui/keybindings/bindings.rs`, `src/tui/keybindings/bindings/panes.rs`, `src/tui/keybindings/bindings/modals.rs`, `src/tui/keybindings/lookup.rs`, `src/tui/keybindings/hints.rs`.
+
 ## [1.0.78] — 2026-03-23
 
 ### Fixed

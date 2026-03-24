@@ -300,6 +300,19 @@ pub fn git_files_pane_footer() -> String {
     format!(" {}:stage | {}:discard ", stage, discard)
 }
 
+/// Issues panel footer hint string for the bottom border.
+pub fn issues_browse_hints() -> String {
+    let create =
+        find_key_for_action(&ISSUES_BROWSE, Action::IssuesCreate).unwrap_or("c".into());
+    let open =
+        find_key_for_action(&ISSUES_BROWSE, Action::Confirm).unwrap_or("Enter".into());
+    let esc = find_key_for_action(&ISSUES_BROWSE, Action::Escape).unwrap_or("Esc".into());
+    format!(
+        " j/k:nav  {}:create  {}:open  /:filter  {}:close ",
+        create, open, esc
+    )
+}
+
 /// Projects panel browse-mode hint pairs: (key_display, label) for colored Span rendering.
 /// Caller gets `has_project` to conditionally include Esc:close.
 pub fn projects_browse_hint_pairs(has_project: bool) -> Vec<(String, &'static str)> {
@@ -1512,13 +1525,15 @@ mod tests {
     #[test]
     fn dialog_footer_second_is_shift_tab_back() {
         let pairs = dialog_footer_hint_pairs();
-        assert_eq!(pairs[1], ("⇧Tab".into(), "back"));
+        let expected = if cfg!(target_os = "macos") { "⇧Tab" } else { "Shift+Tab" };
+        assert_eq!(pairs[1], (expected.into(), "back"));
     }
 
     #[test]
     fn dialog_footer_third_is_ctrl_s_scope() {
         let pairs = dialog_footer_hint_pairs();
-        assert_eq!(pairs[2], ("⌃s".into(), "scope"));
+        let expected = if cfg!(target_os = "macos") { "⌃s" } else { "Ctrl+s" };
+        assert_eq!(pairs[2], (expected.into(), "scope"));
     }
 
     #[test]

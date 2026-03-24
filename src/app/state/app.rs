@@ -32,8 +32,9 @@ use super::DisplayEvent;
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{
     BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab,
-    PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel,
-    RcrSession, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode,
+    IssueSession, IssuesPanel, PostMergeDialog, PresetPrompt, PresetPromptDialog,
+    PresetPromptPicker, ProjectsPanel, RcrSession, RunCommand, RunCommandDialog,
+    RunCommandPicker, ViewMode, ViewerMode,
 };
 use crate::backend::Backend;
 use crate::events::EventParser;
@@ -548,6 +549,14 @@ pub struct App {
     /// Post-merge dialog — shown after successful squash merge or RCR accept.
     /// Asks user to keep (rebase), archive, or delete the worktree/branch.
     pub post_merge_dialog: Option<PostMergeDialog>,
+    /// GitHub Issues panel modal overlay (Shift+I)
+    pub issues_panel: Option<IssuesPanel>,
+    /// Active issue creation session — mirrors RcrSession pattern.
+    /// When Some, session pane shows AZURE borders, routes prompts to issue agent,
+    /// and displays approval dialog after agent exits.
+    pub issue_session: Option<IssueSession>,
+    /// Receiver for background `gh issue create` result
+    pub issue_submit_receiver: Option<std::sync::mpsc::Receiver<String>>,
     /// Branch names with auto-rebase enabled (persisted in project azufig.toml)
     pub auto_rebase_enabled: HashSet<String>,
     /// Throttle for periodic auto-rebase checks (every 2 seconds)
@@ -868,6 +877,9 @@ impl App {
             debug_dump_saving: None,
             rcr_session: None,
             post_merge_dialog: None,
+            issues_panel: None,
+            issue_session: None,
+            issue_submit_receiver: None,
             auto_rebase_enabled: HashSet::new(), // populated from azufig in load()
             last_auto_rebase_check: std::time::Instant::now(),
             auto_rebase_success_until: None,

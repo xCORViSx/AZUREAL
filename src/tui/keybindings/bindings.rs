@@ -15,8 +15,8 @@ mod panes;
 
 // Re-export all binding arrays so existing `use super::bindings::*` paths work unchanged.
 pub use modals::{
-    BRANCH_DIALOG, GIT_ACTIONS, HEALTH_DOCS, HEALTH_GOD_FILES, HEALTH_SHARED, PICKER,
-    PROJECTS_BROWSE,
+    BRANCH_DIALOG, GIT_ACTIONS, HEALTH_DOCS, HEALTH_GOD_FILES, HEALTH_SHARED, ISSUES_BROWSE,
+    PICKER, PROJECTS_BROWSE,
 };
 pub use panes::{EDIT_MODE, FILE_TREE, GLOBAL, INPUT, SESSION, TERMINAL, VIEWER, WORKTREES};
 
@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn global_length() {
-        assert_eq!(GLOBAL.len(), 18);
+        assert_eq!(GLOBAL.len(), 19);
     }
 
     #[test]

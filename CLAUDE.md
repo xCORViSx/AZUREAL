@@ -907,7 +907,7 @@ Implementation:
 
 **Architecture (5 submodules):**
 - **`types.rs`** — `Action` enum (~110 variants incl CycleModel: navigation, editing, viewer tabs, file tree operations, modal-specific actions like `HealthSwitchTab`, `GitSquashMerge`, `GitAutoRebase`, `GitAutoResolveSettings`, `ProjectsAdd`, `BrowseMain`, `AzurealSwitchTab`, etc.), `KeyCombo` (key + modifier with display helpers), `Keybinding` (primary key, alternatives j/↓, description, action, `pair_with_next` for counterpart pairs), `HelpSection`
-- **`bindings.rs`** — ~21 static arrays per context: `GLOBAL` (18 entries — core globals: `⌃q`, `⌃d`, cancel, copy, `⌃m`, `?`, `p`, `T`, `G` OpenGitActions, `H` OpenHealth, `M` BrowseMain, `P` OpenProjects, `]`/`[` worktree tabs, `r` RunCommand, `R` AddRunCommand, `Tab`/`⇧Tab`), `WORKTREES` (4 entries — leader sequence `W <key>` targets: `a` AddWorktree, `r` RenameWorktree, `x` ToggleArchive, `d` DeleteWorktree), `FILE_TREE` (17 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (27 entries — context-aware, includes BrowseMain), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
+- **`bindings.rs`** — ~22 static arrays per context: `GLOBAL` (19 entries — core globals: `⌃q`, `⌃d`, cancel, copy, `⌃m`, `?`, `p`, `T`, `G` OpenGitActions, `H` OpenHealth, `I` OpenIssues, `M` BrowseMain, `P` OpenProjects, `]`/`[` worktree tabs, `r` RunCommand, `R` AddRunCommand, `Tab`/`⇧Tab`), `WORKTREES` (4 entries — leader sequence `W <key>` targets: `a` AddWorktree, `r` RenameWorktree, `x` ToggleArchive, `d` DeleteWorktree), `FILE_TREE` (17 entries), `VIEWER`, `EDIT_MODE`, `SESSION`, `INPUT`, `TERMINAL`, `HEALTH_SHARED` (9 entries), `HEALTH_GOD_FILES` (4 entries), `HEALTH_DOCS`, `GIT_ACTIONS` (27 entries — context-aware, includes BrowseMain), `ISSUES_BROWSE` (10 entries), `PROJECTS_BROWSE`, `PICKER`, `BRANCH_DIALOG`, `AZUREAL_SHARED`, `AZUREAL_DEBUG`, `AZUREAL_ISSUES`, `AZUREAL_PRS`. Plus `ALT_*` static arrays for dual-key alternatives
 - **`lookup.rs`** — `KeyContext` (captures guard state from App: focus, prompt_mode, edit_mode, terminal_mode, filter_active, help_open, stt_recording, paste_guard; built via `KeyContext::from_app(app)`), `lookup_action()` with guard logic inside (skip conditions prevent globals from firing during text input, edit mode, filter, or paste guard — terminal type mode (`prompt_mode=true`) blocks single-letter globals; terminal command mode allows all globals; `paste_guard` (true for 20ms after prompt submit) blocks single-letter globals to prevent paste remnants from triggering actions like OpenProjects on Windows; `EnterPromptMode` (`p`) has its own narrower skip — only blocked in edit mode, paste_guard, or when prompt is already focused (so `p` refocuses when tabbed away); no guard duplication in event_loop.rs; when `stt_recording` is true, ToggleStt resolves from any focus/mode; `Focus::Worktrees` maps to `&WORKTREES` so `a`/`x`/`d` resolve directly when the worktrees panel is focused — leader sequence still works from any focus), `lookup_leader_action(mods, code)` resolves second key of `W` leader sequence against the WORKTREES binding array, plus 7 per-modal lookup functions: `lookup_health_action(tab, mods, code)`, `lookup_git_actions_action(focused_pane, is_on_main, mods, code)`, `lookup_azureal_action(tab, mods, code)`, `lookup_projects_action(mods, code)`, `lookup_picker_action(mods, code)`, `lookup_branch_dialog_action(mods, code)`
 - **`hints.rs`** — `help_sections()`, title functions returning `(short_label, full_title, hints)` tuples: `prompt_type_title()`, `prompt_command_title()`, `terminal_type_title()`, `terminal_command_title()`, `terminal_scroll_title()`. Modal hint generators: `health_god_files_hints()`, `health_docs_hints()`, `git_actions_labels()`, `git_actions_footer()`, `projects_browse_hint_pairs()`, `picker_title()`, `dialog_footer_hint_pairs()`. Utility: `find_key_for_action()`, `find_key_pair()`. `split_title_hints()` packs as many hint segments as fit on the top border after the mode label, then puts remaining on the bottom border via ratatui's `.title_bottom()`
 - **`platform.rs`** — `macos_opt_key()` maps macOS ⌥+letter unicode chars (26 letters + 10 digits) back to their original key for portable matching
@@ -935,6 +935,7 @@ Other details:
 - `input_file_tree.rs` — clipboard mode (Copy/Move paste target), text-input actions (Add, Rename, Delete confirmation)
 - `input_worktrees.rs` — 's' stop-tracking (only unresolved key handler for worktree tab row)
 - `input_health.rs` — `lookup_health_action()` → Action match (tab switching, panel-level keys like scope, per-tab keys)
+- `input_issues.rs` — `lookup_issues_action()` → Action match (navigate, filter, create, open in browser)
 - `input_git_actions.rs` — Module root: `lookup_git_action()` → Action match dispatch; 5 submodules: `diff_viewer.rs` (file/commit diff loading), `operations.rs` (pull/push/rebase/squash-merge/commit/refresh + RebaseOutcome + auto-resolve union merge), `commit_overlay.rs` (commit message editing), `conflict_resolution.rs` (conflict overlay + RCR Claude spawn), `auto_resolve_overlay.rs` (auto-resolve file list settings)
 - `input_projects.rs` — `lookup_projects_action()` → Action match (browse mode only; text input stays raw)
 - `input_dialogs.rs` — `lookup_branch_dialog_action()`, `lookup_picker_action()` → Action matches; text input and number quick-select stay raw
@@ -1517,6 +1518,40 @@ Implementation: `src/config.rs` (persistence: `load_projects()`, `save_projects(
 
 Implementation: `src/app/state/load.rs` (`dump_debug_output()`), `src/tui/run/overlays.rs` (`draw_debug_dump_naming()`, `draw_debug_dump_saving()`), `src/tui/event_loop/actions.rs` (dialog handler), `src/tui/event_loop/actions/execute.rs` (`Action::DumpDebug`), `src/tui/event_loop.rs` (deferred saving)
 
+### GitHub Issues Panel
+
+`Shift+I` (global) opens a centered modal overlay (55% × 70%) showing GitHub issues fetched from the repository. Issues are fetched via `gh issue list` in a background thread with loading indicator.
+
+**Panel Features:**
+- Issue list with `#N` number, title (truncated to fit), colored `[label]` badges, and author
+- `/` activates case-insensitive filter (matches title, labels, and author)
+- `j/k` navigate, `J/K` page, `Alt+↑/↓` jump top/bottom
+- `Enter` opens the selected issue in the default browser
+- `Shift+R` refreshes the issue list from GitHub
+- `c` starts the issue creation flow (see below)
+- `Esc` closes the panel
+
+**Issue Creation Flow:**
+1. `c` in the Issues panel → caches the issues JSON, closes the panel, sets `issue_session` with empty `slot_id`, enters prompt mode with `[Issue] New` title
+2. User types their issue description and presses Enter
+3. `send_staged_prompt()` detects `issue_session` with empty `slot_id` → calls `spawn_issue_session()` instead of normal agent spawn
+4. Agent receives a hidden system prompt containing all existing issues as JSON, plus instructions to:
+   - Check for duplicates first. If found, add a +1 reaction via `gh api` and inform the user
+   - If no duplicate, ask clarifying questions until sufficient clarity
+   - Format the final issue with `<azureal-issue><title>...</title><body>...</body><labels>...</labels></azureal-issue>` tags
+5. On agent exit, `handle_claude_exited()` intercepts → sets `approval_pending = true`
+6. Approval dialog appears (green double border): `y` accepts, `n` discards, `Esc` dismisses for review, `⌃a` re-shows
+7. Accept → `accept_issue()` extracts tags from `display_events`, spawns background `gh issue create -R xCORViSx/AZUREAL`
+8. Submit result polled in event loop → status message shown
+
+**Visual Theming:** When an issue session is active, the session pane switches to AZURE-themed borders (matching the Issues panel accent) — AZURE Double border when active, AZURE Plain when unfocused. The center title shows `[Issue] New` in AZURE. When `approval_pending` is true and the dialog is dismissed via Esc, the `⌃a` hint appears in the session pane bottom border (same pattern as RCR). The input pane also shows an AZURE border with `[Issue] New` label when the issue session is active and the user is in prompt mode.
+
+**State:** `issues_panel: Option<IssuesPanel>` (modal overlay), `issue_session: Option<IssueSession>` (active creation session with `cached_issues_json`), `issue_submit_receiver: Option<mpsc::Receiver<String>>` (background submit result).
+
+**Types (in `src/app/types.rs`):** `GhIssue` (fetched issue data), `IssuesPanel` (modal state with filter, scroll, fetch receiver), `IssueSession` (slot_id, session_id, approval_pending, worktree_path, cached_issues_json), `ParsedIssue` (extracted title/body/labels).
+
+Implementation: `src/app/state/issues.rs` (state management: open/close panel, spawn/accept/abort issue session, fetch/serialize/parse helpers), `src/tui/draw_issues.rs` (panel rendering + approval dialog), `src/tui/draw_output/session_chrome.rs` (AZURE border theming when `issue_session` active), `src/tui/draw_input.rs` (AZURE input border when issue session active), `src/tui/input_issues.rs` (input handler using `lookup_issues_action()`), `src/tui/keybindings/bindings/modals.rs` (`ISSUES_BROWSE` array), `src/tui/keybindings/lookup.rs` (`lookup_issues_action()`), `src/tui/keybindings/hints.rs` (`issues_browse_hints()`), `src/tui/event_loop/prompt.rs` (staged prompt interception), `src/app/state/claude/process_lifecycle.rs` (exit intercept + session ID tracking)
+
 ### Creation Wizard
 
 Unified "New..." dialog (`n` from Worktrees) with tabs for creating resources:
@@ -1629,6 +1664,7 @@ azureal/
 │   │   │   ├── health/     # Health submodules (file-based module root)
 │   │   │   │   ├── god_files.rs     # God File System: scan, scope mode, parallel modularize, module style selector
 │   │   │   │   └── documentation.rs # Doc coverage scanner, DH session spawning, doc toggle/view
+│   │   │   ├── issues.rs   # GitHub Issues panel state: open/close panel, spawn/accept/abort issue session, fetch/serialize/parse helpers
 │   │   │   └── helpers.rs  # Utility functions
 │   │   ├── session_store.rs # SQLite-backed session store (.azs) — SessionStore wrapping rusqlite::Connection with DELETE journal mode, S-numbered sessions, event append/load, boundary-based compaction (compaction_boundary + load_events_range), context building for session resume, completion persistence (mark_completed). Tables: sessions (with completed/duration_ms/cost_usd columns), events, compactions, meta. Key types: SessionInfo, CompactionInfo, ContextPayload (pub(crate))
 │   │   ├── context_injection.rs # Context injection for session resumption — builds conversation transcripts from stored events, wraps in <azureal-session-context> tags, strips injected context from parsed results. Key fns: build_context_prompt(), strip_injected_context(), build_transcript() (pub(crate))
@@ -1707,13 +1743,14 @@ azureal/
 │   │   │   ├── viewport.rs       # Viewport cache building with real-time overlays (tool status, selection, search)
 │   │   │   └── session_chrome.rs # Session pane border/block construction (focus/RCR styling, PID badge, model indicator)
 │   │   ├── draw_health.rs   # Worktree Health panel modal (tabbed: God Files + Documentation)
+│   │   ├── draw_issues.rs   # GitHub Issues panel modal + issue approval dialog
 │   │   ├── draw_git_actions.rs # Git panel overlay renderers only (commit editor + conflict resolution)
 │   │   ├── draw_*.rs       # Other rendering functions
 │   │   ├── keybindings.rs  # Module root — re-exports all public items for backwards compatibility
 │   │   ├── keybindings/    # SINGLE SOURCE OF TRUTH for all keybinding definitions
-│   │   │   ├── types.rs    # Core types: KeyCombo, Action (~109 variants incl CycleModel), Keybinding, HelpSection
-│   │   │   ├── bindings.rs # ~17 static arrays (GLOBAL, WORKTREES, GIT_ACTIONS, etc.) + alt key statics
-│   │   │   ├── lookup.rs   # KeyContext, lookup_action() + 6 per-modal lookups (lookup_git_actions_action, lookup_health_action, etc.)
+│   │   │   ├── types.rs    # Core types: KeyCombo, Action (~111 variants incl CycleModel, OpenIssues, IssuesCreate), Keybinding, HelpSection
+│   │   │   ├── bindings.rs # ~18 static arrays (GLOBAL, WORKTREES, GIT_ACTIONS, ISSUES_BROWSE, etc.) + alt key statics
+│   │   │   ├── lookup.rs   # KeyContext, lookup_action() + 7 per-modal lookups (lookup_issues_action, lookup_git_actions_action, lookup_health_action, etc.)
 │   │   │   ├── hints.rs    # UI hint generators: help_sections(), prompt/terminal/health/git/projects title builders, find_key_for_action()
 │   │   │   └── platform.rs # macOS ⌥+letter unicode remapping (macos_opt_key)
 │   │   ├── input_projects.rs # Projects panel input (browse, add, delete, rename, init)
@@ -1721,6 +1758,7 @@ azureal/
 │   │   ├── input_viewer.rs # Viewer: tab/save/discard dialogs + edit mode text editing (commands resolved upstream)
 │   │   ├── input_output.rs # Session: session find + session list overlay only (commands resolved upstream)
 │   │   ├── input_health.rs  # Worktree Health panel input (tab switching, per-tab keys)
+│   │   ├── input_issues.rs  # GitHub Issues panel input (navigate, filter, create, open in browser)
 │   │   ├── input_git_actions.rs # Git panel module root (dispatch + re-exports)
 │   │   ├── input_git_actions/  # Git panel input submodules
 │   │   │   ├── diff_viewer.rs          # File/commit diff loading into inline viewer
@@ -1838,7 +1876,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 4. **Concurrent Operations**: Test multiple sessions running agents simultaneously
 5. **Error Recovery**: Verify graceful handling of agent exits and git errors
 
-## Test Coverage (6583 tests)
+## Test Coverage (6659 tests)
 
 | Module | File | Tests | What's Tested |
 |--------|------|------:|---------------|
@@ -1866,6 +1904,7 @@ This is a TUI + CLI wrapper application with stateless architecture. Testing foc
 | state/ui | `src/app/state/ui.rs` | 73 | `focus_next` (9 -- all 5 pane transitions, full cycle, WorktreeCreation/BranchDialog stay, clears session_list), `focus_prev` (9 -- all 5 reverse transitions, full cycle, WorktreeCreation/BranchDialog stay, clears session_list), focus_next/prev inverses (2 -- roundtrip both directions), `toggle_help` (3 -- on/off/double), `exit_worktree_creation_mode` (1 -- sets focus+clears input+clears status), `open_branch_dialog` (2 -- empty branches sets status, with branches opens dialog), `close_branch_dialog` (1 -- clears and refocuses), `close_projects_panel` (1), `is_projects_panel_active` (2 -- false/true), `open_run_command_dialog` (1), `open_run_command_picker` (3 -- empty sets status, single executes, multiple opens picker), `open_preset_prompt_picker` (2 -- no presets opens dialog, with presets opens picker), `select_preset_prompt` (3 -- valid index populates input, invalid noop, sets status), `viewer_tab_current` (3 -- no content noop, adds tab, max 12 tabs), `toggle_viewer_tab_dialog` (1), `viewer_close_current_tab` (2 -- empty noop, last tab clears viewer), `load_tab_to_viewer` (1 -- restores state), `enter_main_browse`/`exit_main_browse` (2 -- no main sets status, exit restores), `git_action_in_progress_rcr` (1), `parse_ordered_key` (8 -- valid, large number, no underscore, non-numeric, zero, multiple underscores, empty after prefix, empty string), `load_ordered_map` (4 -- empty, single, preserves order, no prefix), `load_ordered_presets` (2 -- empty, sorted), `find_edit_line` (10 -- new string found, old string found, both empty, new preferred, significant lines, trimmed match, identifier fallback, no match, empty content, first line) |
 | state/load | `src/app/state/load/` (4 submodules) | 54 | **worktree_refresh** (3): `load_file_tree` (2 -- clears when no worktree, nonexistent path), `refresh_worktrees` (1 -- no project ok). **session_output** (47): `format_uuid_short` (12 -- standard UUID, 8-char prefix, short prefix, long no dash, short no dash, empty, exactly 12/13 chars, dash at position 8, multiple dashes, dash only, dash at end), `viewed_session_id` (6 -- no data, correct id, second selection, out of bounds idx, no idx, empty branch), `extract_skill_tools_from_events` (10 -- no events, TodoWrite parses todos, cleared by user message, AskUserQuestion awaiting, answered clears awaiting, no ask clears cache, multiple TodoWrites uses last, resets scroll, ignores other tools, mixed event types), `load_session_output` state reset (10 -- resets session state, render caches, token state, historic flag, ask_user state, clickable paths, selected_event, pending_message, active_task_ids, render_seq), `load_session_output` preservation (9 -- preserves compaction flag, plan approval from events, with worktree no session, historic badge recompute, clears selected_event, pending_message, fresh parser, active_task_ids, render_seq). **session_file** (4): `check_session_file` (2 -- no path noop, nonexistent path noop), `poll_session_file` (2 -- not dirty returns false, reparses active Codex session from disk) |
 | state/helpers | `src/app/state/helpers.rs` | 50 | `build_file_tree` (50 -- returns entries, top-level-only collapsed, dirs-before-files sort, hidden-after-non-hidden sort, expansion adds children, expanded children depth, non-expanded no children, hidden_dirs filter single/multiple, empty dir, is_dir flag, is_hidden dot-prefix, non-dot not hidden, children of hidden inherit hidden, path is absolute, name matches filename, alphabetical within category, dirs alphabetical, nested expansion, partial expansion, nonexistent root empty, hidden dir no sibling effect, mixed dirs-and-files sort, hidden files after non-hidden files, hidden dirs after non-hidden dirs, entry count no expansion, expand src adds children, expand all dirs, hidden dir exact name match, FileTreeEntry fields/clone/debug, symlinks no crash, deeply nested 5-level, expanding nonexistent dir noop, unicode filenames, hidden via custom config, empty expanded set, empty hidden set, only hidden files, only dirs, only files, many files sorted, multiple hidden dirs, target hidden via hidden_dirs, special chars in name, three-level depth, node_modules hidden via hidden_dirs) |
+| state/issues | `src/app/state/issues.rs` | 67 | `parse_issue_tags` (16 -- basic/no-title/empty/only-open/reversed/trimmed-title/trimmed-body/missing-body/missing-labels/whitespace-labels/unicode/multiline-markdown/surrounding-text/empty-title-string/labels-with-empty-entries/multiple-issues-takes-first), `extract_tag` (9 -- basic/missing/empty-content/nested-angle-brackets/multiline/only-open/only-close/reversed/different-tag), `serialize_issues_for_prompt` (7 -- empty/single/multiple/includes-state/includes-url/excludes-author/excludes-created-at/valid-json-special-chars), `build_issue_prompt` (7 -- system-tag/user-description/issues-json/duplicate-check-rules/template-tags/discipline-rules/label-options), `extract_issue_from_events` (6 -- finds-last-assistant/ignores-user-messages/empty/no-tags/skips-non-text/mixed-with-tags), `IssuesPanel.refilter` (8 -- empty-filter/narrows/by-number/case-insensitive/by-label/no-match/resets-scroll/clamps-selected/empty-issues), `IssuesPanel.selected_issue` (4 -- with-filter/empty/out-of-bounds/index-maps-correctly), type tests (6 -- GhIssue clone/debug, ParsedIssue clone/debug, IssueSession construction/with-slot), integration (2 -- roundtrip-serialize-then-build-prompt/parse-then-extract-roundtrip) |
 | state/health | `src/app/state/health.rs` | 59 | `SOURCE_EXTENSIONS` (18 -- contains rust/python/javascript/typescript/go/c/cpp/java/kotlin/swift/shell/sql/vue/svelte/ruby/elixir/haskell, not data formats/images/markdown, not empty, no duplicates), `SKIP_DIRS` (14 -- contains git/target/node_modules/build-artifacts/ide/python-venvs/vendor/docs/examples/generated/third-party, no duplicates, not empty), `SOURCE_ROOTS` (8 -- contains src/lib/go-dirs/java-dirs/swift-sources/cpp-include, not empty, no duplicates), `collect_source_files` (19 -- finds .rs/.py/.js multiple types, ignores non-source extensions, skips hidden dirs/files, skips SKIP_DIRS, recurses into subdirs, deeply nested, empty dir, nonexistent dir, sorted output, case-insensitive skip dirs, no extension ignored, appends to existing vec, all source types, skips refs/vendor/coverage dirs, returns absolute paths) |
 | state/health/god_files | `src/app/state/health/god_files.rs` | 64 | `count_source_lines` (11 -- no-test-module/test-module-at-end/nested-braces-in-test/non-rust-fallback/cfg-test-same-line-as-mod/no-test-all-counted/empty-file/nonexistent/excludes-large-test-block/scan-integration-not-flagged/scan-integration-still-flags), `build_modularize_prompt` (19 -- contains file path/line count/instructions/steps, Rust file-based/mod.rs/no-style, Rust style ignored for non-.rs, Python package/single-file/no-style, Python style ignored for non-.py, both styles only uses matching language, generic file no style section, zero lines, very large count, nested path, mentions re-export/backwards-compatibility/single-responsibility/not-util-or-helpers), `scan_dir_recursive` (14 -- finds god files >1000 LOC, ignores small files, threshold boundary 1000-not-god/1001-is-god, relative paths, skips hidden/target/node_modules dirs, ignores non-source extensions, checked defaults false, multiple files, empty dir, nonexistent, subdir scan), `scan_top_level_files` (6 -- finds god files, ignores small, does not recurse, skips dirs, skips non-source, nonexistent), `GodFileEntry` (3 -- construction/checked toggle/clone), `RustModuleStyle` (3 -- eq/copy/debug), `PythonModuleStyle` (3 -- eq/copy/debug), `ModuleStyleDialog` (2 -- construction/both-languages), `GOD_FILE_THRESHOLD` (1) |
 | state/health/docs | `src/app/state/health/documentation.rs` | 56 | `scan_file_doc_coverage` (36 -- empty file, single documented/undocumented fn, pub fn documented/undocumented, struct documented/undocumented, pub struct, enum documented, pub enum undocumented, trait documented, pub trait, const documented/undocumented, static documented, type alias documented, impl block, mod/pub mod, async fn documented/undocumented, pub async fn, unsafe fn documented/undocumented, pub unsafe fn, mixed documented-and-not, all documented, none documented, module-level //! comment, multiline doc comment, attribute between doc and fn, blank line between doc and fn, skips use/extern/regular-comments/closing-braces, nonexistent file, only-comments file, only-use-statements, indented fn, pub static/const/type alias), `build_doc_health_prompt` (10 -- contains file path/coverage counts/percentage, zero total, all documented, none documented, mentions doc comments/no-code-modification/no-reformatting/read-file), `DocEntry` (5 -- construction/checked toggle/zero coverage/full coverage/clone) |
@@ -2020,6 +2059,7 @@ azureal
 | `T` | Toggle terminal pane |
 | `G` | GitView panel |
 | `H` | Health panel |
+| `I` | Issues panel |
 | `M` | Browse main branch |
 | `P` | Projects panel |
 | `r` | Run command |

@@ -40,7 +40,8 @@ use worktree_tabs::{draw_git_worktree_tabs, draw_worktree_tabs};
 
 use super::event_loop;
 use super::{
-    draw_dialogs, draw_git_actions, draw_health, draw_input, draw_output, draw_projects,
+    draw_dialogs, draw_git_actions, draw_health, draw_input, draw_issues, draw_output,
+    draw_projects,
     draw_sidebar, draw_status, draw_terminal, draw_viewer,
 };
 
@@ -363,6 +364,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.rcr_session.as_ref().is_some_and(|m| m.approval_pending) {
         draw_output::draw_rcr_approval(f, app.pane_session);
     }
+    // Issue approval dialog — rendered center screen
+    if app.issue_session.as_ref().is_some_and(|m| m.approval_pending) {
+        draw_issues::draw_issue_approval(f, app);
+    }
     // Post-merge dialog — rendered center screen
     if let Some(ref pmd) = app.post_merge_dialog {
         draw_output::draw_post_merge_dialog(f, f.area(), pmd);
@@ -409,6 +414,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Worktree Health panel overlay (Shift+H global) — hidden during scope mode (file tree is the UI)
     if app.health_panel.is_some() && !app.god_file_filter_mode {
         draw_health::draw_health_panel(f, app);
+    }
+    // Issues panel overlay (Shift+I global)
+    if app.issues_panel.is_some() {
+        draw_issues::draw_issues_panel(f, app);
     }
     // Git panel overlays — commit editor and conflict resolution render over viewer pane
     if let Some(ref panel) = app.git_actions_panel {

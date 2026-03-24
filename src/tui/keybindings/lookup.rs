@@ -57,6 +57,7 @@ pub fn lookup_action(ctx: &KeyContext, modifiers: KeyModifiers, code: KeyCode) -
             | Action::ToggleHelp
             | Action::OpenGitActions
             | Action::OpenHealth
+            | Action::OpenIssues
             | Action::BrowseMain
             | Action::OpenProjects
             | Action::WorktreeTabNext
@@ -202,6 +203,17 @@ pub fn lookup_git_actions_action(
 /// Text input modes (Add/Rename/Init) handle keys raw — don't call this for them.
 pub fn lookup_projects_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
     for b in &PROJECTS_BROWSE {
+        if b.matches(modifiers, code) {
+            return Some(b.action);
+        }
+    }
+    None
+}
+
+/// Resolve key → Action for the Issues panel (browse mode).
+/// Filter chars (/ to activate) stay raw in handler.
+pub fn lookup_issues_action(modifiers: KeyModifiers, code: KeyCode) -> Option<Action> {
+    for b in &ISSUES_BROWSE {
         if b.matches(modifiers, code) {
             return Some(b.action);
         }

@@ -19,6 +19,7 @@ mod app;
 mod claude;
 mod file_browser;
 pub(crate) mod health;
+pub(crate) mod issues;
 pub(crate) mod helpers;
 pub(crate) mod load;
 mod output;

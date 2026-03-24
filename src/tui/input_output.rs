@@ -1073,29 +1073,25 @@ mod tests {
     }
 
     #[test]
-    fn session_input_show_list_does_not_consume_esc() {
-        // Session list overlay keys (Esc, a) are handled by the action system,
-        // not handle_session_input — the function no longer routes to list handler
+    fn session_list_esc_closes_overlay() {
+        // handle_session_list_input consumes Esc by closing the overlay
         let mut app = App::new();
         app.show_session_list = true;
         let k = key(KeyCode::Esc);
         let result = handle_session_list_input(k, &mut app);
         assert!(result.is_ok());
-        // show_session_list unchanged — Esc is handled upstream in actions.rs
-        assert!(app.show_session_list);
+        assert!(!app.show_session_list);
     }
 
     #[test]
-    fn session_list_a_not_consumed_by_session_input() {
-        // Session list 'a' key is handled by the action system (actions.rs),
-        // not by handle_session_input
+    fn session_list_a_closes_overlay_for_new_session() {
+        // handle_session_list_input consumes 'a' by closing the overlay (add new session)
         let mut app = App::new();
         app.show_session_list = true;
         let k = key(KeyCode::Char('a'));
         let result = handle_session_list_input(k, &mut app);
         assert!(result.is_ok());
-        // show_session_list unchanged — handled upstream
-        assert!(app.show_session_list);
+        assert!(!app.show_session_list);
     }
 
     #[test]

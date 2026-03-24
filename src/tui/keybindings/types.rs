@@ -376,6 +376,10 @@ pub enum Action {
     #[allow(dead_code)] // Handled directly in help overlay input, not via execute_action
     ToggleStartupScreen,
 
+    // Issues Panel (modal)
+    OpenIssues,
+    IssuesCreate,
+
     // Generic
     Escape,
 }

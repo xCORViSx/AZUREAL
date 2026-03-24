@@ -23,11 +23,15 @@ use crate::tui::util::AZURE;
 pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'static> {
     let is_focused = app.focus == crate::app::Focus::Session;
     let rcr_active = app.rcr_session.is_some();
+    let issue_active = app.issue_session.is_some();
     let border_style = if rcr_active {
         // RCR mode: green borders to visually indicate active conflict resolution
         Style::default()
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD)
+    } else if issue_active {
+        // Issue session mode: AZURE borders
+        Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else if is_focused {
         Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
     } else {
@@ -90,7 +94,7 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
 
     let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if is_focused {
+        .border_type(if is_focused || rcr_active || issue_active {
             BorderType::Double
         } else {
             BorderType::Plain
@@ -118,6 +122,8 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
         if !bracketed.is_empty() {
             let title_color = if rcr_active {
                 Color::Green
+            } else if issue_active {
+                AZURE
             } else {
                 Color::White
             };
@@ -145,6 +151,24 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled("Accept/Abort ", Style::default().fg(Color::DarkGray)),
+                ])
+                .alignment(Alignment::Center),
+            );
+        }
+    }
+
+    // Issue session: show ⌃a hint on bottom border when dialog is dismissed
+    if let Some(ref issue) = app.issue_session {
+        if !issue.approval_pending && !issue.slot_id.is_empty() {
+            block = block.title_bottom(
+                Line::from(vec![
+                    Span::styled(
+                        " ⌃a ",
+                        Style::default()
+                            .fg(AZURE)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("Submit/Discard ", Style::default().fg(Color::DarkGray)),
                 ])
                 .alignment(Alignment::Center),
             );

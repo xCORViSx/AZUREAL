@@ -8,7 +8,7 @@ use super::super::types::{Action, KeyCombo, Keybinding};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 /// Global keybindings (always active, checked first).
-pub static GLOBAL: [Keybinding; 18] = [
+pub static GLOBAL: [Keybinding; 19] = [
     Keybinding::new(
         KeyCombo::ctrl(KeyCode::Char('q')),
         "Quit azureal",
@@ -97,6 +97,11 @@ pub static GLOBAL: [Keybinding; 18] = [
         KeyCombo::shift(KeyCode::Char('R')),
         "Add run command",
         Action::AddRunCommand,
+    ),
+    Keybinding::new(
+        KeyCombo::shift(KeyCode::Char('I')),
+        "Issues",
+        Action::OpenIssues,
     ),
 ];
 

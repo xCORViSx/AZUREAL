@@ -424,6 +424,30 @@ pub async fn run_app(
         }
         housekeeping::drain_file_watcher(app);
 
+        // Issues panel: poll background fetch
+        if app.poll_issues_fetch() {
+            needs_redraw = true;
+        }
+        // Issues panel: poll background gh issue create result
+        if app.issue_submit_receiver.is_some() {
+            let rx = app.issue_submit_receiver.take().unwrap();
+            match rx.try_recv() {
+                Ok(msg) => {
+                    app.loading_indicator = None;
+                    app.set_status(&msg);
+                    needs_redraw = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    app.issue_submit_receiver = Some(rx);
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    app.loading_indicator = None;
+                    app.set_status("Issue submission thread disconnected");
+                    needs_redraw = true;
+                }
+            }
+        }
+
         // Poll update check result (one-shot, completes during splash)
         if let Some(ref rx) = app.update_check_receiver {
             if let Ok(result) = rx.try_recv() {

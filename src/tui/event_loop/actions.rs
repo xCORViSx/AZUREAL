@@ -34,6 +34,7 @@ use super::super::input_dialogs::{
 use super::super::input_file_tree::handle_file_tree_input;
 use super::super::input_git_actions::handle_git_actions_input;
 use super::super::input_health::handle_health_input;
+use super::super::input_issues::handle_issues_input;
 use super::super::input_output::{handle_session_input, handle_session_list_input};
 use super::super::input_projects::handle_projects_input;
 use super::super::input_terminal::handle_input_mode;
@@ -157,12 +158,39 @@ pub fn handle_key_event(
         }
     }
 
-    // ⌃a re-shows the RCR approval dialog after dismissing with 'n'
-    // Only active when RCR session exists, Claude isn't running, and dialog isn't shown
+    // Issue approval dialog — same priority as RCR
+    if let Some(ref issue) = app.issue_session {
+        if issue.approval_pending {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    if let Some(rx) = app.accept_issue() {
+                        app.issue_submit_receiver = Some(rx);
+                        app.loading_indicator = Some("Submitting issue to GitHub...".into());
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    app.abort_issue();
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+    }
+
+    // ⌃a re-shows the RCR or Issue approval dialog after dismissing
+    // Only active when session exists, agent isn't running, and dialog isn't shown
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('a') {
         if let Some(ref rcr) = app.rcr_session {
             if !rcr.approval_pending && !app.running_sessions.contains(&rcr.slot_id) {
                 if let Some(ref mut m) = app.rcr_session {
+                    m.approval_pending = true;
+                }
+                return Ok(());
+            }
+        }
+        if let Some(ref issue) = app.issue_session {
+            if !issue.approval_pending && !app.running_sessions.contains(&issue.slot_id) {
+                if let Some(ref mut m) = app.issue_session {
                     m.approval_pending = true;
                 }
                 return Ok(());
@@ -516,6 +544,9 @@ pub fn handle_key_event(
     }
     if app.health_panel.is_some() && !app.god_file_filter_mode {
         return handle_health_input(key, app, claude_process);
+    }
+    if app.issues_panel.is_some() {
+        return handle_issues_input(key, app);
     }
     if app.git_actions_panel.is_some() {
         return handle_git_actions_input(key, app, claude_process);

@@ -129,6 +129,20 @@ impl App {
             }
         }
 
+        // Issue session exit intercept — show approval dialog when the issue agent exits
+        if let Some(ref mut issue) = self.issue_session {
+            if issue.slot_id == slot_id {
+                issue.approval_pending = true;
+                let exit_str = match code {
+                    Some(0) => "finished".to_string(),
+                    Some(c) => format!("exited: {}", c),
+                    None => "exited".to_string(),
+                };
+                self.set_status(format!("[Issue] Agent {} — review and approve", exit_str));
+                return;
+            }
+        }
+
         // Mark as unread if user wasn't watching this session's output
         // (different branch, or same branch but this wasn't the active display slot)
         let is_current = branch
@@ -498,6 +512,12 @@ impl App {
         if let Some(ref mut rcr) = self.rcr_session {
             if rcr.slot_id == slot_id {
                 rcr.session_id = Some(claude_session_id.clone());
+            }
+        }
+        // Keep Issue session_id in sync
+        if let Some(ref mut issue) = self.issue_session {
+            if issue.slot_id == slot_id {
+                issue.session_id = Some(claude_session_id.clone());
             }
         }
         self.agent_session_ids

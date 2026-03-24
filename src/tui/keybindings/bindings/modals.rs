@@ -340,3 +340,51 @@ pub static BRANCH_DIALOG: [Keybinding; 4] = [
     Keybinding::new(KeyCombo::plain(KeyCode::Enter), "Select", Action::Confirm),
     Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
 ];
+
+/// Issues Panel — browse and filter GitHub issues
+pub static ISSUES_BROWSE: [Keybinding; 10] = [
+    Keybinding::with_alt(
+        KeyCombo::plain(KeyCode::Char('j')),
+        &ALT_DOWN,
+        "Navigate",
+        Action::NavDown,
+    )
+    .paired(),
+    Keybinding::with_alt(
+        KeyCombo::plain(KeyCode::Char('k')),
+        &ALT_UP,
+        "Navigate",
+        Action::NavUp,
+    ),
+    Keybinding::with_alt(
+        KeyCombo::shift(KeyCode::Char('J')),
+        &ALT_PGDN,
+        "Page down",
+        Action::PageDown,
+    )
+    .paired(),
+    Keybinding::with_alt(
+        KeyCombo::shift(KeyCode::Char('K')),
+        &ALT_PGUP,
+        "Page up",
+        Action::PageUp,
+    ),
+    Keybinding::new(KeyCombo::alt(KeyCode::Up), "Jump to top", Action::GoToTop).paired(),
+    Keybinding::new(
+        KeyCombo::alt(KeyCode::Down),
+        "Jump to bottom",
+        Action::GoToBottom,
+    ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Char('c')),
+        "Create issue",
+        Action::IssuesCreate,
+    ),
+    Keybinding::new(
+        KeyCombo::plain(KeyCode::Enter),
+        "Open in browser",
+        Action::Confirm,
+    ),
+    Keybinding::new(KeyCombo::plain(KeyCode::Esc), "Close", Action::Escape),
+    Keybinding::new(KeyCombo::ctrl(KeyCode::Char('q')), "Quit", Action::Quit),
+];

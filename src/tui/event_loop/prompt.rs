@@ -18,6 +18,21 @@ pub fn send_staged_prompt(app: &mut App, claude_process: &AgentProcess) -> bool 
         return false;
     }
 
+    // Issue session: first prompt spawns the issue agent with hidden system prompt
+    if let Some(ref issue) = app.issue_session {
+        if issue.slot_id.is_empty() {
+            if let Some(prompt) = app.staged_prompt.take() {
+                let cached_json = app
+                    .issue_session
+                    .as_ref()
+                    .map(|i| i.cached_issues_json.clone())
+                    .unwrap_or_default();
+                app.spawn_issue_session(&prompt, &cached_json, claude_process);
+                return true;
+            }
+        }
+    }
+
     if let Some(prompt) = app.staged_prompt.take() {
         if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
             let branch = app

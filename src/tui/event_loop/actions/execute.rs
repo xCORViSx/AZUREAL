@@ -464,6 +464,13 @@ pub(super) fn execute_action(
         Action::OpenProjects => {
             app.open_projects_panel();
         }
+        Action::OpenIssues => {
+            if app.issues_panel.is_some() {
+                app.close_issues_panel();
+            } else {
+                app.open_issues_panel();
+            }
+        }
 
         // --- FileTree ---
         Action::ToggleDir => {
