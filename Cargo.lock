@@ -390,7 +390,7 @@ dependencies = [
 
 [[package]]
 name = "azureal"
-version = "1.0.77"
+version = "1.0.80"
 dependencies = [
  "ansi-to-tui",
  "anyhow",

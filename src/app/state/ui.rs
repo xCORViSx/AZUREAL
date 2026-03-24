@@ -773,6 +773,9 @@ impl App {
                 .insert(current_project.path.clone(), snapshot);
         }
 
+        // ── Close health panel + scope mode ──
+        self.close_health_panel();
+
         // ── Clear session/render state (rebuilt by load_session_output) ──
         self.display_events.clear();
         self.session_lines.clear();

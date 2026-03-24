@@ -2,6 +2,12 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.80] — 2026-03-24
+
+### Fixed
+- **Health scope Esc exits main browse instead of saving scope** — When browsing main and entering health scope mode, pressing Esc exited main browse (leaving the scope overlay stuck) instead of saving and rescanning the scope. The escape handler checked `browsing_main` before `god_file_filter_mode` — scope mode is the innermost modal and must take priority. Reordered the match arms so scope mode fires first. Modified: `src/tui/event_loop/actions/escape.rs`.
+- **Health scope overlay persists across project switches** — Switching projects while the health scope overlay was open left `god_file_filter_mode` and `god_file_filter_dirs` set, causing the scope overlay to persist in the new project with stale directory highlights. `switch_project()` now calls `close_health_panel()` before clearing session state. Modified: `src/app/state/ui.rs`.
+
 ## [1.0.79] — 2026-03-23
 
 ### Fixed

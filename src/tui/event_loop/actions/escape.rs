@@ -48,56 +48,56 @@ pub(super) fn dispatch_escape(app: &mut App) {
                 app.focus = Focus::FileTree;
             }
         }
+        Focus::FileTree if app.god_file_filter_mode => {
+            // Exit scope mode — translate worktree paths back to project-root
+            // paths before saving (scope is persisted relative to project root)
+            // and passing to the rescan (which also uses project root).
+            let project_root = app.project.as_ref().map(|p| p.path.clone());
+            let wt_root = app
+                .current_worktree()
+                .and_then(|wt| wt.worktree_path.clone());
+            let translated: std::collections::HashSet<std::path::PathBuf> =
+                if let (Some(ref pr), Some(ref wr)) = (&project_root, &wt_root) {
+                    if pr != wr {
+                        app.god_file_filter_dirs
+                            .iter()
+                            .map(|p| {
+                                if let Ok(rel) = p.strip_prefix(wr) {
+                                    pr.join(rel)
+                                } else {
+                                    p.clone()
+                                }
+                            })
+                            .collect()
+                    } else {
+                        app.god_file_filter_dirs.clone()
+                    }
+                } else {
+                    app.god_file_filter_dirs.clone()
+                };
+            if let Some(ref pr) = project_root {
+                crate::app::save_health_scope(pr, &translated);
+            }
+            let dirs: Vec<String> = translated
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect();
+            app.god_file_filter_mode = false;
+            app.god_file_filter_dirs.clear();
+            app.invalidate_file_tree();
+            app.focus = crate::app::Focus::FileTree;
+            app.loading_indicator = Some("Rescanning health scope…".into());
+            app.deferred_action =
+                Some(crate::app::DeferredAction::RescanHealthScope { dirs });
+        }
         Focus::FileTree if app.browsing_main => {
             // Exit main browse mode — restore previous worktree selection
             app.exit_main_browse();
         }
         Focus::FileTree => {
-            if app.god_file_filter_mode {
-                // Exit scope mode — translate worktree paths back to project-root
-                // paths before saving (scope is persisted relative to project root)
-                // and passing to the rescan (which also uses project root).
-                let project_root = app.project.as_ref().map(|p| p.path.clone());
-                let wt_root = app
-                    .current_worktree()
-                    .and_then(|wt| wt.worktree_path.clone());
-                let translated: std::collections::HashSet<std::path::PathBuf> =
-                    if let (Some(ref pr), Some(ref wr)) = (&project_root, &wt_root) {
-                        if pr != wr {
-                            app.god_file_filter_dirs
-                                .iter()
-                                .map(|p| {
-                                    if let Ok(rel) = p.strip_prefix(wr) {
-                                        pr.join(rel)
-                                    } else {
-                                        p.clone()
-                                    }
-                                })
-                                .collect()
-                        } else {
-                            app.god_file_filter_dirs.clone()
-                        }
-                    } else {
-                        app.god_file_filter_dirs.clone()
-                    };
-                if let Some(ref pr) = project_root {
-                    crate::app::save_health_scope(pr, &translated);
-                }
-                let dirs: Vec<String> = translated
-                    .iter()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect();
-                app.god_file_filter_mode = false;
-                app.god_file_filter_dirs.clear();
-                app.invalidate_file_tree();
-                app.focus = crate::app::Focus::FileTree;
-                app.loading_indicator = Some("Rescanning health scope…".into());
-                app.deferred_action = Some(crate::app::DeferredAction::RescanHealthScope { dirs });
-            } else {
-                // FileTree is always visible; Esc moves focus to Session
-                app.focus = Focus::Session;
-                app.invalidate_sidebar();
-            }
+            // FileTree is always visible; Esc moves focus to Session
+            app.focus = Focus::Session;
+            app.invalidate_sidebar();
         }
         Focus::Session => {
             if app.show_session_list {
@@ -619,16 +619,16 @@ mod tests {
     // ── 25. FileTree normal: browsing_main precedence ──
 
     #[test]
-    fn test_file_tree_browsing_main_takes_priority_over_god_filter() {
+    fn test_file_tree_scope_mode_takes_priority_over_browsing_main() {
         let mut app = App::new();
         app.focus = Focus::FileTree;
         app.browsing_main = true;
         app.god_file_filter_mode = true;
-        // browsing_main match arm fires first
+        // scope mode (innermost modal) exits first
         dispatch_escape(&mut app);
-        assert!(!app.browsing_main);
-        // god_file_filter_mode should still be true (not reached)
-        assert!(app.god_file_filter_mode);
+        assert!(!app.god_file_filter_mode);
+        // browsing_main should still be true (not reached)
+        assert!(app.browsing_main);
     }
 
     // ── 26. FileTree escape without browsing_main, focus becomes Session ──
