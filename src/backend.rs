@@ -131,6 +131,15 @@ pub fn kill_process_tree(pid: u32) {
     }
 }
 
+/// Forcefully kill a process group with SIGKILL (cannot be ignored).
+/// Used during app shutdown after SIGTERM has been given time to take effect.
+#[cfg(unix)]
+pub fn kill_process_tree_force(pid: u32) {
+    unsafe {
+        libc::killpg(pid as libc::pid_t, libc::SIGKILL);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

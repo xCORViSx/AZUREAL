@@ -897,29 +897,47 @@ impl App {
         let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(title));
     }
 
-    /// Kill all running Claude processes across all sessions (including background projects).
+    /// Kill all running agent processes across all sessions (including background projects).
+    /// Sends SIGTERM to all tracked PIDs and returns them for SIGKILL follow-up.
     /// Slot keys ARE PID strings — parse each back to u32 for kill.
     #[allow(dead_code)]
-    pub fn cancel_all_claude(&mut self) {
+    pub fn cancel_all_claude(&mut self) -> Vec<u32> {
+        let mut killed_pids: Vec<u32> = Vec::new();
+
+        // Kill all agent processes (Claude + Codex)
         let slots: Vec<String> = self.running_sessions.drain().collect();
         for slot in &slots {
             if let Ok(pid) = slot.parse::<u32>() {
                 crate::backend::kill_process_tree(pid);
+                killed_pids.push(pid);
             }
             self.agent_receivers.remove(slot);
             self.codex_slot_started_at.remove(slot);
         }
-        // Also kill any background compaction agents
+
+        // Kill background compaction agents
         let compaction_pids: Vec<String> = self.compaction_receivers.keys().cloned().collect();
         for pid_str in &compaction_pids {
             if let Ok(pid) = pid_str.parse::<u32>() {
                 crate::backend::kill_process_tree(pid);
+                killed_pids.push(pid);
             }
         }
         self.compaction_receivers.clear();
         self.compaction_output.clear();
+
+        // Kill one-shot commit message generation processes
+        if let Ok(mut gen_pids) = self.commit_gen_pids.lock() {
+            for &pid in gen_pids.iter() {
+                crate::backend::kill_process_tree(pid);
+                killed_pids.push(pid);
+            }
+            gen_pids.clear();
+        }
+
         self.branch_slots.clear();
         self.active_slot.clear();
+        killed_pids
     }
 }
 

@@ -56,6 +56,7 @@ fn generate_commit_message_with_claude(
     working_dir: &std::path::Path,
     prompt: &str,
     model: Option<&str>,
+    pid_tracker: &std::sync::Arc<std::sync::Mutex<Vec<u32>>>,
 ) -> Result<String, String> {
     let mut cmd = std::process::Command::new(executable);
     cmd.arg("-p");
@@ -65,8 +66,21 @@ fn generate_commit_message_with_claude(
     cmd.arg("--no-session-persistence");
     cmd.arg(prompt);
     cmd.current_dir(working_dir);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
 
-    match cmd.output() {
+    let child = cmd.spawn().map_err(|e| format!("Failed to run claude: {}", e))?;
+    let pid = child.id();
+    if let Ok(mut pids) = pid_tracker.lock() {
+        pids.push(pid);
+    }
+    let result = match child.wait_with_output() {
         Ok(output) if output.status.success() => Ok(strip_commit_message_fences(
             &String::from_utf8_lossy(&output.stdout),
         )),
@@ -75,7 +89,11 @@ fn generate_commit_message_with_claude(
             Err(format!("Claude failed: {}", err))
         }
         Err(e) => Err(format!("Failed to run claude: {}", e)),
+    };
+    if let Ok(mut pids) = pid_tracker.lock() {
+        pids.retain(|&p| p != pid);
     }
+    result
 }
 
 fn generate_commit_message_with_codex(
@@ -83,6 +101,7 @@ fn generate_commit_message_with_codex(
     working_dir: &std::path::Path,
     prompt: &str,
     model: Option<&str>,
+    pid_tracker: &std::sync::Arc<std::sync::Mutex<Vec<u32>>>,
 ) -> Result<String, String> {
     let output_path = codex_commit_message_output_path();
     let mut cmd = std::process::Command::new(executable);
@@ -96,8 +115,22 @@ fn generate_commit_message_with_codex(
     cmd.arg(&output_path);
     cmd.arg(prompt);
     cmd.current_dir(working_dir);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
 
-    let result = match cmd.output() {
+    let child = cmd.spawn().map_err(|e| format!("Failed to run codex: {}", e))?;
+    let pid = child.id();
+    if let Ok(mut pids) = pid_tracker.lock() {
+        pids.push(pid);
+    }
+
+    let result = match child.wait_with_output() {
         Ok(output) if output.status.success() => {
             let raw = std::fs::read_to_string(&output_path)
                 .ok()
@@ -114,6 +147,9 @@ fn generate_commit_message_with_codex(
         Err(e) => Err(format!("Failed to run codex: {}", e)),
     };
 
+    if let Ok(mut pids) = pid_tracker.lock() {
+        pids.retain(|&p| p != pid);
+    }
     let _ = std::fs::remove_file(&output_path);
     result
 }
@@ -768,6 +804,7 @@ pub(super) fn exec_commit_start(app: &mut App) {
 
     let (tx, rx) = std::sync::mpsc::channel();
     let wt_clone = wt.clone();
+    let pid_tracker = app.commit_gen_pids.clone();
     std::thread::spawn(move || {
         let max_diff = 30_000;
         let diff_trimmed = if diff.len() > max_diff {
@@ -786,12 +823,14 @@ pub(super) fn exec_commit_start(app: &mut App) {
                     &wt_clone,
                     &prompt,
                     model,
+                    &pid_tracker,
                 ),
                 Backend::Codex => generate_commit_message_with_codex(
                     config.codex_executable(),
                     &wt_clone,
                     &prompt,
                     model,
+                    &pid_tracker,
                 ),
             }
         };

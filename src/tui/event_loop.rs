@@ -657,8 +657,16 @@ pub async fn run_app(
         }
 
         if app.should_quit {
-            // Kill all agent processes and their children before exiting
-            app.cancel_all_claude();
+            // Kill all agent processes: SIGTERM first, wait 200ms, then SIGKILL
+            // to ensure no orphaned processes survive app exit.
+            let killed_pids = app.cancel_all_claude();
+            if !killed_pids.is_empty() {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                #[cfg(unix)]
+                for &pid in &killed_pids {
+                    crate::backend::kill_process_tree_force(pid);
+                }
+            }
             break;
         }
     }
