@@ -1696,7 +1696,17 @@ azureal/
 │   │   ├── session_parser.rs # Claude session file parsing (pub(crate))
 │   │   ├── codex_session_parser.rs # Codex session file parsing (pub(crate))
 │   │   ├── terminal.rs     # PTY terminal management
-│   │   ├── types.rs        # Enums (Focus, ViewMode, FileTreeAction, ProjectsPanel, GitActionsPanel with is_on_main + squash_merge_receiver + discard_confirm, GitChangedFile with staged field, GitCommitOverlay, GitConflictOverlay, RcrSession, PostMergeDialog, SquashMergeProgress, SquashMergeOutcome, WorktreeRefreshResult, dialogs)
+│   │   ├── types.rs        # Module root — re-exports from 9 submodules, holds all 101 tests
+│   │   ├── types/          # App type definitions split by responsibility
+│   │   │   ├── core.rs          # Fundamental UI enums: ViewerMode, ViewMode, Focus, ViewerTab
+│   │   │   ├── file_tree.rs     # File browser: FileTreeEntry, FileTreeAction
+│   │   │   ├── branch_dialog.rs # Branch selection dialog with filtering/navigation logic
+│   │   │   ├── commands.rs      # Run commands + preset prompts: RunCommand, PresetPrompt, pickers, dialogs
+│   │   │   ├── projects_panel.rs # Projects panel: ProjectsPanelMode, ProjectsPanel with input handling
+│   │   │   ├── git_panel.rs     # Git panel types: GitActionsPanel, GitCommit, GitChangedFile, RcrSession, PostMergeDialog, SquashMergeProgress/Outcome, AutoResolveOverlay, BackgroundOpProgress/Outcome, BackgroundRebaseOutcome
+│   │   │   ├── worktree_dialogs.rs # Worktree dialogs: TablePopup, RenameWorktreeDialog, DeleteWorktreeDialog, WorktreeRefreshResult
+│   │   │   ├── health_panel.rs  # Health panel: GodFileEntry, RustModuleStyle, PythonModuleStyle, ModuleStyleDialog, HealthTab, HealthPanel, DocEntry
+│   │   │   └── issues_panel.rs  # Issues panel: GhIssue, IssuesPanel, IssueSession, ParsedIssue
 │   │   ├── input.rs        # Input handling methods
 │   │   └── util.rs         # ANSI stripping, JSON parsing
 │   ├── tui.rs              # Module root (re-exports only)

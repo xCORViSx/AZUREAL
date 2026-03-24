@@ -110,6 +110,12 @@ pub(super) fn dispatch_escape(app: &mut App) {
             app.close_terminal();
         }
         Focus::Input if app.prompt_mode => {
+            // If an issue creation session is active, abort the whole flow
+            if app.issue_session.is_some() {
+                app.prompt_mode = false;
+                app.abort_issue();
+                return;
+            }
             app.prompt_mode = false;
         }
         _ => {}

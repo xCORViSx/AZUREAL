@@ -116,6 +116,13 @@ pub fn handle_issues_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
                 store_session_id: None,
                 saved_session_id: app.current_session_id,
             });
+            // Clear session pane immediately so stale content doesn't show
+            app.display_events.clear();
+            app.invalidate_render_cache();
+            app.rendered_events_count = 0;
+            app.rendered_content_line_count = 0;
+            app.rendered_events_start = 0;
+            app.session_scroll = usize::MAX;
             app.focus = crate::app::types::Focus::Input;
             app.prompt_mode = true;
             app.title_session_name = "[Issue] New".to_string();

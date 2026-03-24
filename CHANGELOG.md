@@ -2,9 +2,19 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.83] — 2026-03-24
+
+### Changed
+- **Modularized `src/app/types.rs`** — Split the 1033-line god file into 9 focused submodules under `src/app/types/` using file-based module roots (modern Rust convention). `types.rs` is now a thin module root with submodule declarations, glob re-exports, and all 101 tests. Submodules: `core.rs` (ViewerMode, ViewMode, Focus, ViewerTab), `file_tree.rs` (FileTreeEntry, FileTreeAction), `branch_dialog.rs` (BranchDialog with filtering/navigation), `commands.rs` (RunCommand, PresetPrompt, pickers, dialogs), `projects_panel.rs` (ProjectsPanelMode, ProjectsPanel), `git_panel.rs` (GitActionsPanel, commits, changed files, overlays, background ops), `worktree_dialogs.rs` (TablePopup, rename/delete dialogs, WorktreeRefreshResult), `health_panel.rs` (GodFileEntry, module styles, HealthPanel, DocEntry), `issues_panel.rs` (GhIssue, IssuesPanel, IssueSession, ParsedIssue). All 45+ importing files continue working unchanged via glob re-exports. New files: `src/app/types/core.rs`, `src/app/types/file_tree.rs`, `src/app/types/branch_dialog.rs`, `src/app/types/commands.rs`, `src/app/types/projects_panel.rs`, `src/app/types/git_panel.rs`, `src/app/types/worktree_dialogs.rs`, `src/app/types/health_panel.rs`, `src/app/types/issues_panel.rs`. Modified: `src/app/types.rs`, `CLAUDE.md`.
+
 ## [1.0.82] — 2026-03-24
 
+### Improved
+- **Closed issues dimmer in Issues panel** — Closed issues now render with subdued text when selected (gray `Rgb(160,160,160)` title, muted `Rgb(100,140,180)` number) instead of full white/bold, making them visually distinct from open issues. Modified: `src/tui/draw_issues.rs`.
+
 ### Fixed
+- **Esc during issue creation doesn't abort the flow** — Pressing Esc in the prompt input box during issue creation (`[Issue] New` mode) only toggled `prompt_mode` off without calling `abort_issue()`, leaving `issue_session` state dangling. The ephemeral SQLite store session wasn't cleaned up, `current_session_id` wasn't restored, and subsequent session loads showed empty content. Now Esc during an active issue session calls `abort_issue()` which deletes the ephemeral store session, restores the previous session, and clears all issue state. Modified: `src/tui/event_loop/actions/escape.rs`.
+- **Session pane not clearing when issue create action is pressed** — Pressing `c` in the Issues panel set up `issue_session` state but didn't clear `display_events` or render caches until `spawn_issue_session()` ran (after the first prompt submission). The session pane showed stale content from the previous session during the prompt typing phase. Now `display_events`, render counters, and scroll position are cleared immediately when the create action fires. Modified: `src/tui/input_issues.rs`.
 - **Health scope shows "N dirs selected" but nothing highlights green** — Three path handling bugs caused scope directories to silently fail matching against file tree entries: (1) `load_health_scope()` accepted any path that `is_dir()` on the filesystem, even paths from a completely different project (e.g. `/home/user/other-project/src` stored in the current project's azufig.toml) — now also requires `starts_with(project_root)` so foreign paths are dropped; (2) `translate_scope_dirs()` kept untranslatable paths (those that couldn't be `strip_prefix`'d from project root) as-is via a fallback `else { p.clone() }` — now uses `filter_map` to drop them; (3) `enter_god_file_scope_mode()` had the same fallback, keeping paths whose translated worktree equivalent didn't exist on disk — now drops those too. Net effect: scope dirs that don't belong to the current project or can't be mapped to the current worktree are silently filtered instead of polluting `god_file_filter_dirs` with unmatchable paths. Modified: `src/app/state/health.rs`, `src/app/state/health/god_files.rs`.
 
 ## [1.0.81] — 2026-03-24

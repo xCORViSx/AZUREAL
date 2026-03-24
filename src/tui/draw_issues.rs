@@ -114,7 +114,9 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
             let is_selected = vi == panel.selected;
 
             let is_closed = issue.state == "CLOSED" || issue.state == "closed";
-            let num_style = if is_selected {
+            let num_style = if is_selected && is_closed {
+                Style::default().fg(Color::Rgb(100, 140, 180))
+            } else if is_selected {
                 Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
             } else if is_closed {
                 Style::default().fg(Color::DarkGray)
@@ -122,14 +124,16 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
                 Style::default().fg(Color::DarkGray)
             };
             let title_style = if is_selected {
-                let s = Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD);
-                if is_closed {
-                    s.add_modifier(Modifier::CROSSED_OUT)
+                let s = if is_closed {
+                    Style::default()
+                        .fg(Color::Rgb(160, 160, 160))
+                        .add_modifier(Modifier::CROSSED_OUT)
                 } else {
-                    s
-                }
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
+                };
+                s
             } else if is_closed {
                 Style::default()
                     .fg(Color::DarkGray)
