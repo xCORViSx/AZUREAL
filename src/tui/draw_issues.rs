@@ -113,8 +113,11 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
             let issue = &panel.issues[idx];
             let is_selected = vi == panel.selected;
 
+            let is_closed = issue.state == "CLOSED" || issue.state == "closed";
             let num_style = if is_selected {
                 Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
+            } else if is_closed {
+                Style::default().fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::DarkGray)
             };
@@ -122,12 +125,24 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD)
+            } else if is_closed {
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM)
             } else {
                 Style::default().fg(Color::Gray)
             };
 
+            // State indicator: green ● for open, dim gray ○ for closed
+            let state_span = if is_closed {
+                Span::styled("○ ", Style::default().fg(Color::DarkGray))
+            } else {
+                Span::styled("● ", Style::default().fg(Color::Green))
+            };
+
             let mut spans = vec![
-                Span::raw("  "),
+                Span::raw(" "),
+                state_span,
                 Span::styled(format!("#{:<5}", issue.number), num_style),
                 Span::raw(" "),
             ];

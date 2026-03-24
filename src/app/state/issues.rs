@@ -270,6 +270,8 @@ fn fetch_github_issues() -> Result<Vec<GhIssue>, String> {
             "xCORViSx/AZUREAL",
             "-L",
             "100",
+            "--state",
+            "all",
             "--json",
             "number,title,labels,state,author,createdAt,url,body",
         ])
