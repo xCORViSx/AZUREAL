@@ -38,7 +38,12 @@ pub fn parse_codex_session_file_incremental(
 
     // Merge with existing events
     let mut merged_events = existing_events.to_vec();
-    merged_events.append(&mut parsed.events);
+    for event in parsed.events.drain(..) {
+        if is_recent_message_duplicate(&merged_events, &event) {
+            continue;
+        }
+        merged_events.push(event);
+    }
     parsed.events = merged_events;
 
     // Merge pending/failed tools
@@ -237,7 +242,7 @@ fn parse_response_item(
                 "user" | "developer" => {
                     // User or developer (system) message
                     let text = extract_message_text(content);
-                    if !text.is_empty() {
+                    if !text.is_empty() && !recent_user_message_matches(events, &text) {
                         events.push(DisplayEvent::UserMessage {
                             _uuid: String::new(),
                             content: text,
@@ -247,7 +252,7 @@ fn parse_response_item(
                 "assistant" => {
                     // Assistant response text
                     let text = extract_message_text(content);
-                    if !text.is_empty() {
+                    if !text.is_empty() && !recent_assistant_text_matches(events, &text) {
                         events.push(DisplayEvent::AssistantText {
                             _uuid: String::new(),
                             _message_id: String::new(),
@@ -430,6 +435,14 @@ fn recent_assistant_text_matches(events: &[DisplayEvent], text: &str) -> bool {
         }
     }
     false
+}
+
+fn is_recent_message_duplicate(events: &[DisplayEvent], event: &DisplayEvent) -> bool {
+    match event {
+        DisplayEvent::UserMessage { content, .. } => recent_user_message_matches(events, content),
+        DisplayEvent::AssistantText { text, .. } => recent_assistant_text_matches(events, text),
+        _ => false,
+    }
 }
 
 /// Parse an event_msg payload
@@ -1321,6 +1334,53 @@ mod tests {
     }
 
     #[test]
+    fn test_incremental_parse_dedups_completion_agent_message_against_existing_assistant_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.jsonl");
+
+        {
+            let mut f = File::create(&path).unwrap();
+            writeln!(f, r#"{{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{{"id":"s1","cwd":"/tmp"}}}}"#).unwrap();
+            writeln!(f, r#"{{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{{"type":"message","role":"assistant","content":[{{"type":"output_text","text":"yo"}}]}}}}"#).unwrap();
+        }
+
+        let first = parse_codex_session_file(&path);
+        assert_eq!(first.events.len(), 2);
+        let offset = first.end_offset;
+
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            writeln!(f, r#"{{"type":"event_msg","timestamp":"2026-01-01T00:00:02Z","payload":{{"type":"agent_message","message":"yo"}}}}"#).unwrap();
+            writeln!(f, r#"{{"type":"event_msg","timestamp":"2026-01-01T00:00:03Z","payload":{{"type":"task_complete","turn_id":"turn_1"}}}}"#).unwrap();
+        }
+
+        let second = parse_codex_session_file_incremental(
+            &path,
+            offset,
+            &first.events,
+            &first.pending_tools,
+            &first.failed_tools,
+        );
+
+        assert_eq!(second.events.len(), 3);
+        assert_eq!(
+            second
+                .events
+                .iter()
+                .filter(|event| matches!(event, DisplayEvent::AssistantText { text, .. } if text == "yo"))
+                .count(),
+            1
+        );
+        assert!(matches!(
+            second.events.last(),
+            Some(DisplayEvent::Complete { .. })
+        ));
+    }
+
+    #[test]
     fn test_incremental_parse_zero_offset_is_full() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
@@ -1382,6 +1442,29 @@ mod tests {
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"s1","cwd":"/tmp"}}"#,
         ]);
         assert!(result.end_offset > 0);
+    }
+
+    #[test]
+    fn test_full_parse_dedups_agent_message_then_response_item_assistant_text() {
+        let result = parse_lines(&[
+            r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"sess-1","cwd":"/tmp"}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"agent_message","message":"yo"}}"#,
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:02Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"yo"}]}}"#,
+            r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"task_complete","turn_id":"turn_1"}}"#,
+        ]);
+
+        assert_eq!(
+            result
+                .events
+                .iter()
+                .filter(|event| matches!(event, DisplayEvent::AssistantText { text, .. } if text == "yo"))
+                .count(),
+            1
+        );
+        assert!(matches!(
+            result.events.last(),
+            Some(DisplayEvent::Complete { .. })
+        ));
     }
 
     // ── extract_message_text ──
