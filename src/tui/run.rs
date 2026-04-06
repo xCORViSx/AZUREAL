@@ -33,7 +33,7 @@ use crate::config::Config;
 
 use overlays::{
     draw_auto_rebase_dialog, draw_debug_dump_naming, draw_debug_dump_saving,
-    draw_git_status_box, draw_loading_indicator,
+    draw_git_status_box, draw_loading_indicator, draw_stt_download_dialog,
 };
 use splash::draw_splash;
 use worktree_tabs::{draw_git_worktree_tabs, draw_worktree_tabs};
@@ -451,6 +451,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Welcome modal — no worktrees and not browsing main
     if app.needs_welcome_modal() {
         draw_dialogs::draw_welcome_modal(f);
+    }
+    // STT model download dialog — asks to download Whisper model
+    if app.stt_download_dialog {
+        draw_stt_download_dialog(f);
+    }
+    // STT model download progress — shown while downloading
+    if let Some(ref msg) = app.stt_download_message {
+        draw_loading_indicator(f, msg);
     }
     // Generic loading indicator — highest z-order, shown while a deferred action runs next frame
     if let Some(ref msg) = app.loading_indicator {

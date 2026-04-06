@@ -79,16 +79,97 @@ impl SttHandle {
     }
 }
 
+/// Model file path: ~/.azureal/speech/ggml-small.en.bin
+const MODEL_FILENAME: &str = "ggml-small.en.bin";
+const MODEL_URL: &str =
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin";
+
+/// Check whether the Whisper model file exists on disk.
+/// Cheap Path::exists() check — safe to call from the main thread.
+pub fn model_exists() -> bool {
+    model_path().is_some_and(|p| p.exists())
+}
+
+/// Return the full path to the model file (None if home dir unavailable).
+pub fn model_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".azureal").join("speech").join(MODEL_FILENAME))
+}
+
+/// Download the Whisper model to ~/.azureal/speech/ using ureq.
+/// Sends progress percentages (0..=100) through the channel, then a final Ok/Err result.
+pub fn download_model(tx: std::sync::mpsc::Sender<SttDownloadProgress>) {
+    let result = download_model_inner(&tx);
+    let _ = tx.send(SttDownloadProgress::Finished(result));
+}
+
+/// Progress events from the model download background thread.
+pub enum SttDownloadProgress {
+    /// Percentage (0..=100)
+    Percent(u8),
+    /// Download complete (Ok) or failed (Err)
+    Finished(Result<(), String>),
+}
+
+fn download_model_inner(
+    tx: &std::sync::mpsc::Sender<SttDownloadProgress>,
+) -> Result<(), String> {
+    let path = model_path().ok_or("Cannot find home directory")?;
+    let dir = path.parent().ok_or("Invalid model path")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("Cannot create directory: {}", e))?;
+
+    // Download to a temp file first, then rename (atomic-ish)
+    let tmp_path = dir.join(format!("{}.part", MODEL_FILENAME));
+
+    let resp = ureq::get(MODEL_URL)
+        .call()
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    let content_length = resp
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let mut reader = resp.into_body().into_reader();
+    let mut file =
+        std::fs::File::create(&tmp_path).map_err(|e| format!("Cannot create file: {}", e))?;
+
+    let mut buf = vec![0u8; 256 * 1024]; // 256KB chunks
+    let mut downloaded: u64 = 0;
+    let mut last_pct: u8 = 0;
+
+    loop {
+        let n =
+            std::io::Read::read(&mut reader, &mut buf).map_err(|e| format!("Read error: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        std::io::Write::write_all(&mut file, &buf[..n])
+            .map_err(|e| format!("Write error: {}", e))?;
+        downloaded += n as u64;
+
+        if content_length > 0 {
+            let pct = ((downloaded * 100) / content_length).min(100) as u8;
+            if pct != last_pct {
+                last_pct = pct;
+                let _ = tx.send(SttDownloadProgress::Percent(pct));
+            }
+        }
+    }
+
+    // Rename temp file to final path
+    std::fs::rename(&tmp_path, &path).map_err(|e| format!("Rename error: {}", e))?;
+
+    Ok(())
+}
+
 /// Subprocess entry point for `--probe-gpu`. Attempts to load the Whisper model
 /// with GPU acceleration. Exits 0 on success, crashes or exits non-zero on failure.
 /// The parent process uses the exit code to decide GPU vs CPU for real inference.
 pub fn probe_gpu() -> Result<()> {
-    let model_dir = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("no home dir"))?
-        .join(".azureal")
-        .join("speech");
-    let model_path = model_dir.join("ggml-small.en.bin");
-    if !model_path.exists() {
+    let mp = model_path().ok_or_else(|| anyhow::anyhow!("no home dir"))?;
+    if !mp.exists() {
         // No model — nothing to probe, exit success (GPU question is moot)
         return Ok(());
     }
@@ -96,7 +177,7 @@ pub fn probe_gpu() -> Result<()> {
     let mut params = whisper_rs::WhisperContextParameters::default();
     params.use_gpu(true);
     let _ctx =
-        whisper_rs::WhisperContext::new_with_params(model_path.to_str().unwrap_or(""), params)
+        whisper_rs::WhisperContext::new_with_params(mp.to_str().unwrap_or(""), params)
             .map_err(|e| anyhow::anyhow!("GPU probe failed: {}", e))?;
     Ok(())
 }
@@ -282,18 +363,10 @@ fn start_recording() -> Result<(cpal::Stream, Arc<Mutex<Vec<f32>>>, u32), String
 /// `use_gpu` controls whether GPU acceleration is attempted — determined by
 /// the subprocess probe to avoid C++ exception crashes from failed Vulkan init.
 fn load_whisper_model(use_gpu: bool) -> Result<whisper_rs::WhisperContext, String> {
-    let model_dir = dirs::home_dir()
-        .ok_or("Cannot find home directory")?
-        .join(".azureal")
-        .join("speech");
-    let model_path = model_dir.join("ggml-small.en.bin");
+    let mp = model_path().ok_or("Cannot find home directory")?;
 
-    if !model_path.exists() {
-        return Err(format!(
-            "Whisper model not found. Create {} and download ggml-small.en.bin into it from:\n\
-             https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
-            model_dir.display()
-        ));
+    if !mp.exists() {
+        return Err("Whisper model not found — press ⌃s to download".into());
     }
 
     // Suppress all whisper.cpp + GGML debug output (model params, Metal info, system info).
@@ -302,7 +375,7 @@ fn load_whisper_model(use_gpu: bool) -> Result<whisper_rs::WhisperContext, Strin
 
     let mut params = whisper_rs::WhisperContextParameters::default();
     params.use_gpu(use_gpu);
-    whisper_rs::WhisperContext::new_with_params(model_path.to_str().unwrap_or(""), params)
+    whisper_rs::WhisperContext::new_with_params(mp.to_str().unwrap_or(""), params)
         .map_err(|e| format!("Failed to load Whisper model: {}", e))
 }
 

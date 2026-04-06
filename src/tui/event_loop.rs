@@ -151,6 +151,7 @@ pub async fn run_app(
             || !app.agent_receivers.is_empty()
             || app.stt_recording
             || app.stt_transcribing
+            || app.stt_download_receiver.is_some()
             || commit_generating
             || squash_merging
             || bg_pending
@@ -493,6 +494,36 @@ pub async fn run_app(
             }
             if put_back {
                 app.update_progress_receiver = Some(rx);
+            }
+        }
+
+        // Poll STT model download progress
+        if app.stt_download_receiver.is_some() {
+            let rx = app.stt_download_receiver.take().unwrap();
+            let mut put_back = true;
+            while let Ok(progress) = rx.try_recv() {
+                match progress {
+                    crate::stt::SttDownloadProgress::Percent(pct) => {
+                        app.stt_download_message =
+                            Some(format!("Downloading Whisper model... {}%", pct));
+                        needs_redraw = true;
+                    }
+                    crate::stt::SttDownloadProgress::Finished(Ok(())) => {
+                        app.stt_download_message = None;
+                        app.set_status("Whisper model downloaded — press ⌃s to start recording");
+                        needs_redraw = true;
+                        put_back = false;
+                    }
+                    crate::stt::SttDownloadProgress::Finished(Err(msg)) => {
+                        app.stt_download_message = None;
+                        app.set_status(format!("Model download failed: {}", msg));
+                        needs_redraw = true;
+                        put_back = false;
+                    }
+                }
+            }
+            if put_back {
+                app.stt_download_receiver = Some(rx);
             }
         }
 

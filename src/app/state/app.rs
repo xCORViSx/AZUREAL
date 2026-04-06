@@ -513,6 +513,12 @@ pub struct App {
     pub stt_recording: bool,
     /// Whether STT is currently transcribing recorded audio (between stop and result)
     pub stt_transcribing: bool,
+    /// Whisper model download dialog: true = show y/n prompt, false = hidden
+    pub stt_download_dialog: bool,
+    /// Receiver for Whisper model download progress (background thread sends percentages)
+    pub stt_download_receiver: Option<std::sync::mpsc::Receiver<crate::stt::SttDownloadProgress>>,
+    /// Current download progress message shown as loading indicator
+    pub stt_download_message: Option<String>,
     /// Use Nerd Font icons in file tree (set from Config on startup)
     pub nerd_fonts: bool,
     /// Whether the terminal supports the Kitty keyboard protocol.
@@ -867,6 +873,9 @@ impl App {
             stt_handle: None,
             stt_recording: false,
             stt_transcribing: false,
+            stt_download_dialog: false,
+            stt_download_receiver: None,
+            stt_download_message: None,
             nerd_fonts: true,
             kbd_enhanced: false, // set in run() after PushKeyboardEnhancementFlags
             alt_enter_stolen: false, // set in run() based on TERM_PROGRAM

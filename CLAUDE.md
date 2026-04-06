@@ -1214,11 +1214,7 @@ Press `⌃s` in prompt mode or file edit mode to toggle speech recording. Audio 
 - Transcribing: magenta border + `...` prefix in input title
 - Status bar shows progress messages (Recording..., Transcribing Xs of audio..., Loading Whisper model...)
 
-**Model:** `~/.azureal/speech/ggml-small.en.bin` (~466MB). If missing, status bar shows download instructions:
-```bash
-mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-small.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
-```
+**Model:** `~/.azureal/speech/ggml-small.en.bin` (~466MB). Path centralized via `stt::model_path()` / `stt::model_exists()` (used by `toggle_stt()`, `probe_gpu()`, and `load_whisper_model()`). If missing when `⌃s` is pressed, a centered magenta-bordered dialog opens asking to download (~466MB from HuggingFace). `y` starts a background download thread via `stt::download_model()` using `ureq` (256KB chunks, progress percentage via mpsc channel, temp `.part` file renamed on completion). `Esc`/`n` dismisses. During download, a loading indicator shows "Downloading Whisper model... N%". On completion, status bar shows "Whisper model downloaded — press ⌃s to start recording". State: `stt_download_dialog: bool` (y/n prompt), `stt_download_receiver: Option<Receiver<SttDownloadProgress>>` (background thread), `stt_download_message: Option<String>` (progress indicator). Dialog/download block all input while active (same pattern as update dialog). `SttDownloadProgress` enum: `Percent(u8)`, `Finished(Result<(), String>)`.
 
 **Event loop integration:**
 - `poll_stt()` called every iteration when `stt_handle` exists

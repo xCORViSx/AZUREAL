@@ -5,17 +5,47 @@ use super::App;
 impl App {
     /// Toggle speech-to-text recording. Lazy-initializes the STT background thread on first use.
     /// Press once to start recording (magenta border), press again to stop and transcribe.
+    /// If the Whisper model is missing, opens a download dialog instead of recording.
     pub fn toggle_stt(&mut self) {
+        // If already recording, just stop — no model check needed
+        if self.stt_recording {
+            if let Some(handle) = self.stt_handle.as_ref() {
+                handle.send(crate::stt::SttCommand::StopRecording);
+            }
+            return;
+        }
+
+        // If a download is in progress, ignore
+        if self.stt_download_receiver.is_some() {
+            return;
+        }
+
+        // Check model existence before starting — prevents user from recording
+        // only to discover the model is missing after they stop
+        if !crate::stt::model_exists() {
+            self.stt_download_dialog = true;
+            return;
+        }
+
         // Lazy-init: spawn the STT thread only when the user first presses ⌃s
         if self.stt_handle.is_none() {
             self.stt_handle = Some(crate::stt::SttHandle::spawn());
         }
         let handle = self.stt_handle.as_ref().unwrap();
-        if self.stt_recording {
-            handle.send(crate::stt::SttCommand::StopRecording);
-        } else {
-            handle.send(crate::stt::SttCommand::StartRecording);
-        }
+        handle.send(crate::stt::SttCommand::StartRecording);
+    }
+
+    /// Start downloading the Whisper model in a background thread.
+    /// Called when the user presses 'y' in the model download dialog.
+    pub fn start_stt_model_download(&mut self) {
+        self.stt_download_dialog = false;
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.stt_download_receiver = Some(rx);
+        self.stt_download_message = Some("Downloading Whisper model... 0%".into());
+        std::thread::Builder::new()
+            .name("stt-download".into())
+            .spawn(move || crate::stt::download_model(tx))
+            .expect("failed to spawn download thread");
     }
 
     /// Poll STT events from background thread (non-blocking). Returns true if state changed.

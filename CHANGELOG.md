@@ -2,6 +2,15 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.85] — 2026-04-06
+
+### Added
+- **README: "When to Use the CLI Directly" section** — Documents scenarios where users need to run `claude` or `codex` directly (re-authentication after token expiry, CLI updates, MCP server management, permission changes). Includes table of common CLI commands and guidance for handling authentication errors from within AZUREAL's embedded terminal.
+- **Whisper model auto-download dialog** — Pressing `⌃s` (speech-to-text) when the Whisper model is missing now shows a centered dialog asking to download it, instead of letting the user record audio only to fail on transcription. Pressing `y` downloads the ~466MB model from HuggingFace in a background thread with progress indicator; `Esc`/`n` cancels. Model path centralized via `stt::model_path()` / `stt::model_exists()`.
+
+### Changed
+- **Modularized 5 god files into file-based submodules** — Split `draw_dialogs.rs` (6 submodules), `load.rs` (4 submodules), `claude.rs` (3 submodules), `render_tools.rs` (4 submodules), and `git/core.rs` (5 sibling modules). All use file-based module roots (no `mod.rs`). Total: ~8000 lines of production code reorganized with zero functional changes.
+
 ## [1.0.84] — 2026-03-24
 
 ### Fixed

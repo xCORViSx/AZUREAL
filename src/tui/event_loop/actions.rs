@@ -116,6 +116,24 @@ pub fn handle_key_event(
         return Ok(());
     }
 
+    // STT model download dialog — blocks all input except y/Esc
+    if app.stt_download_dialog {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                app.start_stt_model_download();
+            }
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                app.stt_download_dialog = false;
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    // STT model download in progress — block all input
+    if app.stt_download_receiver.is_some() {
+        return Ok(());
+    }
+
     // Welcome modal — only dialog-listed keys are allowed: M (BrowseMain),
     // W leader (AddWorktree), P (OpenProjects), Ctrl+Q (Quit). All others consumed.
     if app.needs_welcome_modal() {

@@ -16,10 +16,6 @@
   <a href="https://xcorvisx.github.io/AZUREAL/"><strong>📖 Manual</strong></a>
 </p>
 
-<p align="center">
-  Mock edit note: documentation-only changes are safe for workflow testing.
-</p>
-
 ---
 
 ## Features
@@ -165,7 +161,7 @@ Your agent will handle downloading, installing dependencies, and setting up your
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) with at least regular, bold, and italic variants installed, so AZUREAL can show file tree icons and the full range of text styling differences; emoji fallback when not detected
 - **LLVM/Clang + CMake** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` in PowerShell (restart terminal after)
 - **Vulkan SDK** (Linux/Windows build dependency, for GPU-accelerated Whisper) — Linux: `sudo apt install libvulkan-dev` · Windows: install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) or `winget install KhronosGroup.VulkanSDK`
-- **Whisper model** (optional, for speech) — Create `~/.azureal/speech/` and download [ggml-small.en.bin](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin) into it
+- **Whisper model** (optional, for speech) — Downloaded automatically on first use. Press `⌃s` and confirm the download prompt (~466MB)
 
 ### Platform Support
 
@@ -242,6 +238,22 @@ azureal
 - **Yellow** — Prompt mode (typing to Claude)
 - **Magenta** — Speech recording
 - **Azure** — Terminal mode
+
+## When to Use the CLI Directly
+
+AZUREAL wraps the Claude Code and Codex CLIs but does not replace them. Some tasks require running the CLI directly in a separate terminal or in AZUREAL's embedded terminal (`T`):
+
+| Scenario | CLI Command |
+|----------|-------------|
+| **Re-authenticate after token expiry** | `claude` (interactive login flow) |
+| **Update Claude Code CLI** | macOS/Linux: `claude update` · Windows: `irm https://claude.ai/install.ps1 \| iex` |
+| **Update Codex CLI** | `npm update -g @openai/codex` |
+| **Change Claude permission mode** | `claude config set permissions <mode>` |
+| **Manage MCP servers** | `claude mcp add/remove/list` |
+| **Review Claude config** | `claude config list` |
+| **Use Claude interactively** | `claude` (full TUI mode with slash commands like `/compact`, `/memory`) |
+
+**Authentication errors** (HTTP 401, "OAuth token has expired") appear in the session pane as a failed response. Open a terminal (`T` then `t` to type) and run `claude` — the CLI will walk you through re-authentication. Once authenticated, return to AZUREAL and your next prompt will work normally. The same applies to Codex (`codex auth login`).
 
 ## Architecture
 

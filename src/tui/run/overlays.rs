@@ -164,6 +164,60 @@ pub fn draw_loading_indicator(f: &mut Frame, msg: &str) {
     f.render_widget(dialog, rect);
 }
 
+/// STT model download prompt — centered dialog asking if the user wants to download the Whisper model.
+pub fn draw_stt_download_dialog(f: &mut Frame) {
+    let area = f.area();
+    let key_style = Style::default()
+        .fg(Color::Magenta)
+        .add_modifier(Modifier::BOLD);
+    let white = Style::default().fg(Color::White);
+    let dim = Style::default().fg(Color::DarkGray);
+
+    let size_hint = "~466 MB";
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Whisper speech model not found.  ",
+            white,
+        )),
+        Line::from(Span::styled(
+            format!("  Download it now? ({})  ", size_hint),
+            dim,
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("   y", key_style),
+            Span::styled("  Download   ", white),
+        ]),
+        Line::from(vec![
+            Span::styled("   Esc", key_style),
+            Span::styled("  Cancel   ", dim),
+        ]),
+        Line::from(""),
+    ];
+
+    let h = lines.len() as u16 + 2;
+    let w = 42u16.min(area.width.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let rect = Rect::new(x, y, w, h);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(Color::Magenta))
+        .title(Span::styled(
+            " Speech-to-Text ",
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center);
+
+    f.render_widget(ratatui::widgets::Clear, rect);
+    f.render_widget(Paragraph::new(lines).block(block), rect);
+}
+
 /// Update available dialog — centered modal showing version info and install/skip/dismiss options.
 pub fn draw_update_dialog(f: &mut Frame, info: &crate::updater::UpdateInfo) {
     let area = f.area();
