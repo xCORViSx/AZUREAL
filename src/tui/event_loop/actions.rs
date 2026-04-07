@@ -40,7 +40,9 @@ use super::super::input_projects::handle_projects_input;
 use super::super::input_terminal::handle_input_mode;
 use super::super::input_viewer::handle_viewer_input;
 use super::super::input_worktrees::handle_worktrees_input;
-use super::super::keybindings::{lookup_action, lookup_leader_action, Action, KeyContext, LeaderState};
+use super::super::keybindings::{
+    lookup_action, lookup_leader_action, Action, KeyContext, LeaderState,
+};
 
 use execute::execute_action;
 use rcr::{abort_rcr, accept_rcr};
@@ -144,7 +146,10 @@ pub fn handle_key_event(
         }
         let ctx = KeyContext::from_app(app);
         if let Some(action) = lookup_action(&ctx, key.modifiers, key.code) {
-            if matches!(action, Action::BrowseMain | Action::OpenProjects | Action::Quit) {
+            if matches!(
+                action,
+                Action::BrowseMain | Action::OpenProjects | Action::Quit
+            ) {
                 return execute_action(action, app, claude_process);
             }
         }
@@ -484,9 +489,12 @@ pub fn handle_key_event(
                 } else if new_suffix == dialog.old_name {
                     app.set_status("Name unchanged");
                 } else {
-                    let prefix = app.project.as_ref().map(|p| p.branch_prefix.as_str()).unwrap_or("project");
-                    let new_branch =
-                        format!("{}/{}", prefix, new_suffix);
+                    let prefix = app
+                        .project
+                        .as_ref()
+                        .map(|p| p.branch_prefix.as_str())
+                        .unwrap_or("project");
+                    let new_branch = format!("{}/{}", prefix, new_suffix);
                     if let Err(e) = app.rename_current_worktree(&new_branch) {
                         app.set_status(format!("Rename failed: {}", e));
                     }
@@ -540,7 +548,9 @@ pub fn handle_key_event(
 
     // Help overlay: ? and Esc close it, Ctrl+Alt+S toggles startup screen
     if app.show_help {
-        if key.modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        if key
+            .modifiers
+            .contains(KeyModifiers::CONTROL | KeyModifiers::ALT)
             && key.code == KeyCode::Char('s')
         {
             app.show_startup_screen = !app.show_startup_screen;

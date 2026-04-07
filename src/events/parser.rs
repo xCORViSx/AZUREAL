@@ -374,8 +374,7 @@ impl EventParser {
                         // Track Agent/Task tools so we can suppress their
                         // sub-agent prompt user events
                         if tool_name == "Agent" || tool_name == "Task" {
-                            self.active_agent_tool_ids
-                                .insert(tool_use_id.to_string());
+                            self.active_agent_tool_ids.insert(tool_use_id.to_string());
                         }
                         events.push(DisplayEvent::ToolCall {
                             _uuid: uuid.clone(),
@@ -1399,7 +1398,9 @@ mod tests {
         let tool_use = r#"{"type":"assistant","uuid":"a1","message":{"id":"m1","model":"claude","role":"assistant","content":[{"type":"tool_use","id":"tu-agent","name":"Agent","input":{"prompt":"search the codebase","description":"explore"}}]}}"#;
         let (events, _) = parser.parse(&format!("{}\n", tool_use));
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], DisplayEvent::ToolCall { tool_name, .. } if tool_name == "Agent"));
+        assert!(
+            matches!(&events[0], DisplayEvent::ToolCall { tool_name, .. } if tool_name == "Agent")
+        );
 
         // 2. Sub-agent prompt (string content user event) — should be suppressed
         let user_prompt = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"search the codebase"}}"#;
@@ -1416,7 +1417,9 @@ mod tests {
         let real_user = r#"{"type":"user","uuid":"u3","message":{"role":"user","content":"thanks, now fix it"}}"#;
         let (events, _) = parser.parse(&format!("{}\n", real_user));
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], DisplayEvent::UserMessage { content, .. } if content == "thanks, now fix it"));
+        assert!(
+            matches!(&events[0], DisplayEvent::UserMessage { content, .. } if content == "thanks, now fix it")
+        );
     }
 
     #[test]
@@ -1426,9 +1429,13 @@ mod tests {
         let (events, _) = parser.parse(&format!("{}\n", tool_use));
         assert_eq!(events.len(), 1);
 
-        let user_prompt = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"run tests"}}"#;
+        let user_prompt =
+            r#"{"type":"user","uuid":"u1","message":{"role":"user","content":"run tests"}}"#;
         let (events, _) = parser.parse(&format!("{}\n", user_prompt));
-        assert!(events.is_empty(), "Task sub-agent prompt should be suppressed");
+        assert!(
+            events.is_empty(),
+            "Task sub-agent prompt should be suppressed"
+        );
     }
 
     #[test]
@@ -1442,7 +1449,10 @@ mod tests {
         // User event with text block in array — should be suppressed
         let user_text_block = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":[{"type":"text","text":"skill expansion text"}]}}"#;
         let (events, _) = parser.parse(&format!("{}\n", user_text_block));
-        assert!(events.is_empty(), "text blocks during active agent should be suppressed");
+        assert!(
+            events.is_empty(),
+            "text blocks during active agent should be suppressed"
+        );
     }
 
     #[test]

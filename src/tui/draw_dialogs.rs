@@ -14,7 +14,9 @@ pub use preset_prompt::{draw_preset_prompt_dialog, draw_preset_prompt_picker};
 pub use run_command::{draw_run_command_dialog, draw_run_command_picker};
 pub use table_popup::draw_table_popup;
 pub use welcome_modal::draw_welcome_modal;
-pub use worktree_dialogs::{draw_branch_dialog, draw_delete_worktree_dialog, draw_rename_worktree_dialog};
+pub use worktree_dialogs::{
+    draw_branch_dialog, draw_delete_worktree_dialog, draw_rename_worktree_dialog,
+};
 
 #[cfg(test)]
 mod tests {

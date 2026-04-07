@@ -390,16 +390,8 @@ impl App {
             }
         }
         migrate(&mut self.session_files, &old_branch, new_branch);
-        migrate(
-            &mut self.session_selected_file_idx,
-            &old_branch,
-            new_branch,
-        );
-        migrate(
-            &mut self.live_display_events_cache,
-            &old_branch,
-            new_branch,
-        );
+        migrate(&mut self.session_selected_file_idx, &old_branch, new_branch);
+        migrate(&mut self.live_display_events_cache, &old_branch, new_branch);
         migrate(&mut self.branch_slots, &old_branch, new_branch);
         migrate(&mut self.active_slot, &old_branch, new_branch);
         if self.unread_sessions.remove(&old_branch) {
@@ -560,11 +552,7 @@ impl App {
                             if key == id_str {
                                 new_idx = i;
                             }
-                            files.push((
-                                key.clone(),
-                                std::path::PathBuf::new(),
-                                s.created.clone(),
-                            ));
+                            files.push((key.clone(), std::path::PathBuf::new(), s.created.clone()));
                             self.session_msg_counts.insert(key, (s.message_count, 0));
                         }
                         self.session_files.insert(branch.clone(), files);
@@ -690,7 +678,8 @@ mod tests {
             .join("29");
         std::fs::create_dir_all(&session_dir).unwrap();
         let session_path = session_dir.join(format!("rollout-{}.jsonl", codex_session_id));
-        let patch = "*** Begin Patch\n*** Update File: /tmp/demo.txt\n@@\n-old\n+new\n*** End Patch";
+        let patch =
+            "*** Begin Patch\n*** Update File: /tmp/demo.txt\n@@\n-old\n+new\n*** End Patch";
         let mut file = std::fs::File::create(&session_path).unwrap();
         writeln!(
             file,
@@ -778,7 +767,12 @@ mod tests {
 
         app.recover_orphaned_jsonls();
 
-        let recovered = app.session_store.as_ref().unwrap().load_events(sid).unwrap();
+        let recovered = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .load_events(sid)
+            .unwrap();
         assert_eq!(
             recovered
                 .iter()

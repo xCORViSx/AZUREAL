@@ -415,10 +415,7 @@ fn draw_file_tree_options(f: &mut Frame, app: &App, area: Rect) {
         (app.file_tree_options_selected - inner_h + 1) as u16
     };
 
-    f.render_widget(
-        Paragraph::new(lines).block(block).scroll((scroll, 0)),
-        area,
-    );
+    f.render_widget(Paragraph::new(lines).block(block).scroll((scroll, 0)), area);
 }
 
 /// Draw the file tree panel showing the session's worktree files

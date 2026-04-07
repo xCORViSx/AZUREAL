@@ -381,7 +381,7 @@ fn parse_response_item(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let output = payload
+            let raw_output = payload
                 .get("output")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
@@ -392,6 +392,7 @@ fn parse_response_item(
                 .cloned()
                 .unwrap_or(("custom_tool".to_string(), None));
 
+            let output = normalize_tool_output(&tool_name, raw_output);
             let is_error = output.starts_with("Error");
 
             events.push(DisplayEvent::ToolResult {
@@ -891,6 +892,8 @@ fn describe_write_stdin_action(args: &serde_json::Value) -> String {
 }
 
 fn normalize_tool_output(tool_name: &str, output: String) -> String {
+    let output = unwrap_tool_output_envelope(&output).unwrap_or(output);
+
     if !matches!(tool_name, "Bash" | "bash") || !output.starts_with("Chunk ID:") {
         return output;
     }
@@ -922,6 +925,27 @@ fn normalize_tool_output(tool_name: &str, output: String) -> String {
     }
 
     output
+}
+
+fn unwrap_tool_output_envelope(output: &str) -> Option<String> {
+    let json: serde_json::Value = serde_json::from_str(output).ok()?;
+    let inner = json.get("output").and_then(|v| v.as_str())?;
+    let exit_code = json
+        .get("metadata")
+        .and_then(|m| m.get("exit_code"))
+        .and_then(|v| v.as_i64());
+
+    if inner.trim().is_empty() {
+        return exit_code.map(|code| {
+            if code == 0 {
+                String::new()
+            } else {
+                format!("Exit code: {code}")
+            }
+        });
+    }
+
+    Some(inner.to_string())
 }
 
 /// Empty result for error cases
@@ -1270,6 +1294,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_custom_tool_call_output_unwraps_json_envelope() {
+        let result = parse_lines(&[
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:06Z","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call_ct","input":"*** Begin Patch\n*** Update File: /tmp/demo.txt\n@@\n-old\n+new\n*** End Patch"}}"#,
+            r#"{"type":"response_item","timestamp":"2026-01-01T00:00:07Z","payload":{"type":"custom_tool_call_output","call_id":"call_ct","output":"{\"output\":\"Success. Updated the following files:\\nM /tmp/demo.txt\\n\",\"metadata\":{\"exit_code\":0,\"duration_seconds\":0.0}}"}}"#,
+        ]);
+        assert_eq!(result.events.len(), 2);
+        match &result.events[1] {
+            DisplayEvent::ToolResult {
+                tool_name,
+                file_path,
+                content,
+                is_error,
+                ..
+            } => {
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(file_path.as_deref(), Some("/tmp/demo.txt"));
+                assert_eq!(
+                    content,
+                    "Success. Updated the following files:\nM /tmp/demo.txt\n"
+                );
+                assert!(!is_error);
+            }
+            _ => panic!("Expected ToolResult"),
+        }
+    }
+
     // ── event_msg types ──
 
     #[test]
@@ -1376,7 +1427,10 @@ mod tests {
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:09Z","payload":{"type":"agent_message","message":"I'll fix that for you."}}"#,
         ]);
         assert_eq!(result.events.len(), 2);
-        assert!(matches!(result.events[0], DisplayEvent::AssistantText { .. }));
+        assert!(matches!(
+            result.events[0],
+            DisplayEvent::AssistantText { .. }
+        ));
         assert!(matches!(result.events[1], DisplayEvent::ToolCall { .. }));
     }
 

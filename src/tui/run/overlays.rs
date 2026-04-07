@@ -13,8 +13,8 @@ use ratatui::{
 
 use crate::app::App;
 
-use super::super::keybindings;
 use super::super::draw_input;
+use super::super::keybindings;
 use super::super::util::{AZURE, GIT_ORANGE};
 
 /// Auto-rebase dialog — centered popup showing rebase progress or success.
@@ -24,16 +24,30 @@ pub fn draw_auto_rebase_dialog(f: &mut Frame, branches: &[String], success: bool
     let lines: Vec<Line> = if success {
         branches
             .iter()
-            .map(|b| Line::from(Span::styled(format!(" {} \u{2713}", b), Style::default().fg(Color::White))))
+            .map(|b| {
+                Line::from(Span::styled(
+                    format!(" {} \u{2713}", b),
+                    Style::default().fg(Color::White),
+                ))
+            })
             .collect()
     } else {
         branches
             .iter()
-            .map(|b| Line::from(Span::styled(format!(" {} ...", b), Style::default().fg(Color::White))))
+            .map(|b| {
+                Line::from(Span::styled(
+                    format!(" {} ...", b),
+                    Style::default().fg(Color::White),
+                ))
+            })
             .collect()
     };
     let border_color = if success { Color::Green } else { AZURE };
-    let title = if success { " rebased onto main " } else { " auto-rebasing onto main " };
+    let title = if success {
+        " rebased onto main "
+    } else {
+        " auto-rebasing onto main "
+    };
     let max_line_w = lines
         .iter()
         .map(|l| l.width() as u16)
@@ -46,15 +60,13 @@ pub fn draw_auto_rebase_dialog(f: &mut Frame, branches: &[String], success: bool
     let x = area.x + area.width.saturating_sub(w + 1);
     let y = area.y + 1;
     let rect = Rect::new(x, y, w, h);
-    let dialog = Paragraph::new(lines)
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .title(title)
-                .title_alignment(Alignment::Center)
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color)),
-        );
+    let dialog = Paragraph::new(lines).alignment(Alignment::Center).block(
+        Block::default()
+            .title(title)
+            .title_alignment(Alignment::Center)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color)),
+    );
     f.render_widget(ratatui::widgets::Clear, rect);
     f.render_widget(dialog, rect);
 }
@@ -176,10 +188,7 @@ pub fn draw_stt_download_dialog(f: &mut Frame) {
     let size_hint = "~466 MB";
     let lines = vec![
         Line::from(""),
-        Line::from(Span::styled(
-            "  Whisper speech model not found.  ",
-            white,
-        )),
+        Line::from(Span::styled("  Whisper speech model not found.  ", white)),
         Line::from(Span::styled(
             format!("  Download it now? ({})  ", size_hint),
             dim,

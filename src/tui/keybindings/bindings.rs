@@ -22,9 +22,9 @@ pub use panes::{EDIT_MODE, FILE_TREE, GLOBAL, INPUT, SESSION, TERMINAL, VIEWER, 
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::{Action, Keybinding};
     use super::keys::*;
     use super::*;
-    use super::super::types::{Action, Keybinding};
     use crossterm::event::{KeyCode, KeyModifiers};
     use std::collections::HashSet;
 

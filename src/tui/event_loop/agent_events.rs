@@ -4,8 +4,8 @@
 //! slot_id is the PID string — each Claude process gets a unique slot.
 //! Also handles auto-sending staged prompts after Claude exits.
 
-use crate::app::App;
 use crate::app::state::backend_for_model;
+use crate::app::App;
 use crate::backend::AgentProcess;
 use crate::backend::Backend;
 use crate::claude::AgentEvent;
@@ -158,17 +158,30 @@ pub fn spawn_compaction_agent(
     let primary_label = selected_model
         .clone()
         .unwrap_or_else(|| primary_backend.to_string());
-    let spawn_result =
-        claude_process.spawn_on_backend(primary_backend, wt_path, &prompt, None, selected_model_ref);
+    let spawn_result = claude_process.spawn_on_backend(
+        primary_backend,
+        wt_path,
+        &prompt,
+        None,
+        selected_model_ref,
+    );
 
     // If primary spawn fails, try the alternate backend with no specific model
     let fallback_backend = primary_backend.alternate();
     let (rx, pid, backend, model_label, used_fallback) = match spawn_result {
         Ok((rx, pid)) => (rx, pid, primary_backend, primary_label.clone(), false),
-        Err(_) => match claude_process.spawn_on_backend(fallback_backend, wt_path, &prompt, None, None) {
-            Ok((rx, pid)) => (rx, pid, fallback_backend, fallback_backend.to_string(), true),
-            Err(_) => return false,
-        },
+        Err(_) => {
+            match claude_process.spawn_on_backend(fallback_backend, wt_path, &prompt, None, None) {
+                Ok((rx, pid)) => (
+                    rx,
+                    pid,
+                    fallback_backend,
+                    fallback_backend.to_string(),
+                    true,
+                ),
+                Err(_) => return false,
+            }
+        }
     };
 
     let pid_str = pid.to_string();
@@ -189,8 +202,7 @@ pub fn spawn_compaction_agent(
     if used_fallback {
         app.set_status(format!(
             "Compaction: {} failed to spawn — fell back to {}",
-            primary_label,
-            fallback_backend
+            primary_label, fallback_backend
         ));
     }
     app.invalidate_render_cache();
@@ -283,7 +295,11 @@ fn extract_assistant_text(data: &str) -> Option<String> {
         if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
             continue;
         }
-        let Some(content) = v.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_array()) else {
+        let Some(content) = v
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_array())
+        else {
             continue;
         };
         for block in content {
@@ -294,7 +310,11 @@ fn extract_assistant_text(data: &str) -> Option<String> {
             }
         }
     }
-    if text.is_empty() { None } else { Some(text) }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 /// Extract assistant-facing text from Codex JSONL output, skipping reasoning items.

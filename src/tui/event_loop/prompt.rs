@@ -3,8 +3,8 @@
 //! Handles sending staged prompts to agents, spawning/retrying compaction
 //! agents, and auto-continuing after mid-turn compaction.
 
-use crate::app::App;
 use crate::app::state::backend_for_model;
+use crate::app::App;
 use crate::backend::AgentProcess;
 use crate::backend::Backend;
 
@@ -133,9 +133,7 @@ use super::agent_events;
 /// Send staged prompt when no agent is running and no dialog is blocking.
 /// Returns true if a prompt was sent (needs redraw).
 pub fn send_staged_prompt(app: &mut App, claude_process: &AgentProcess) -> bool {
-    if app.staged_prompt.is_none()
-        || app.is_active_slot_running()
-        || app.new_session_dialog_active
+    if app.staged_prompt.is_none() || app.is_active_slot_running() || app.new_session_dialog_active
     {
         return false;
     }
@@ -196,7 +194,11 @@ pub fn send_staged_prompt(app: &mut App, claude_process: &AgentProcess) -> bool 
                         outcome.registration_model.as_deref(),
                     );
                     app.update_title_session_name();
-                    app.set_status(outcome.success_notice.unwrap_or_else(|| "Running...".to_string()));
+                    app.set_status(
+                        outcome
+                            .success_notice
+                            .unwrap_or_else(|| "Running...".to_string()),
+                    );
                 }
                 Err(e) => app.set_status(e),
             }
@@ -299,9 +301,9 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
                         outcome.registration_model.as_deref(),
                     );
                     app.set_status(
-                        outcome.success_notice.unwrap_or_else(|| {
-                            "Auto-continuing after compaction...".to_string()
-                        }),
+                        outcome
+                            .success_notice
+                            .unwrap_or_else(|| "Auto-continuing after compaction...".to_string()),
                     );
                     redraw = true;
                 }

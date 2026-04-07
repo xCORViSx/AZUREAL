@@ -376,7 +376,11 @@ mod tests {
         );
         // Header ("Update File:") and hunk ("@@") lines should be skipped;
         // the first rendered content line is the removed line "-old"
-        let rendered: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        let rendered: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(!rendered.contains("Update File:"));
         assert!(!rendered.contains("@@"));
         assert!(rendered.contains("-old"));

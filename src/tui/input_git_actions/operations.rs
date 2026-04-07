@@ -75,7 +75,9 @@ fn generate_commit_message_with_claude(
         cmd.process_group(0);
     }
 
-    let child = cmd.spawn().map_err(|e| format!("Failed to run claude: {}", e))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run claude: {}", e))?;
     let pid = child.id();
     if let Ok(mut pids) = pid_tracker.lock() {
         pids.push(pid);
@@ -124,7 +126,9 @@ fn generate_commit_message_with_codex(
         cmd.process_group(0);
     }
 
-    let child = cmd.spawn().map_err(|e| format!("Failed to run codex: {}", e))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run codex: {}", e))?;
     let pid = child.id();
     if let Ok(mut pids) = pid_tracker.lock() {
         pids.push(pid);

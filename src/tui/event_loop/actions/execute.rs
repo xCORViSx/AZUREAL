@@ -6,9 +6,7 @@
 
 use anyhow::Result;
 
-use super::super::mouse::{
-    copy_session_selection, copy_terminal_selection, copy_viewer_selection,
-};
+use super::super::mouse::{copy_session_selection, copy_terminal_selection, copy_viewer_selection};
 use super::escape::dispatch_escape;
 use super::navigation::{
     dispatch_go_to_bottom, dispatch_go_to_top, dispatch_nav_down, dispatch_nav_left,
@@ -328,13 +326,10 @@ pub(super) fn execute_action(
                                     {
                                         if let Some(mut stdin) = child.stdin.take() {
                                             use std::io::Write;
-                                            let _ = stdin.write_all(
-                                                paths.join("\n").as_bytes(),
-                                            );
+                                            let _ = stdin.write_all(paths.join("\n").as_bytes());
                                         }
                                         if let Ok(o) = child.wait_with_output() {
-                                            let ignored_str =
-                                                String::from_utf8_lossy(&o.stdout);
+                                            let ignored_str = String::from_utf8_lossy(&o.stdout);
                                             let ignored: std::collections::HashSet<&str> =
                                                 ignored_str
                                                     .lines()

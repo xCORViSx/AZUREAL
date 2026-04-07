@@ -745,6 +745,8 @@ fn describe_write_stdin_action(args: &serde_json::Value) -> String {
 }
 
 fn normalize_tool_output(tool_name: &str, output: String) -> String {
+    let output = unwrap_tool_output_envelope(&output).unwrap_or(output);
+
     if !matches!(tool_name, "Bash" | "bash") || !output.starts_with("Chunk ID:") {
         return output;
     }
@@ -776,6 +778,27 @@ fn normalize_tool_output(tool_name: &str, output: String) -> String {
     }
 
     output
+}
+
+fn unwrap_tool_output_envelope(output: &str) -> Option<String> {
+    let json: serde_json::Value = serde_json::from_str(output).ok()?;
+    let inner = json.get("output").and_then(|v| v.as_str())?;
+    let exit_code = json
+        .get("metadata")
+        .and_then(|m| m.get("exit_code"))
+        .and_then(|v| v.as_i64());
+
+    if inner.trim().is_empty() {
+        return exit_code.map(|code| {
+            if code == 0 {
+                String::new()
+            } else {
+                format!("Exit code: {code}")
+            }
+        });
+    }
+
+    Some(inner.to_string())
 }
 
 #[cfg(test)]
@@ -1043,7 +1066,10 @@ mod tests {
                 assert_eq!(tool_use_id, "call_patch");
                 assert_eq!(tool_name, "Edit");
                 assert_eq!(file_path.as_deref(), Some("/tmp/probe.txt"));
-                assert!(content.contains("Success. Updated the following files"));
+                assert_eq!(
+                    content,
+                    "Success. Updated the following files:\nM /tmp/probe.txt\n"
+                );
                 assert!(!is_error);
             }
             _ => panic!("expected ToolResult"),

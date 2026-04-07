@@ -247,8 +247,7 @@ impl App {
                     if let Some(ref slot) = slot {
                         if let Some(uuid) = self.agent_session_ids.get(slot) {
                             if let Some(ref wt_path) = worktree_path {
-                                if let Some(jsonl_path) =
-                                    crate::config::session_file(wt_path, uuid)
+                                if let Some(jsonl_path) = crate::config::session_file(wt_path, uuid)
                                 {
                                     if jsonl_path.exists() {
                                         self.session_file_path = Some(jsonl_path);
@@ -1111,7 +1110,9 @@ mod tests {
             .find(|event| matches!(event, DisplayEvent::ToolCall { .. }))
             .expect("expected codex tool call from live load");
         match tool_call {
-            DisplayEvent::ToolCall { tool_name, input, .. } => {
+            DisplayEvent::ToolCall {
+                tool_name, input, ..
+            } => {
                 assert_eq!(tool_name, "Edit");
                 assert_eq!(input.get("patch").and_then(|v| v.as_str()), Some(patch));
             }

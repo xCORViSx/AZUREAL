@@ -101,12 +101,21 @@ impl Git {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("Failed to rename branch {} → {}: {}", old_name, new_name, stderr);
+            bail!(
+                "Failed to rename branch {} → {}: {}",
+                old_name,
+                new_name,
+                stderr
+            );
         }
 
         // Update remote tracking (best-effort): push new name, delete old
         let _ = Command::new("git")
-            .args(["push", "origin", &format!("{}:refs/heads/{}", new_name, new_name)])
+            .args([
+                "push",
+                "origin",
+                &format!("{}:refs/heads/{}", new_name, new_name),
+            ])
             .current_dir(repo_path)
             .output();
         let _ = Command::new("git")
@@ -115,7 +124,11 @@ impl Git {
             .output();
         // Set upstream for new name
         let _ = Command::new("git")
-            .args(["branch", &format!("--set-upstream-to=origin/{}", new_name), new_name])
+            .args([
+                "branch",
+                &format!("--set-upstream-to=origin/{}", new_name),
+                new_name,
+            ])
             .current_dir(repo_path)
             .output();
 

@@ -289,23 +289,23 @@ pub fn git_actions_footer() -> String {
         "{",
         "}",
     );
-    format!("{}/{}:cycle | {}:exec/view | {}:refresh | {}/{}:wt | {}/{}:page | {}:close", tab_fwd, tab_back, enter, refresh, prev, next, pprev, pnext, esc)
+    format!(
+        "{}/{}:cycle | {}:exec/view | {}:refresh | {}/{}:wt | {}/{}:page | {}:close",
+        tab_fwd, tab_back, enter, refresh, prev, next, pprev, pnext, esc
+    )
 }
 
 /// Stage/discard hint string for the changed-files pane bottom border.
 pub fn git_files_pane_footer() -> String {
     let stage = find_key_for_action(&GIT_ACTIONS, Action::GitToggleStage).unwrap_or("s".into());
-    let discard =
-        find_key_for_action(&GIT_ACTIONS, Action::GitDiscardFile).unwrap_or("x".into());
+    let discard = find_key_for_action(&GIT_ACTIONS, Action::GitDiscardFile).unwrap_or("x".into());
     format!(" {}:stage | {}:discard ", stage, discard)
 }
 
 /// Issues panel footer hint string for the bottom border.
 pub fn issues_browse_hints() -> String {
-    let create =
-        find_key_for_action(&ISSUES_BROWSE, Action::IssuesCreate).unwrap_or("c".into());
-    let open =
-        find_key_for_action(&ISSUES_BROWSE, Action::Confirm).unwrap_or("Enter".into());
+    let create = find_key_for_action(&ISSUES_BROWSE, Action::IssuesCreate).unwrap_or("c".into());
+    let open = find_key_for_action(&ISSUES_BROWSE, Action::Confirm).unwrap_or("Enter".into());
     let esc = find_key_for_action(&ISSUES_BROWSE, Action::Escape).unwrap_or("Esc".into());
     format!(
         " j/k:nav  {}:create  {}:open  /:filter  {}:close ",
@@ -343,7 +343,12 @@ pub fn projects_browse_hint_pairs(has_project: bool) -> Vec<(String, &'static st
     }
     v.push((
         find_key_for_action(&PROJECTS_BROWSE, Action::Quit).unwrap_or_else(|| {
-            if cfg!(target_os = "macos") { "⌃Q" } else { "Ctrl+Q" }.into()
+            if cfg!(target_os = "macos") {
+                "⌃Q"
+            } else {
+                "Ctrl+Q"
+            }
+            .into()
         }),
         "quit",
     ));
@@ -400,24 +405,21 @@ pub fn find_key_adaptive(
     kbd_enhanced: bool,
     alt_enter_stolen: bool,
 ) -> Option<String> {
-    bindings
-        .iter()
-        .find(|b| b.action == action)
-        .map(|b| {
-            if !kbd_enhanced {
-                for alt in b.alternatives {
-                    // Skip Alt+Enter when WezTerm steals it for fullscreen
-                    if alt_enter_stolen
-                        && alt.modifiers == KeyModifiers::ALT
-                        && alt.code == KeyCode::Enter
-                    {
-                        continue;
-                    }
-                    return alt.display();
+    bindings.iter().find(|b| b.action == action).map(|b| {
+        if !kbd_enhanced {
+            for alt in b.alternatives {
+                // Skip Alt+Enter when WezTerm steals it for fullscreen
+                if alt_enter_stolen
+                    && alt.modifiers == KeyModifiers::ALT
+                    && alt.code == KeyCode::Enter
+                {
+                    continue;
                 }
+                return alt.display();
             }
-            b.primary.display()
-        })
+        }
+        b.primary.display()
+    })
 }
 
 /// Find a pair of keys for two related actions (e.g., NavDown/NavUp → "j"/"k")
@@ -711,11 +713,7 @@ mod tests {
         assert!(key.is_some());
         let k = key.unwrap();
         // Without Kitty: should show Alt+M
-        assert!(
-            k.contains("Alt"),
-            "expected Alt+M variant, got: {}",
-            k
-        );
+        assert!(k.contains("Alt"), "expected Alt+M variant, got: {}", k);
     }
 
     #[test]
@@ -1525,14 +1523,22 @@ mod tests {
     #[test]
     fn dialog_footer_second_is_shift_tab_back() {
         let pairs = dialog_footer_hint_pairs();
-        let expected = if cfg!(target_os = "macos") { "⇧Tab" } else { "Shift+Tab" };
+        let expected = if cfg!(target_os = "macos") {
+            "⇧Tab"
+        } else {
+            "Shift+Tab"
+        };
         assert_eq!(pairs[1], (expected.into(), "back"));
     }
 
     #[test]
     fn dialog_footer_third_is_ctrl_s_scope() {
         let pairs = dialog_footer_hint_pairs();
-        let expected = if cfg!(target_os = "macos") { "⌃s" } else { "Ctrl+s" };
+        let expected = if cfg!(target_os = "macos") {
+            "⌃s"
+        } else {
+            "Ctrl+s"
+        };
         assert_eq!(pairs[2], (expected.into(), "scope"));
     }
 

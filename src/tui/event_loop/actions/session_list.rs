@@ -44,7 +44,13 @@ pub(super) fn open_session_list(app: &mut App) {
             }
         }
 
+        let selected = app
+            .viewed_session_id(&branch)
+            .and_then(|session_id| files.iter().position(|(id, _, _)| id == &session_id))
+            .unwrap_or(0);
+
         app.session_files.insert(branch, files);
+        app.session_list_selected = selected;
     }
 }
 
@@ -58,6 +64,8 @@ pub fn finish_session_list_load(app: &mut App) {
 mod tests {
     use super::*;
     use crate::app::App;
+    use crate::models::Worktree;
+    use std::path::PathBuf;
 
     #[test]
     fn test_open_session_list_sets_show() {
@@ -190,5 +198,33 @@ mod tests {
         assert!(!app.session_list_loading);
         open_session_list(&mut app);
         assert!(app.session_list_loading);
+    }
+
+    #[test]
+    fn test_open_session_list_selects_current_viewed_session() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let wt_path = PathBuf::from("/tmp/session-list-current");
+        let sid1 = store.create_session("main").unwrap();
+        let sid2 = store.create_session("main").unwrap();
+
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+        app.current_session_id = Some(sid1);
+        app.worktrees.push(Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+
+        open_session_list(&mut app);
+
+        assert_eq!(
+            app.session_files["main"][app.session_list_selected].0,
+            sid1.to_string()
+        );
+        assert_eq!(app.session_files["main"][0].0, sid2.to_string());
     }
 }

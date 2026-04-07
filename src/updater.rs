@@ -6,8 +6,7 @@
 use std::sync::mpsc::Sender;
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-const GITHUB_API_URL: &str =
-    "https://api.github.com/repos/xCORViSx/AZUREAL/releases/latest";
+const GITHUB_API_URL: &str = "https://api.github.com/repos/xCORViSx/AZUREAL/releases/latest";
 const CHECK_INTERVAL_SECS: u64 = 86400; // 24 hours
 
 /// Information about an available update.
@@ -63,10 +62,7 @@ fn platform_asset_name() -> Option<&'static str> {
 }
 
 /// Check GitHub for a newer release.
-pub fn check_for_update(
-    skip_version: Option<&str>,
-    last_check: Option<u64>,
-) -> UpdateCheckResult {
+pub fn check_for_update(skip_version: Option<&str>, last_check: Option<u64>) -> UpdateCheckResult {
     // Rate limit: once per 24 hours
     if let Some(last) = last_check {
         let now = std::time::SystemTime::now()
@@ -132,33 +128,23 @@ pub fn check_for_update(
         None => return UpdateCheckResult::Failed("Unsupported platform".into()),
     };
 
-    let download_url = json["assets"]
-        .as_array()
-        .and_then(|assets| {
-            assets.iter().find_map(|a| {
-                let name = a["name"].as_str()?;
-                if name == asset_name {
-                    a["browser_download_url"].as_str().map(|s| s.to_string())
-                } else {
-                    None
-                }
-            })
-        });
+    let download_url = json["assets"].as_array().and_then(|assets| {
+        assets.iter().find_map(|a| {
+            let name = a["name"].as_str()?;
+            if name == asset_name {
+                a["browser_download_url"].as_str().map(|s| s.to_string())
+            } else {
+                None
+            }
+        })
+    });
 
     let download_url = match download_url {
         Some(u) => u,
-        None => {
-            return UpdateCheckResult::Failed(format!(
-                "No asset '{}' in release",
-                asset_name
-            ))
-        }
+        None => return UpdateCheckResult::Failed(format!("No asset '{}' in release", asset_name)),
     };
 
-    let release_url = json["html_url"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let release_url = json["html_url"].as_str().unwrap_or("").to_string();
 
     UpdateCheckResult::Available(UpdateInfo {
         version,
@@ -233,8 +219,7 @@ fn download_and_install_inner(
     let extracted = extract_binary_from_targz(&body)?;
 
     // Write extracted binary to temp file
-    std::fs::write(&tmp_path, &extracted)
-        .map_err(|e| format!("Write temp file failed: {}", e))?;
+    std::fs::write(&tmp_path, &extracted).map_err(|e| format!("Write temp file failed: {}", e))?;
 
     // Platform-specific binary replacement
     #[cfg(unix)]
@@ -296,13 +281,8 @@ fn extract_binary_from_targz(data: &[u8]) -> Result<Vec<u8>, String> {
 
     for entry in archive.entries().map_err(|e| format!("tar error: {}", e))? {
         let mut entry = entry.map_err(|e| format!("tar entry error: {}", e))?;
-        let path = entry
-            .path()
-            .map_err(|e| format!("tar path error: {}", e))?;
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let path = entry.path().map_err(|e| format!("tar path error: {}", e))?;
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         if name == bin_name {
             let mut buf = Vec::new();
@@ -320,8 +300,8 @@ fn extract_binary_from_targz(data: &[u8]) -> Result<Vec<u8>, String> {
 pub fn cleanup_old_binary() {
     #[cfg(windows)]
     {
-        if let Ok(exe) = std::env::current_exe()
-            .and_then(|p| dunce::canonicalize(&p).map_err(Into::into))
+        if let Ok(exe) =
+            std::env::current_exe().and_then(|p| dunce::canonicalize(&p).map_err(Into::into))
         {
             let old = exe.with_extension("exe.old");
             if old.exists() {
@@ -330,7 +310,6 @@ pub fn cleanup_old_binary() {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

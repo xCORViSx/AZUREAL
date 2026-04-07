@@ -589,7 +589,10 @@ mod tests {
         let content = "Chunk ID: 6bf9d8\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 7\nOutput:\n/Users/macbookpro/AZUREAL\n";
         let lines = render_tool_result("exec_command", None, content, false, 80);
         assert_eq!(lines.len(), 1);
-        assert_eq!(spans_text(&lines[0]), " \u{2503}  \u{2514}\u{2500} /Users/macbookpro/AZUREAL");
+        assert_eq!(
+            spans_text(&lines[0]),
+            " \u{2503}  \u{2514}\u{2500} /Users/macbookpro/AZUREAL"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -953,7 +956,11 @@ mod tests {
         );
         // Header ("Update File:") and hunk ("@@") lines should be skipped;
         // the first rendered content line is the removed line "-old"
-        let rendered: String = lines.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        let rendered: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(!rendered.contains("Update File:"));
         assert!(!rendered.contains("@@"));
         assert!(rendered.contains("-old"));

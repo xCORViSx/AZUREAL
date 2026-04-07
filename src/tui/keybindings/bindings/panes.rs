@@ -3,8 +3,8 @@
 //! Static keybinding arrays for the main TUI panes: global shortcuts,
 //! worktree leader keys, file tree, viewer, edit mode, session, input, terminal.
 
-use super::keys::*;
 use super::super::types::{Action, KeyCombo, Keybinding};
+use super::keys::*;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 /// Global keybindings (always active, checked first).
@@ -289,7 +289,12 @@ pub static VIEWER: [Keybinding; 14] = [
         Action::Escape,
     ),
     #[cfg(target_os = "macos")]
-    Keybinding::with_alt_kitty(KEY_SELECT_ALL, &ALT_SELECT_ALL, "Select all", Action::SelectAll),
+    Keybinding::with_alt_kitty(
+        KEY_SELECT_ALL,
+        &ALT_SELECT_ALL,
+        "Select all",
+        Action::SelectAll,
+    ),
     #[cfg(not(target_os = "macos"))]
     Keybinding::new(KEY_SELECT_ALL, "Select all", Action::SelectAll),
     Keybinding::new(

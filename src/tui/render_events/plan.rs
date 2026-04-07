@@ -8,12 +8,7 @@ use crate::tui::render_wrap::wrap_text;
 use crate::tui::util::AZURE;
 
 /// Render a plan block with prominent full-width styling and markdown highlighting
-pub(super) fn render_plan(
-    lines: &mut Vec<Line<'static>>,
-    name: &str,
-    content: &str,
-    width: usize,
-) {
+pub(super) fn render_plan(lines: &mut Vec<Line<'static>>, name: &str, content: &str, width: usize) {
     let plan_color = Color::Green;
     let header_bg = Color::Green;
     let border = "═";

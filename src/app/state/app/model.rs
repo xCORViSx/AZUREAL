@@ -80,7 +80,10 @@ impl App {
 
     /// First available model (respects backend availability).
     pub fn first_available_model(&self) -> &'static str {
-        self.available_models().first().copied().unwrap_or(default_model())
+        self.available_models()
+            .first()
+            .copied()
+            .unwrap_or(default_model())
     }
 
     /// Extract the model from the loaded session's event stream.
@@ -113,9 +116,7 @@ impl App {
     /// If the restored model's backend is not installed, falls back to the
     /// first available model.
     pub fn restore_model_from_session(&mut self) {
-        let mut restored = self
-            .last_session_model()
-            .unwrap_or(default_model());
+        let mut restored = self.last_session_model().unwrap_or(default_model());
         // If the restored model's backend is not installed, fall back
         let pool = self.available_models();
         if !pool.contains(&restored) {
@@ -201,7 +202,6 @@ impl App {
             None
         }
     }
-
 
     /// Short display name for the active model. Always returns the selected_model
     /// alias since it's always set (never None).

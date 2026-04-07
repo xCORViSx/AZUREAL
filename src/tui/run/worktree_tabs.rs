@@ -137,7 +137,8 @@ pub fn draw_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut cur_w: usize = 0;
     let mut active_page: usize = 0;
 
-    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate()
+    {
         let cost = if cur.is_empty() { tw } else { tw + 1 };
         if !cur.is_empty() && cur_w + cost > avail {
             pages.push(std::mem::take(&mut cur));
@@ -349,7 +350,8 @@ pub fn draw_git_worktree_tabs(f: &mut Frame, app: &mut App, area: Rect) {
     let mut cur_w: usize = 0;
     let mut active_page: usize = 0;
 
-    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate() {
+    for (i, (&tw, (_, is_active, _, _, _, _, _))) in tab_widths.iter().zip(tabs.iter()).enumerate()
+    {
         let cost = if cur.is_empty() { tw } else { tw + 1 };
         if !cur.is_empty() && cur_w + cost > avail {
             pages.push(std::mem::take(&mut cur));

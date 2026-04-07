@@ -300,7 +300,11 @@ fn draw_git_sidebar(
     };
 
     let border_fg = if files_focused { GIT_ORANGE } else { GIT_BROWN };
-    let border_mod = if files_focused { Modifier::BOLD } else { Modifier::empty() };
+    let border_mod = if files_focused {
+        Modifier::BOLD
+    } else {
+        Modifier::empty()
+    };
     let files_block = Block::default()
         .title(Span::styled(
             files_title,

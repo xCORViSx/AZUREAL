@@ -11,10 +11,10 @@ mod events;
 mod git;
 mod install;
 mod models;
-mod updater;
 mod stt;
 mod syntax;
 mod tui;
+mod updater;
 mod watcher;
 
 use anyhow::Result;

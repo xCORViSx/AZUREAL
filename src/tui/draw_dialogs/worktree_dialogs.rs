@@ -297,13 +297,16 @@ pub fn draw_rename_worktree_dialog(
     ];
     // Cursor block
     input_spans.push(Span::styled(
-        cursor_char.map(|c| c.to_string()).unwrap_or_else(|| " ".to_string()),
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::White),
+        cursor_char
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| " ".to_string()),
+        Style::default().fg(Color::Black).bg(Color::White),
     ));
     if !after_cursor.is_empty() {
-        input_spans.push(Span::styled(after_cursor, Style::default().fg(Color::White)));
+        input_spans.push(Span::styled(
+            after_cursor,
+            Style::default().fg(Color::White),
+        ));
     }
 
     let lines = vec![

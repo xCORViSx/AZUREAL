@@ -3,8 +3,8 @@
 //! Static keybinding arrays for modal overlays: health panel (shared + per-tab),
 //! git actions panel, projects browser, picker, and branch dialog.
 
-use super::keys::*;
 use super::super::types::{Action, KeyCombo, Keybinding};
+use super::keys::*;
 use crossterm::event::KeyCode;
 
 /// Health Panel — bindings shared across both tabs (Tab, nav, Esc)

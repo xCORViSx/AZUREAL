@@ -2153,11 +2153,7 @@ mod tests {
         let file_path = test_file("non_agent_no_suppress");
         let tool_use = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu-read","name":"Read","input":{"file_path":"/test.rs"}}],"model":"claude"},"timestamp":"2026-01-01T00:00:00Z","uuid":"a1"}"#;
         let user_msg = r#"{"type":"user","message":{"content":"hello"},"timestamp":"2026-01-01T00:00:01Z","uuid":"u1"}"#;
-        std::fs::write(
-            &file_path,
-            format!("{}\n{}\n", tool_use, user_msg),
-        )
-        .unwrap();
+        std::fs::write(&file_path, format!("{}\n{}\n", tool_use, user_msg)).unwrap();
         let result = parse_session_file(&file_path);
         let user_msgs: Vec<_> = result
             .events

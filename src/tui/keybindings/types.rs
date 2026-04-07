@@ -121,7 +121,10 @@ impl KeyCombo {
         // TUI apps both work, but users have Ctrl+Shift muscle memory. Tolerate
         // the extra SHIFT for any Ctrl+letter binding.
         #[cfg(not(target_os = "macos"))]
-        if self.modifiers == KeyModifiers::CONTROL && modifiers.contains(KeyModifiers::CONTROL) && modifiers.contains(KeyModifiers::SHIFT) {
+        if self.modifiers == KeyModifiers::CONTROL
+            && modifiers.contains(KeyModifiers::CONTROL)
+            && modifiers.contains(KeyModifiers::SHIFT)
+        {
             if let (KeyCode::Char(bind_c), KeyCode::Char(pressed_c)) = (self.code, code) {
                 if bind_c.is_ascii_alphabetic() && bind_c.eq_ignore_ascii_case(&pressed_c) {
                     return true;
@@ -498,9 +501,7 @@ impl Keybinding {
         let mut s = String::new();
         for alt in self.alternatives {
             // Skip Alt+Enter when WezTerm steals it
-            if alt_enter_stolen
-                && alt.modifiers == KeyModifiers::ALT
-                && alt.code == KeyCode::Enter
+            if alt_enter_stolen && alt.modifiers == KeyModifiers::ALT && alt.code == KeyCode::Enter
             {
                 continue;
             }
@@ -1103,7 +1104,11 @@ mod tests {
             assert!(!s.contains("⌥Enter"), "should not contain ⌥Enter: {}", s);
         } else {
             assert!(s.contains("Ctrl+j"), "expected Ctrl+j, got: {}", s);
-            assert!(!s.contains("Alt+Enter"), "should not contain Alt+Enter: {}", s);
+            assert!(
+                !s.contains("Alt+Enter"),
+                "should not contain Alt+Enter: {}",
+                s
+            );
         }
     }
 

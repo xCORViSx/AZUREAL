@@ -33,8 +33,8 @@ use crate::app::terminal::SessionTerminal;
 use crate::app::types::{
     BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab,
     IssueSession, IssuesPanel, PostMergeDialog, PresetPrompt, PresetPromptDialog,
-    PresetPromptPicker, ProjectsPanel, RcrSession, RunCommand, RunCommandDialog,
-    RunCommandPicker, ViewMode, ViewerMode,
+    PresetPromptPicker, ProjectsPanel, RcrSession, RunCommand, RunCommandDialog, RunCommandPicker,
+    ViewMode, ViewerMode,
 };
 use crate::backend::Backend;
 use crate::events::EventParser;

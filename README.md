@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <video src="AZUREALdemo.mp4" width="100%" autoplay loop muted playsinline></video>
+</p>
+
+<p align="center">
   <a href="https://xcorvisx.github.io/AZUREAL/"><strong>📖 Manual</strong></a>
 </p>
 

@@ -13,9 +13,9 @@ mod worktree_refresh;
 
 // Free functions re-exported so external code keeps the same import paths.
 // `impl App` blocks in submodules are inherent methods — no re-export needed.
-pub use worktree_refresh::compute_worktree_refresh;
 #[cfg(test)]
 use session_output::format_uuid_short;
+pub use worktree_refresh::compute_worktree_refresh;
 
 #[cfg(test)]
 mod tests {

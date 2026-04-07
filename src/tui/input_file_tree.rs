@@ -315,7 +315,15 @@ mod tests {
     fn ft_options_order_matches_draw() {
         assert_eq!(
             FT_OPTIONS,
-            &["worktrees", ".git", ".claude", ".azureal", ".DS_Store", "target", "node_modules"]
+            &[
+                "worktrees",
+                ".git",
+                ".claude",
+                ".azureal",
+                ".DS_Store",
+                "target",
+                "node_modules"
+            ]
         );
     }
 

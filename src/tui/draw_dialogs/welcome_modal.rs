@@ -22,11 +22,8 @@ pub fn draw_welcome_modal(f: &mut Frame) {
             .unwrap_or_else(|| "M".into());
     let wt_key = format!(
         "W{}",
-        keybindings::find_key_for_action(
-            &keybindings::WORKTREES,
-            keybindings::Action::AddWorktree
-        )
-        .unwrap_or_else(|| "a".into())
+        keybindings::find_key_for_action(&keybindings::WORKTREES, keybindings::Action::AddWorktree)
+            .unwrap_or_else(|| "a".into())
     );
     let proj_key =
         keybindings::find_key_for_action(&keybindings::GLOBAL, keybindings::Action::OpenProjects)

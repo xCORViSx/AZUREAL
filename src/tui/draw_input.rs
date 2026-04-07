@@ -68,7 +68,10 @@ pub fn split_title_hints(label: &str, hints: &str, max_w: usize) -> (String, Opt
 pub fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     // Border color reflects current input state:
     // magenta = STT recording/transcribing, yellow = prompt mode, red = command mode
-    let issue_input = app.issue_session.as_ref().is_some_and(|i| i.slot_id.is_empty())
+    let issue_input = app
+        .issue_session
+        .as_ref()
+        .is_some_and(|i| i.slot_id.is_empty())
         && app.prompt_mode;
     let (border_color, label, _full_title, hints) = if app.stt_recording {
         let (l, ft, h) = prompt_type_title(app.kbd_enhanced, app.alt_enter_stolen);

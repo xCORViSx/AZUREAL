@@ -96,10 +96,12 @@ pub(super) fn render_tool_call(
                 // Primary source: pre-scanned ToolResult content (survives JSONL cleanup).
                 // Fallback: input.offset from the tool call JSON (only available while JSONL exists).
                 let click_path = if tool_name == "Read" {
-                    let line = read_offsets
-                        .get(tool_use_id)
-                        .copied()
-                        .or_else(|| input.get("offset").and_then(|v| v.as_u64()).map(|v| v as usize));
+                    let line = read_offsets.get(tool_use_id).copied().or_else(|| {
+                        input
+                            .get("offset")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as usize)
+                    });
                     if let Some(l) = line {
                         if l > 1 {
                             format!("{}#L{}", param_raw, l)

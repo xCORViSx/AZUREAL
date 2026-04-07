@@ -190,7 +190,10 @@ impl App {
                         .find(|wt| wt.branch_name == *b)
                         .and_then(|wt| wt.worktree_path.clone())
                 })
-                .or_else(|| self.current_worktree().and_then(|wt| wt.worktree_path.clone()));
+                .or_else(|| {
+                    self.current_worktree()
+                        .and_then(|wt| wt.worktree_path.clone())
+                });
             if let Some(wt) = wt_path {
                 if let Some(p) = crate::config::session_file(&wt, uuid) {
                     crate::config::remove_session_file(&p);
@@ -626,7 +629,10 @@ mod tests {
 
         app.set_claude_session_id("55", session_id);
 
-        assert_eq!(app.agent_session_ids.get("55"), app.get_claude_session_id("main"));
+        assert_eq!(
+            app.agent_session_ids.get("55"),
+            app.get_claude_session_id("main")
+        );
         assert_eq!(app.session_file_path.as_ref(), Some(&session_path));
         assert_eq!(app.session_file_size, expected_size);
         assert_eq!(app.session_file_parse_offset, 0);

@@ -351,11 +351,23 @@ mod tests {
 
     #[test]
     fn test_branch_prefix_from_path() {
-        assert_eq!(branch_prefix_for_path(Path::new("/Users/me/AZUREAL")), "azureal");
-        assert_eq!(branch_prefix_for_path(Path::new("/home/user/My Project")), "my-project");
-        assert_eq!(branch_prefix_for_path(Path::new("/tmp/MyProject")), "myproject");
+        assert_eq!(
+            branch_prefix_for_path(Path::new("/Users/me/AZUREAL")),
+            "azureal"
+        );
+        assert_eq!(
+            branch_prefix_for_path(Path::new("/home/user/My Project")),
+            "my-project"
+        );
+        assert_eq!(
+            branch_prefix_for_path(Path::new("/tmp/MyProject")),
+            "myproject"
+        );
         assert_eq!(branch_prefix_for_path(Path::new("/")), "project"); // fallback
-        assert_eq!(branch_prefix_for_path(Path::new("/tmp/test-repo")), "test-repo");
+        assert_eq!(
+            branch_prefix_for_path(Path::new("/tmp/test-repo")),
+            "test-repo"
+        );
         assert_eq!(branch_prefix_for_path(Path::new("/tmp/123")), "123");
     }
 

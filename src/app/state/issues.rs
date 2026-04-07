@@ -88,7 +88,10 @@ impl App {
         issues_json: &str,
         agent: &AgentProcess,
     ) {
-        let wt_path = match self.current_worktree().and_then(|w| w.worktree_path.clone()) {
+        let wt_path = match self
+            .current_worktree()
+            .and_then(|w| w.worktree_path.clone())
+        {
             Some(p) => p,
             None => {
                 self.set_status("No worktree selected");
@@ -206,7 +209,9 @@ impl App {
                 Some(rx)
             }
             None => {
-                self.set_status("Could not extract issue from agent response — missing <azureal-issue> tags");
+                self.set_status(
+                    "Could not extract issue from agent response — missing <azureal-issue> tags",
+                );
                 None
             }
         }
@@ -414,9 +419,7 @@ User's issue description:
 }
 
 /// Extract a ParsedIssue from display_events by scanning for `<azureal-issue>` tags.
-pub fn extract_issue_from_events(
-    events: &[crate::events::DisplayEvent],
-) -> Option<ParsedIssue> {
+pub fn extract_issue_from_events(events: &[crate::events::DisplayEvent]) -> Option<ParsedIssue> {
     // Scan events in reverse to find the last assistant message with tags
     for event in events.iter().rev() {
         if let crate::events::DisplayEvent::AssistantText { text, .. } = event {
@@ -481,10 +484,7 @@ fn submit_github_issue(issue: &ParsedIssue) -> String {
         args.push(issue.labels.join(","));
     }
 
-    match std::process::Command::new("gh")
-        .args(&args)
-        .output()
-    {
+    match std::process::Command::new("gh").args(&args).output() {
         Ok(output) => {
             if output.status.success() {
                 let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -728,10 +728,7 @@ fn main() {
 
     #[test]
     fn test_extract_tag_different_tag() {
-        assert_eq!(
-            extract_tag("<title>hello</title>", "body"),
-            None
-        );
+        assert_eq!(extract_tag("<title>hello</title>", "body"), None);
     }
 
     // --- serialize_issues_for_prompt ---
@@ -892,9 +889,9 @@ fn main() {
 
     #[test]
     fn test_extract_issue_from_events_ignores_user_messages() {
-        let events = vec![
-            make_user("<azureal-issue><title>Fake</title><body>B</body><labels></labels></azureal-issue>"),
-        ];
+        let events = vec![make_user(
+            "<azureal-issue><title>Fake</title><body>B</body><labels></labels></azureal-issue>",
+        )];
         assert!(extract_issue_from_events(&events).is_none());
     }
 
@@ -947,7 +944,10 @@ fn main() {
 
     #[test]
     fn test_refilter_empty_filter() {
-        let mut panel = make_panel(vec![make_issue(1, "Bug", vec![]), make_issue(2, "Feature", vec![])]);
+        let mut panel = make_panel(vec![
+            make_issue(1, "Bug", vec![]),
+            make_issue(2, "Feature", vec![]),
+        ]);
         panel.refilter();
         assert_eq!(panel.filtered_indices, vec![0, 1]);
     }

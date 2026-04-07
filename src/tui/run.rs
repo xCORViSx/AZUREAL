@@ -32,8 +32,8 @@ use crate::app::App;
 use crate::config::Config;
 
 use overlays::{
-    draw_auto_rebase_dialog, draw_debug_dump_naming, draw_debug_dump_saving,
-    draw_git_status_box, draw_loading_indicator, draw_stt_download_dialog,
+    draw_auto_rebase_dialog, draw_debug_dump_naming, draw_debug_dump_saving, draw_git_status_box,
+    draw_loading_indicator, draw_stt_download_dialog,
 };
 use splash::draw_splash;
 use worktree_tabs::{draw_git_worktree_tabs, draw_worktree_tabs};
@@ -41,8 +41,7 @@ use worktree_tabs::{draw_git_worktree_tabs, draw_worktree_tabs};
 use super::event_loop;
 use super::{
     draw_dialogs, draw_git_actions, draw_health, draw_input, draw_issues, draw_output,
-    draw_projects,
-    draw_sidebar, draw_status, draw_terminal, draw_viewer,
+    draw_projects, draw_sidebar, draw_status, draw_terminal, draw_viewer,
 };
 
 /// Fallback detection for Kitty keyboard protocol support via TERM_PROGRAM.
@@ -99,9 +98,7 @@ pub async fn run() -> Result<()> {
     if kbd_enhanced {
         execute!(
             stdout,
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-            )
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         )?;
     }
     #[cfg(target_os = "windows")]
@@ -130,10 +127,8 @@ pub async fn run() -> Result<()> {
         let last_update_check = global_azufig.config.last_update_check;
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let result = crate::updater::check_for_update(
-                skip_version.as_deref(),
-                last_update_check,
-            );
+            let result =
+                crate::updater::check_for_update(skip_version.as_deref(), last_update_check);
             // Persist the check timestamp (unless rate-limited — already recent)
             if !matches!(result, crate::updater::UpdateCheckResult::RateLimited) {
                 let now = std::time::SystemTime::now()
@@ -152,10 +147,7 @@ pub async fn run() -> Result<()> {
     app.show_startup_screen = show_startup_screen;
     // WezTerm on macOS steals Alt+Enter for fullscreen toggle.
     // Detect it so hints show Ctrl+J instead of the non-functional Alt+Enter.
-    app.alt_enter_stolen = matches!(
-        std::env::var("TERM_PROGRAM").as_deref(),
-        Ok("WezTerm")
-    );
+    app.alt_enter_stolen = matches!(std::env::var("TERM_PROGRAM").as_deref(), Ok("WezTerm"));
     let config = Config::load().unwrap_or_default();
     app.claude_available = config.is_backend_installed(crate::backend::Backend::Claude);
     app.codex_available = config.is_backend_installed(crate::backend::Backend::Codex);
@@ -170,7 +162,7 @@ pub async fn run() -> Result<()> {
     app.load_run_commands();
     app.load_preset_prompts();
     app.load_session_output(); // also restores selected_model + backend (respects availability)
-    // Auto-detect Nerd Font support by probing a PUA glyph during splash
+                               // Auto-detect Nerd Font support by probing a PUA glyph during splash
     app.nerd_fonts = super::file_icons::detect_nerd_font();
     if !app.nerd_fonts {
         app.set_status("Nerd Font not detected — using emoji icons. Install a Nerd Font for richer file tree icons");
@@ -370,7 +362,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_output::draw_rcr_approval(f, app.pane_session);
     }
     // Issue approval dialog — rendered center screen
-    if app.issue_session.as_ref().is_some_and(|m| m.approval_pending) {
+    if app
+        .issue_session
+        .as_ref()
+        .is_some_and(|m| m.approval_pending)
+    {
         draw_issues::draw_issue_approval(f, app);
     }
     // Post-merge dialog — rendered center screen
@@ -389,7 +385,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         draw_dialogs::draw_delete_worktree_dialog(f, dialog, f.area());
     }
     if let Some(ref dialog) = app.rename_worktree_dialog {
-        let prefix = app.project.as_ref().map(|p| p.branch_prefix.as_str()).unwrap_or("project");
+        let prefix = app
+            .project
+            .as_ref()
+            .map(|p| p.branch_prefix.as_str())
+            .unwrap_or("project");
         draw_dialogs::draw_rename_worktree_dialog(f, dialog, f.area(), prefix);
     }
     if let Some(ref dialog) = app.branch_dialog {
@@ -427,7 +427,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Git panel overlays — commit editor and conflict resolution render over viewer pane
     if let Some(ref panel) = app.git_actions_panel {
         if let Some(ref overlay) = panel.commit_overlay {
-            draw_git_actions::draw_commit_editor(f, overlay, app.pane_viewer, app.kbd_enhanced, app.alt_enter_stolen);
+            draw_git_actions::draw_commit_editor(
+                f,
+                overlay,
+                app.pane_viewer,
+                app.kbd_enhanced,
+                app.alt_enter_stolen,
+            );
         }
         if let Some(ref ov) = panel.conflict_overlay {
             draw_git_actions::draw_conflict_inline(f, ov, app.pane_viewer);

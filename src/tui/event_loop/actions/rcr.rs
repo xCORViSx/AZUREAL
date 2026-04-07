@@ -73,11 +73,7 @@ fn send_rcr_completion(tx: mpsc::Sender<BackgroundOpProgress>, completion: RcrCo
     });
 }
 
-fn run_accept_rcr(
-    rcr: RcrSession,
-    main_branch: String,
-    tx: mpsc::Sender<BackgroundOpProgress>,
-) {
+fn run_accept_rcr(rcr: RcrSession, main_branch: String, tx: mpsc::Sender<BackgroundOpProgress>) {
     send_phase(&tx, "Restoring rebased worktree...");
     // Pop any stash left by exec_rebase_inner's pre-rebase stash on the worktree.
     let _ = std::process::Command::new("git")
@@ -321,7 +317,10 @@ mod tests {
         let mut app = App::new();
         app.rcr_session = Some(make_rcr("feat", false));
         accept_rcr(&mut app);
-        assert_eq!(app.loading_indicator.as_deref(), Some("Applying RCR resolution..."));
+        assert_eq!(
+            app.loading_indicator.as_deref(),
+            Some("Applying RCR resolution...")
+        );
         // Status should mention rebase complete
         let completion = recv_rcr_completion(&mut app);
         let status = completion.status_msg.as_str();

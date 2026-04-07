@@ -25,7 +25,9 @@ use super::render_tools::render_tool_result;
 use crate::events::DisplayEvent;
 use crate::syntax::SyntaxHighlighter;
 
-use bubbles::{assistant_identity, render_assistant_header_line, render_complete, render_user_message};
+use bubbles::{
+    assistant_identity, render_assistant_header_line, render_complete, render_user_message,
+};
 use dialogs::{render_ask_user_question, render_plan_approval};
 use plan::render_plan;
 use system::{render_command, render_hook, render_init};

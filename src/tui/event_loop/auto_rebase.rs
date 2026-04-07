@@ -10,8 +10,8 @@ use crate::backend::AgentProcess;
 /// Check all auto-rebase-enabled worktrees and rebase the first eligible one.
 /// Returns true if any state changed (needs redraw).
 pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
-    use crate::tui::input_git_actions::{exec_rebase_inner, RebaseOutcome};
     use crate::app::types::GitConflictOverlay;
+    use crate::tui::input_git_actions::{exec_rebase_inner, RebaseOutcome};
 
     // Skip if RCR active or editing a file
     if app.rcr_session.is_some() {
@@ -111,8 +111,7 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
     }
 
     if !rebased.is_empty() {
-        app.auto_rebase_success_until =
-            Some((rebased, Instant::now() + Duration::from_secs(3)));
+        app.auto_rebase_success_until = Some((rebased, Instant::now() + Duration::from_secs(3)));
         app.invalidate_sidebar();
     }
     changed

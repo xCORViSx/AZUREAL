@@ -327,8 +327,7 @@ pub fn draw_viewer(f: &mut Frame, app: &mut App, area: Rect) {
 
                     // Map raw file line → visual line for Read tool #L targets
                     if let Some(target) = app.viewer_scroll_to_line.take() {
-                        if let Some(vis) =
-                            app.viewer_line_numbers.iter().position(|&n| n == target)
+                        if let Some(vis) = app.viewer_line_numbers.iter().position(|&n| n == target)
                         {
                             app.viewer_scroll = vis.saturating_sub(3);
                         }

@@ -223,7 +223,11 @@ pub fn update_project_azufig(project_root: &Path, f: impl FnOnce(&mut ProjectAzu
 /// Reads from `<worktree_path>/.azureal/azufig.toml` `[git]` section.
 pub fn is_worktree_auto_rebase(wt_path: &Path) -> bool {
     let azufig = load_project_azufig(wt_path);
-    azufig.git.get("auto-rebase").map(|v| v == "true").unwrap_or(false)
+    azufig
+        .git
+        .get("auto-rebase")
+        .map(|v| v == "true")
+        .unwrap_or(false)
 }
 
 /// Enable or disable auto-rebase for a worktree.
@@ -231,7 +235,9 @@ pub fn is_worktree_auto_rebase(wt_path: &Path) -> bool {
 pub fn set_auto_rebase(wt_path: &Path, enabled: bool) {
     update_project_azufig(wt_path, |azufig| {
         if enabled {
-            azufig.git.insert("auto-rebase".to_string(), "true".to_string());
+            azufig
+                .git
+                .insert("auto-rebase".to_string(), "true".to_string());
         } else {
             azufig.git.remove("auto-rebase");
         }
@@ -239,7 +245,9 @@ pub fn set_auto_rebase(wt_path: &Path, enabled: bool) {
 }
 
 /// Scan all worktrees and return the set of branch names with auto-rebase enabled.
-pub fn load_auto_rebase_from_worktrees(worktrees: &[crate::models::Worktree]) -> std::collections::HashSet<String> {
+pub fn load_auto_rebase_from_worktrees(
+    worktrees: &[crate::models::Worktree],
+) -> std::collections::HashSet<String> {
     worktrees
         .iter()
         .filter(|wt| {

@@ -160,7 +160,11 @@ pub(crate) fn draw_commit_editor(
 
         // Hint bar at the bottom — keys adapt to terminal capabilities
         let commit_push_key = if cfg!(target_os = "macos") {
-            if kbd_enhanced { "⌘P" } else { "⌥p" }
+            if kbd_enhanced {
+                "⌘P"
+            } else {
+                "⌥p"
+            }
         } else {
             "Ctrl+P"
         };

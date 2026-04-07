@@ -87,8 +87,7 @@ pub(super) fn dispatch_escape(app: &mut App) {
             app.invalidate_file_tree();
             app.focus = crate::app::Focus::FileTree;
             app.loading_indicator = Some("Rescanning health scope…".into());
-            app.deferred_action =
-                Some(crate::app::DeferredAction::RescanHealthScope { dirs });
+            app.deferred_action = Some(crate::app::DeferredAction::RescanHealthScope { dirs });
         }
         Focus::FileTree if app.browsing_main => {
             // Exit main browse mode — restore previous worktree selection

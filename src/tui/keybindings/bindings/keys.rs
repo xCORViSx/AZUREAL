@@ -175,7 +175,6 @@ pub(super) const KEY_CANCEL: KeyCombo = KeyCombo::ctrl(KeyCode::Char('c'));
 #[cfg(not(target_os = "macos"))]
 pub(super) const KEY_CANCEL: KeyCombo = KeyCombo::new(KeyModifiers::ALT, KeyCode::Char('c'));
 
-
 #[cfg(target_os = "macos")]
 pub(super) const KEY_SELECT_ALL: KeyCombo = KeyCombo::cmd(KeyCode::Char('a'));
 #[cfg(not(target_os = "macos"))]

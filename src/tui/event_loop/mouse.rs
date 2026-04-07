@@ -588,17 +588,16 @@ pub fn handle_mouse_drag(app: &mut App, col: u16, row: u16) -> bool {
                 .min(app.input_area.x + app.input_area.width.saturating_sub(2));
             let vis_row = (er - app.input_area.y - 1) as usize;
             let inner_h = app.terminal_rows as usize;
-            let drag_row = (inner_h.saturating_sub(1).saturating_sub(vis_row))
-                + app.terminal_scroll;
+            let drag_row =
+                (inner_h.saturating_sub(1).saturating_sub(vis_row)) + app.terminal_scroll;
             let drag_col = (ec - app.input_area.x - 1) as usize;
             // Normalize: higher from_bottom = earlier content = start
-            let sel = if anchor_line > drag_row
-                || (anchor_line == drag_row && anchor_col <= drag_col)
-            {
-                (anchor_line, anchor_col, drag_row, drag_col)
-            } else {
-                (drag_row, drag_col, anchor_line, anchor_col)
-            };
+            let sel =
+                if anchor_line > drag_row || (anchor_line == drag_row && anchor_col <= drag_col) {
+                    (anchor_line, anchor_col, drag_row, drag_col)
+                } else {
+                    (drag_row, drag_col, anchor_line, anchor_col)
+                };
             let new = Some(sel);
             if app.terminal_selection != new {
                 app.terminal_selection = new;
@@ -753,9 +752,7 @@ pub fn copy_terminal_selection(app: &mut App) {
     while remaining_top >= el {
         // Set scrollback so from_bottom `remaining_top` appears at vis_row 0
         let need_scroll = remaining_top.saturating_sub(inner_h.saturating_sub(1));
-        app.terminal_parser
-            .screen_mut()
-            .set_scrollback(need_scroll);
+        app.terminal_parser.screen_mut().set_scrollback(need_scroll);
         let actual_scroll = app.terminal_parser.screen().scrollback();
 
         // How many rows of the selection are visible in this chunk?

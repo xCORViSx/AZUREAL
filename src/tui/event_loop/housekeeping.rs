@@ -52,9 +52,7 @@ pub fn poll_refreshes(
     }
 
     // Fallback: stat() polling when watcher is unavailable
-    if app.file_watcher.is_none()
-        && now.duration_since(*last_session_poll) >= min_poll_interval
-    {
+    if app.file_watcher.is_none() && now.duration_since(*last_session_poll) >= min_poll_interval {
         app.check_session_file();
         if app.poll_session_file() {
             redraw = true;

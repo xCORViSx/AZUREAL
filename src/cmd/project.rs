@@ -92,7 +92,8 @@ pub fn handle_project_show(project_arg: Option<String>, output_format: OutputFor
             }
 
             // Count azureal branches
-            if let Ok(branches) = Git::list_azureal_branches(&project.path, &project.branch_prefix) {
+            if let Ok(branches) = Git::list_azureal_branches(&project.path, &project.branch_prefix)
+            {
                 println!("\nAzureal branches: {}", branches.len());
             }
         }

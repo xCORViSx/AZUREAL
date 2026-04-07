@@ -205,7 +205,11 @@ impl App {
         // (e.g. .DS_Store committed before gitignore was added).
         Git::untrack_gitignored_files(&repo_root);
 
-        let prefix = self.project.as_ref().map(|p| p.branch_prefix.clone()).unwrap_or_else(|| "project".to_string());
+        let prefix = self
+            .project
+            .as_ref()
+            .map(|p| p.branch_prefix.clone())
+            .unwrap_or_else(|| "project".to_string());
 
         // Prune stale remote-tracking refs so branches deleted on other machines
         // don't appear as archived worktrees. Best-effort (no-op if offline).

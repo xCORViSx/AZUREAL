@@ -84,8 +84,8 @@ pub fn process_input_event(
                     // This is stable across scroll changes (doesn't drift).
                     let vis_row = mr.saturating_sub(app.input_area.y + 1) as usize;
                     let inner_h = app.terminal_rows as usize;
-                    let tr = (inner_h.saturating_sub(1).saturating_sub(vis_row))
-                        + app.terminal_scroll;
+                    let tr =
+                        (inner_h.saturating_sub(1).saturating_sub(vis_row)) + app.terminal_scroll;
                     let tc = mc.saturating_sub(app.input_area.x + 1) as usize;
                     app.mouse_drag_start = Some((tr, tc, 4));
                 } else if app.input_area.contains(mpos) && app.prompt_mode && !app.terminal_mode {
@@ -119,7 +119,14 @@ pub fn process_input_event(
             if !app.prompt_mode
                 && !app.terminal_mode
                 && !app.viewer_edit_mode
-                && matches!(app.focus, Focus::Input | Focus::Session | Focus::Viewer | Focus::FileTree | Focus::Worktrees)
+                && matches!(
+                    app.focus,
+                    Focus::Input
+                        | Focus::Session
+                        | Focus::Viewer
+                        | Focus::FileTree
+                        | Focus::Worktrees
+                )
             {
                 app.prompt_mode = true;
                 app.focus = Focus::Input;
@@ -130,10 +137,8 @@ pub fn process_input_event(
                 }
                 // Insert pasted text at cursor, preserving newlines for multi-line input
                 let chars: Vec<char> = app.input.chars().collect();
-                let before: String =
-                    chars[..app.input_cursor.min(chars.len())].iter().collect();
-                let after: String =
-                    chars[app.input_cursor.min(chars.len())..].iter().collect();
+                let before: String = chars[..app.input_cursor.min(chars.len())].iter().collect();
+                let after: String = chars[app.input_cursor.min(chars.len())..].iter().collect();
                 app.input = before + &text + &after;
                 app.input_cursor += text.chars().count();
                 *had_key_event = true;

@@ -64,12 +64,10 @@ pub fn handle_input_mode(
                 (KeyModifiers::NONE, KeyCode::End) => app.write_to_terminal(b"\x1b[F"),
                 (KeyModifiers::NONE, KeyCode::Delete) => app.write_to_terminal(b"\x1b[3~"),
                 // Word navigation: Esc+b (backward-word) / Esc+f (forward-word)
-                (KeyModifiers::ALT, KeyCode::Left)
-                | (KeyModifiers::CONTROL, KeyCode::Left) => {
+                (KeyModifiers::ALT, KeyCode::Left) | (KeyModifiers::CONTROL, KeyCode::Left) => {
                     app.write_to_terminal(b"\x1bb");
                 }
-                (KeyModifiers::ALT, KeyCode::Right)
-                | (KeyModifiers::CONTROL, KeyCode::Right) => {
+                (KeyModifiers::ALT, KeyCode::Right) | (KeyModifiers::CONTROL, KeyCode::Right) => {
                     app.write_to_terminal(b"\x1bf");
                 }
                 _ => {}
@@ -144,7 +142,7 @@ pub fn handle_input_mode(
                 // Character arrived after deferred Enter → paste detected
                 app.paste_deferred_enter = None;
                 app.input_char('\n'); // Convert deferred Enter to newline
-                // Fall through to process this char normally below
+                                      // Fall through to process this char normally below
             }
             KeyCode::Enter if key.modifiers == KeyModifiers::NONE => {
                 // Another bare Enter while deferred → previous was paste newline

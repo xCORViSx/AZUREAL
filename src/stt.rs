@@ -110,9 +110,7 @@ pub enum SttDownloadProgress {
     Finished(Result<(), String>),
 }
 
-fn download_model_inner(
-    tx: &std::sync::mpsc::Sender<SttDownloadProgress>,
-) -> Result<(), String> {
+fn download_model_inner(tx: &std::sync::mpsc::Sender<SttDownloadProgress>) -> Result<(), String> {
     let path = model_path().ok_or("Cannot find home directory")?;
     let dir = path.parent().ok_or("Invalid model path")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("Cannot create directory: {}", e))?;
@@ -176,9 +174,8 @@ pub fn probe_gpu() -> Result<()> {
     whisper_rs::install_logging_hooks();
     let mut params = whisper_rs::WhisperContextParameters::default();
     params.use_gpu(true);
-    let _ctx =
-        whisper_rs::WhisperContext::new_with_params(mp.to_str().unwrap_or(""), params)
-            .map_err(|e| anyhow::anyhow!("GPU probe failed: {}", e))?;
+    let _ctx = whisper_rs::WhisperContext::new_with_params(mp.to_str().unwrap_or(""), params)
+        .map_err(|e| anyhow::anyhow!("GPU probe failed: {}", e))?;
     Ok(())
 }
 

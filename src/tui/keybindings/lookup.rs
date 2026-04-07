@@ -35,8 +35,7 @@ impl KeyContext {
             terminal_mode: app.terminal_mode,
             help_open: app.show_help,
             stt_recording: app.stt_recording,
-            paste_guard: app.paste_guard_until.elapsed()
-                < std::time::Duration::from_millis(20),
+            paste_guard: app.paste_guard_until.elapsed() < std::time::Duration::from_millis(20),
         }
     }
 }

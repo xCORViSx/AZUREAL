@@ -372,7 +372,6 @@ pub async fn run_app(
             needs_redraw = true;
         }
 
-
         // Poll parsed results from the background AgentProcessor. Each result
         // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
         // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
@@ -402,7 +401,6 @@ pub async fn run_app(
                 }
             }
         }
-
 
         // Poll git background operations (commit gen, squash merge, ops, rebase)
         if git_polling::poll_commit_generation(app) {
@@ -477,9 +475,7 @@ pub async fn run_app(
                     crate::updater::UpdateProgress::Complete => {
                         app.update_available = None;
                         app.update_progress_message = None;
-                        app.set_status(
-                            "Update installed — restart azureal to use the new version",
-                        );
+                        app.set_status("Update installed — restart azureal to use the new version");
                         needs_redraw = true;
                         put_back = false;
                     }

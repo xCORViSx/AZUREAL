@@ -164,9 +164,7 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
                 Line::from(vec![
                     Span::styled(
                         " ⌃a ",
-                        Style::default()
-                            .fg(AZURE)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(AZURE).add_modifier(Modifier::BOLD),
                     ),
                     Span::styled("Submit/Discard ", Style::default().fg(Color::DarkGray)),
                 ])

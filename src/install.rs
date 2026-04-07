@@ -154,8 +154,7 @@ fn do_install(exe: &Path) -> bool {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ =
-                std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
+            let _ = std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
         }
 
         let _path_updated = ensure_in_path(&install_dir);
@@ -188,7 +187,10 @@ fn do_install(exe: &Path) -> bool {
                 ".bashrc"
             };
             println!();
-            println!("  \x1b[33mTo activate PATH, run:\x1b[0m  source ~/{}", profile_name);
+            println!(
+                "  \x1b[33mTo activate PATH, run:\x1b[0m  source ~/{}",
+                profile_name
+            );
         }
         println!("  \x1b[33mThen run:\x1b[0m  azureal");
         println!();
@@ -201,9 +203,7 @@ fn do_install(exe: &Path) -> bool {
 /// macOS install: copy binary into .app bundle, write shell script to PATH.
 #[cfg(target_os = "macos")]
 fn install_macos(exe: &Path) -> bool {
-    let config_dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".azureal");
+    let config_dir = dirs::home_dir().unwrap_or_default().join(".azureal");
     let bundle_dir = config_dir.join("AZUREAL.app");
     let contents = bundle_dir.join("Contents");
     let bundle_exec = contents.join("MacOS/azureal");
@@ -260,10 +260,7 @@ fn install_macos(exe: &Path) -> bool {
     ).args(["-f", &bundle_dir.to_string_lossy()]).output();
 
     // Write shell script trampoline to PATH
-    let trampoline = format!(
-        "#!/bin/sh\nexec \"{}\" \"$@\"\n",
-        bundle_exec.display()
-    );
+    let trampoline = format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", bundle_exec.display());
     let trampoline_path = Path::new("/usr/local/bin/azureal");
 
     // Try direct write, fall back to sudo

@@ -994,8 +994,7 @@ mod tests {
             archived: false,
         });
         app.selected_worktree = Some(0);
-        app.active_slot
-            .insert("main".into(), "55".into());
+        app.active_slot.insert("main".into(), "55".into());
         app.pid_session_target
             .insert("55".into(), (sid, wt_path.clone(), 0, 0));
         app.agent_session_ids
@@ -1077,8 +1076,7 @@ mod tests {
             archived: false,
         });
         app.selected_worktree = Some(0);
-        app.active_slot
-            .insert("main".into(), "55".into());
+        app.active_slot.insert("main".into(), "55".into());
         app.pid_session_target
             .insert("55".into(), (sid, wt_path.clone(), 0, 0));
         app.display_events.push(DisplayEvent::AssistantText {

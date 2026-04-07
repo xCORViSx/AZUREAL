@@ -160,9 +160,7 @@ pub fn poll_background_ops(app: &mut App) -> bool {
                 app.save_live_display_events();
                 app.save_current_terminal();
                 let _ = app.refresh_worktrees();
-                if let Some(idx) =
-                    app.worktrees.iter().position(|s| s.branch_name == branch)
-                {
+                if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
                     app.selected_worktree = Some(idx);
                     app.load_session_output();
                 }
@@ -175,9 +173,7 @@ pub fn poll_background_ops(app: &mut App) -> bool {
                     app.browsing_main = false;
                 }
                 let _ = app.refresh_worktrees();
-                if let Some(idx) =
-                    app.worktrees.iter().position(|s| s.branch_name == branch)
-                {
+                if let Some(idx) = app.worktrees.iter().position(|s| s.branch_name == branch) {
                     app.selected_worktree = Some(idx);
                     app.load_session_output();
                     // Enter prompt mode so the user can immediately start working
@@ -185,7 +181,9 @@ pub fn poll_background_ops(app: &mut App) -> bool {
                     app.focus = crate::app::types::Focus::Input;
                 }
                 // Enable auto-rebase by default for new worktrees
-                if let Some(wt_path) = app.worktrees.iter()
+                if let Some(wt_path) = app
+                    .worktrees
+                    .iter()
                     .find(|wt| wt.branch_name == branch)
                     .and_then(|wt| wt.worktree_path.as_ref())
                 {
@@ -287,8 +285,7 @@ pub fn poll_rebase_ops(app: &mut App) -> bool {
                 if let Some(ref mut p) = app.git_actions_panel {
                     crate::tui::input_git_actions::refresh_changed_files(p);
                     crate::tui::input_git_actions::refresh_commit_log(p);
-                    p.result_message =
-                        Some(("Already up to date with main".to_string(), false));
+                    p.result_message = Some(("Already up to date with main".to_string(), false));
                 }
             }
             BackgroundRebaseOutcome::Conflict {

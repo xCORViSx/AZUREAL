@@ -109,7 +109,13 @@ impl App {
             }
         } else {
             // Non-viewed slot — parse JSONL file from disk
-            Self::parse_jsonl_for_store(&jsonl_path, turn_backend, session_file_offset, &wt_path, session_id)
+            Self::parse_jsonl_for_store(
+                &jsonl_path,
+                turn_backend,
+                session_file_offset,
+                &wt_path,
+                session_id,
+            )
         };
 
         if events.is_empty() {
@@ -311,21 +317,18 @@ impl App {
             }
             Backend::Codex => {
                 // Load prior-turn events from the store for Codex prefix context
-                let prefix_events =
-                    crate::app::session_store::SessionStore::open(wt_path)
-                        .ok()
-                        .and_then(|s| s.load_events(session_id).ok())
-                        .unwrap_or_default();
-                let (prefix_pending, prefix_failed) =
-                    Self::tool_status_from_events(&prefix_events);
-                let parsed =
-                    crate::app::codex_session_parser::parse_codex_session_file_incremental(
-                        path,
-                        session_file_offset,
-                        &prefix_events,
-                        &prefix_pending,
-                        &prefix_failed,
-                    );
+                let prefix_events = crate::app::session_store::SessionStore::open(wt_path)
+                    .ok()
+                    .and_then(|s| s.load_events(session_id).ok())
+                    .unwrap_or_default();
+                let (prefix_pending, prefix_failed) = Self::tool_status_from_events(&prefix_events);
+                let parsed = crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                    path,
+                    session_file_offset,
+                    &prefix_events,
+                    &prefix_pending,
+                    &prefix_failed,
+                );
                 let offset = prefix_events.len();
                 if parsed.events.len() > offset {
                     parsed.events[offset..].to_vec()

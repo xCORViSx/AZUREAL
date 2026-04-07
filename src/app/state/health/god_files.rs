@@ -388,8 +388,7 @@ impl App {
                             .insert(slot.clone(), (sid, wt_path.clone(), 0, 0));
                         last_session_id = Some(sid);
                     }
-                    self.pending_session_names
-                        .push((slot, session_name));
+                    self.pending_session_names.push((slot, session_name));
                     self.register_claude(branch.clone(), pid, rx, selected_model.as_deref());
                     spawned += 1;
                 }
