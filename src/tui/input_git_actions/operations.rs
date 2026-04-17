@@ -347,11 +347,16 @@ pub(crate) fn exec_rebase_inner(
     auto_resolve_files: &[String],
 ) -> RebaseOutcome {
     // Unborn HEAD (no commits on this branch yet): `git rebase` has nothing
-    // to replay. `reset --soft <main>` moves the branch ref to main's tip
-    // while preserving any staged/unstaged work in the index and working tree.
+    // to replay. `reset --mixed <main>` moves HEAD to main's tip AND resets
+    // the index to match, while leaving the working tree untouched. Critical:
+    // `--soft` (used previously) leaves the index at whatever was previously
+    // staged — if the user did `git add .` while unborn, every file at
+    // old-main content stays staged, then appears as a "reversion" of main's
+    // newer state. `--mixed` clears that out so only real working-tree diffs
+    // against new main remain. Stash isn't usable here — it requires HEAD.
     if is_unborn_head(worktree_path) {
         match std::process::Command::new("git")
-            .args(["reset", "--soft", main_branch])
+            .args(["reset", "--mixed", main_branch])
             .current_dir(worktree_path)
             .output()
         {

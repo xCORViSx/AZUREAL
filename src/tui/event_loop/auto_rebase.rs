@@ -59,7 +59,8 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
         let display = crate::models::strip_branch_prefix(&branch).to_string();
 
         // Skip worktrees with uncommitted changes — git rebase would fail.
-        // Exception: unborn HEAD uses `reset --soft` which preserves work.
+        // Exception: unborn HEAD uses `reset --mixed` which preserves the
+        // working tree (only HEAD + index move).
         let dirty = std::process::Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(&wt_path)
