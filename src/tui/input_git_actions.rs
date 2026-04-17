@@ -21,7 +21,7 @@ mod operations;
 
 // Re-export pub(crate) items for external consumers
 pub(crate) use operations::{
-    exec_rebase_inner, refresh_changed_files, refresh_commit_log, RebaseOutcome,
+    exec_rebase_inner, is_unborn_head, refresh_changed_files, refresh_commit_log, RebaseOutcome,
 };
 pub(crate) mod diff_viewer_api {
     pub(crate) use super::diff_viewer::{load_commit_diff_inline, load_file_diff_inline};

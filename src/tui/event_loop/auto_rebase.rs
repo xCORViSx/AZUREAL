@@ -11,7 +11,7 @@ use crate::backend::AgentProcess;
 /// Returns true if any state changed (needs redraw).
 pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool {
     use crate::app::types::GitConflictOverlay;
-    use crate::tui::input_git_actions::{exec_rebase_inner, RebaseOutcome};
+    use crate::tui::input_git_actions::{exec_rebase_inner, is_unborn_head, RebaseOutcome};
 
     // Skip if RCR active or editing a file
     if app.rcr_session.is_some() {
@@ -58,7 +58,8 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
 
         let display = crate::models::strip_branch_prefix(&branch).to_string();
 
-        // Skip worktrees with uncommitted changes — git rebase would fail
+        // Skip worktrees with uncommitted changes — git rebase would fail.
+        // Exception: unborn HEAD uses `reset --soft` which preserves work.
         let dirty = std::process::Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(&wt_path)
@@ -66,7 +67,7 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
             .ok()
             .map(|o| !o.stdout.is_empty())
             .unwrap_or(false);
-        if dirty {
+        if dirty && !is_unborn_head(&wt_path) {
             continue;
         }
 

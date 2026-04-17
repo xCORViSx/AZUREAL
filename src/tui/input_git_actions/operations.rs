@@ -324,6 +324,18 @@ fn try_auto_resolve_conflicts(
     }
 }
 
+/// True when the worktree's HEAD has no commits yet (newly created branch
+/// with no history). `git rebase` cannot run against an unborn HEAD because
+/// there are no commits to replay.
+pub(crate) fn is_unborn_head(worktree_path: &std::path::Path) -> bool {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--verify", "HEAD"])
+        .current_dir(worktree_path)
+        .output()
+        .map(|o| !o.status.success())
+        .unwrap_or(false)
+}
+
 /// Inner rebase logic — used by both manual rebase (r), pre-merge rebase,
 /// and auto-rebase. No git fetch — caller ensures main is current.
 ///
@@ -334,6 +346,25 @@ pub(crate) fn exec_rebase_inner(
     main_branch: &str,
     auto_resolve_files: &[String],
 ) -> RebaseOutcome {
+    // Unborn HEAD (no commits on this branch yet): `git rebase` has nothing
+    // to replay. `reset --soft <main>` moves the branch ref to main's tip
+    // while preserving any staged/unstaged work in the index and working tree.
+    if is_unborn_head(worktree_path) {
+        match std::process::Command::new("git")
+            .args(["reset", "--soft", main_branch])
+            .current_dir(worktree_path)
+            .output()
+        {
+            Ok(o) if o.status.success() => return RebaseOutcome::Rebased,
+            Ok(o) => {
+                return RebaseOutcome::Failed(
+                    String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                )
+            }
+            Err(e) => return RebaseOutcome::Failed(e.to_string()),
+        }
+    }
+
     let base = std::process::Command::new("git")
         .args(["merge-base", "HEAD", main_branch])
         .current_dir(worktree_path)
@@ -342,10 +373,64 @@ pub(crate) fn exec_rebase_inner(
         .args(["rev-parse", main_branch])
         .current_dir(worktree_path)
         .output();
+    let head = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(worktree_path)
+        .output();
     if let (Ok(b), Ok(t)) = (&base, &tip) {
         if b.stdout == t.stdout {
             return RebaseOutcome::UpToDate;
         }
+    }
+
+    // HEAD is a strict ancestor of main (branch has only commits that main
+    // already contains) — fast-forward instead of rebasing. Stash dirty tree
+    // so merge --ff-only doesn't fail on untracked/unstaged files, pop after.
+    let is_ancestor = std::process::Command::new("git")
+        .args(["merge-base", "--is-ancestor", "HEAD", main_branch])
+        .current_dir(worktree_path)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if is_ancestor {
+        if let (Ok(h), Ok(t)) = (&head, &tip) {
+            if h.stdout == t.stdout {
+                return RebaseOutcome::UpToDate;
+            }
+        }
+        let stashed = std::process::Command::new("git")
+            .args(["stash", "--include-untracked"])
+            .current_dir(worktree_path)
+            .output()
+            .ok()
+            .map(|o| {
+                let msg = String::from_utf8_lossy(&o.stdout);
+                o.status.success() && !msg.contains("No local changes")
+            })
+            .unwrap_or(false);
+        let ff = std::process::Command::new("git")
+            .args(["merge", "--ff-only", main_branch])
+            .current_dir(worktree_path)
+            .output();
+        if stashed {
+            let _ = std::process::Command::new("git")
+                .args(["stash", "pop"])
+                .current_dir(worktree_path)
+                .output();
+        }
+        return match ff {
+            Ok(o) if o.status.success() => RebaseOutcome::Rebased,
+            Ok(o) => RebaseOutcome::Failed(
+                format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                )
+                .trim()
+                .to_string(),
+            ),
+            Err(e) => RebaseOutcome::Failed(e.to_string()),
+        };
     }
 
     // Stash any dirty working tree (.DS_Store, swap files, etc.) so rebase
@@ -463,7 +548,7 @@ pub(super) fn exec_rebase(app: &mut App) {
         None => return,
     };
     if let Some(ref p) = app.git_actions_panel {
-        if !p.changed_files.is_empty() {
+        if !p.changed_files.is_empty() && !is_unborn_head(&p.worktree_path) {
             if let Some(ref mut p) = app.git_actions_panel {
                 p.result_message =
                     Some(("Commit or stash changes first before rebasing".into(), true));

@@ -2,6 +2,11 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.86] — 2026-04-16
+
+### Fixed
+- **Rebase fails on unborn or strictly-behind worktrees** — Manual rebase (`r` in Git panel) and auto-rebase previously failed when a worktree had no commits yet (e.g. changes were made to main in another worktree, leaving this worktree's branch unborn) because `git rebase` has nothing to replay against an unborn HEAD. Strictly-behind branches (HEAD is an ancestor of main) also failed or ran an unnecessary rebase when a plain fast-forward would suffice. `exec_rebase_inner()` now detects both cases: unborn HEAD uses `git reset --soft <main>` to move the branch ref to main's tip while preserving staged/unstaged work (no stash needed — `--soft` keeps the index and working tree); strictly-behind branches use `git merge --ff-only <main>` with a stash/pop guard to handle dirty working trees. The manual-rebase and auto-rebase dirty-worktree skip guards bypass the block when the branch is unborn (the `reset --soft` path preserves work, so dirty state is safe). Added `is_unborn_head()` helper. Modified: `src/tui/input_git_actions/operations.rs`, `src/tui/event_loop/auto_rebase.rs`, `src/tui/input_git_actions.rs`.
+
 ## [1.0.85] — 2026-04-06
 
 ### Added
