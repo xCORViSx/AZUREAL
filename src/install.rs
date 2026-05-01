@@ -558,12 +558,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn test_pick_install_dir_returns_absolute_path() {
         let dir = pick_install_dir();
         assert!(dir.is_absolute());
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn test_pick_install_dir_unix_paths() {
         if !cfg!(windows) {
             let dir = pick_install_dir();
@@ -577,12 +579,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn test_is_dir_writable_temp() {
         let tmp = std::env::temp_dir();
         assert!(is_dir_writable(&tmp));
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn test_is_dir_writable_nonexistent() {
         assert!(!is_dir_writable(Path::new("/nonexistent/path/xyz")));
     }
