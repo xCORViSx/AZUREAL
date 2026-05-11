@@ -362,9 +362,7 @@ pub(crate) fn exec_rebase_inner(
         {
             Ok(o) if o.status.success() => return RebaseOutcome::Rebased,
             Ok(o) => {
-                return RebaseOutcome::Failed(
-                    String::from_utf8_lossy(&o.stderr).trim().to_string(),
-                )
+                return RebaseOutcome::Failed(String::from_utf8_lossy(&o.stderr).trim().to_string())
             }
             Err(e) => return RebaseOutcome::Failed(e.to_string()),
         }

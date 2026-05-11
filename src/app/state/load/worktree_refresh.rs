@@ -219,10 +219,6 @@ impl App {
         // inside load_worktrees() so every refresh (not just startup) benefits.
         self.load_worktrees()?;
 
-        // Load auto-rebase enabled branches from each worktree's azufig
-        // (must be after load_worktrees() so self.worktrees is populated)
-        self.auto_rebase_enabled = crate::azufig::load_auto_rebase_from_worktrees(&self.worktrees);
-
         Ok(())
     }
 
@@ -260,6 +256,9 @@ impl App {
             .map(|w| w.branch_name.clone());
 
         self.worktrees = result.worktrees;
+        // Rehydrate persisted per-worktree auto-rebase state on every refresh path
+        // so startup, project switching, and background refreshes stay consistent.
+        self.auto_rebase_enabled = crate::azufig::load_auto_rebase_from_worktrees(&self.worktrees);
 
         self.selected_worktree = if self.worktrees.is_empty() {
             None
@@ -318,6 +317,7 @@ impl App {
 mod tests {
     use super::super::super::App;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     // ── load_file_tree state reset ──
 
@@ -346,6 +346,44 @@ mod tests {
     fn refresh_worktrees_no_project_ok() {
         let mut app = App::new();
         assert!(app.refresh_worktrees().is_ok());
+    }
+
+    #[test]
+    fn apply_worktree_result_reloads_auto_rebase_from_worktree_config() {
+        let tmp = TempDir::new().unwrap();
+        let enabled_path = tmp.path().join("enabled");
+        let disabled_path = tmp.path().join("disabled");
+        std::fs::create_dir_all(&enabled_path).unwrap();
+        std::fs::create_dir_all(&disabled_path).unwrap();
+
+        crate::azufig::set_auto_rebase(&enabled_path, true);
+
+        let mut app = App::new();
+        app.auto_rebase_enabled
+            .insert("azureal/stale-branch".to_string());
+
+        app.apply_worktree_result(crate::app::types::WorktreeRefreshResult {
+            main_worktree: None,
+            worktrees: vec![
+                crate::models::Worktree {
+                    branch_name: "azureal/enabled".to_string(),
+                    worktree_path: Some(enabled_path),
+                    claude_session_id: None,
+                    archived: false,
+                },
+                crate::models::Worktree {
+                    branch_name: "azureal/disabled".to_string(),
+                    worktree_path: Some(disabled_path),
+                    claude_session_id: None,
+                    archived: false,
+                },
+            ],
+        });
+
+        assert_eq!(
+            app.auto_rebase_enabled,
+            std::collections::HashSet::from(["azureal/enabled".to_string()])
+        );
     }
 
     // ── load_file_tree: with worktree but nonexistent path ──
