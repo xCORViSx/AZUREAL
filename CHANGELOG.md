@@ -2,6 +2,11 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [1.0.87] — 2026-05-11
+
+### Changed
+- **Codex model switcher now tracks OpenAI frontier models** — Replaced the stale Codex-specific model list in the `Ctrl+M` cycle with the current OpenAI docs "Frontier models" catalog: `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5`, and `gpt-4.1`. Added a shared `model_color()` helper so session chrome colors are derived in one place instead of duplicated exact-match tables. Modified: `src/app/state/app/model.rs`, `src/app/state.rs`, `src/tui/draw_output/session_chrome.rs`, `README.md`, `CLAUDE.md`.
+
 ## [1.0.86] — 2026-04-16
 
 ### Fixed

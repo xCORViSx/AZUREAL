@@ -38,5 +38,5 @@ use crate::events::DisplayEvent;
 pub use crate::app::types::FileTreeEntry;
 
 // Re-export App, todo types, DeferredAction, and model helpers as public
-pub use app::model::backend_for_model;
+pub use app::model::{backend_for_model, model_color};
 pub use app::{App, CompactionJob, DeferredAction, TodoItem, TodoStatus};

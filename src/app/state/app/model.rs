@@ -2,20 +2,26 @@
 
 use super::App;
 use crate::backend::Backend;
+use ratatui::style::Color;
 
-/// Unified model pool — Claude models first, then Codex models.
+/// Unified model pool — Claude models first, then OpenAI frontier models.
 /// Ctrl+M cycles through the entire pool regardless of backend.
-/// opus → sonnet → haiku → gpt-5.4 → gpt-5.3-codex → gpt-5.2-codex → gpt-5.2 → gpt-5.1-codex-max → gpt-5.1-codex-mini → wrap
+/// Sourced from the OpenAI docs "Frontier models" section on 2026-05-11.
+/// opus → sonnet → haiku → gpt-5.5 → gpt-5.5-pro → gpt-5.4 → gpt-5.4-pro → gpt-5.4-mini → gpt-5.4-nano → gpt-5-mini → gpt-5-nano → gpt-5 → gpt-4.1 → wrap
 const ALL_MODELS: &[&str] = &[
     "opus",
     "sonnet",
     "haiku",
+    "gpt-5.5",
+    "gpt-5.5-pro",
     "gpt-5.4",
-    "gpt-5.3-codex",
-    "gpt-5.2-codex",
-    "gpt-5.2",
-    "gpt-5.1-codex-max",
-    "gpt-5.1-codex-mini",
+    "gpt-5.4-pro",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5",
+    "gpt-4.1",
 ];
 
 /// Default model (first in the unified pool)
@@ -55,6 +61,21 @@ pub fn backend_for_model(model: &str) -> Backend {
         Backend::Codex
     } else {
         Backend::Claude
+    }
+}
+
+/// Accent color for the currently selected model.
+pub fn model_color(model: &str) -> Color {
+    match model {
+        "opus" => Color::Magenta,
+        "sonnet" => Color::Cyan,
+        "haiku" => Color::Yellow,
+        m if m.starts_with("gpt-5.5") => Color::Green,
+        m if m.starts_with("gpt-5.4") => Color::LightGreen,
+        "gpt-5" | "gpt-5-mini" | "gpt-5-nano" => Color::LightBlue,
+        "gpt-4.1" => Color::Blue,
+        m if m.starts_with("gpt-") => Color::LightBlue,
+        _ => Color::DarkGray,
     }
 }
 
@@ -267,12 +288,16 @@ mod tests {
 
     #[test]
     fn test_backend_for_codex_models() {
+        assert_eq!(backend_for_model("gpt-5.5"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.5-pro"), Backend::Codex);
         assert_eq!(backend_for_model("gpt-5.4"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.3-codex"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.2-codex"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.2"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.1-codex-max"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.1-codex-mini"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.4-pro"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.4-mini"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5.4-nano"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5-mini"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5-nano"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-5"), Backend::Codex);
+        assert_eq!(backend_for_model("gpt-4.1"), Backend::Codex);
         assert_eq!(backend_for_model("codex"), Backend::Codex);
     }
 
@@ -286,11 +311,9 @@ mod tests {
     #[test]
     fn test_alias_exact_match() {
         assert_eq!(model_alias_from_init("opus"), Some("opus"));
+        assert_eq!(model_alias_from_init("gpt-5.5"), Some("gpt-5.5"));
         assert_eq!(model_alias_from_init("gpt-5.4"), Some("gpt-5.4"));
-        assert_eq!(
-            model_alias_from_init("gpt-5.1-codex-mini"),
-            Some("gpt-5.1-codex-mini")
-        );
+        assert_eq!(model_alias_from_init("gpt-4.1"), Some("gpt-4.1"));
     }
 
     #[test]
@@ -463,18 +486,18 @@ mod tests {
     }
 
     #[test]
-    fn test_cycle_haiku_to_gpt54() {
+    fn test_cycle_haiku_to_gpt55() {
         let mut app = app_default();
         app.selected_model = Some("haiku".to_string());
         app.cycle_model();
-        assert_eq!(app.display_model_name(), "gpt-5.4");
+        assert_eq!(app.display_model_name(), "gpt-5.5");
         assert_eq!(app.backend, Backend::Codex);
     }
 
     #[test]
     fn test_cycle_last_codex_wraps_to_opus() {
         let mut app = app_default();
-        app.selected_model = Some("gpt-5.1-codex-mini".to_string());
+        app.selected_model = Some("gpt-4.1".to_string());
         app.backend = Backend::Codex;
         app.cycle_model();
         assert_eq!(app.display_model_name(), "opus");
@@ -482,17 +505,21 @@ mod tests {
     }
 
     #[test]
-    fn test_full_cycle_all_nine() {
+    fn test_full_cycle_all_thirteen() {
         let mut app = app_default();
         let expected = [
             ("sonnet", Backend::Claude),
             ("haiku", Backend::Claude),
+            ("gpt-5.5", Backend::Codex),
+            ("gpt-5.5-pro", Backend::Codex),
             ("gpt-5.4", Backend::Codex),
-            ("gpt-5.3-codex", Backend::Codex),
-            ("gpt-5.2-codex", Backend::Codex),
-            ("gpt-5.2", Backend::Codex),
-            ("gpt-5.1-codex-max", Backend::Codex),
-            ("gpt-5.1-codex-mini", Backend::Codex),
+            ("gpt-5.4-pro", Backend::Codex),
+            ("gpt-5.4-mini", Backend::Codex),
+            ("gpt-5.4-nano", Backend::Codex),
+            ("gpt-5-mini", Backend::Codex),
+            ("gpt-5-nano", Backend::Codex),
+            ("gpt-5", Backend::Codex),
+            ("gpt-4.1", Backend::Codex),
             ("opus", Backend::Claude),
         ];
         for &(name, backend) in &expected {
@@ -571,7 +598,7 @@ mod tests {
         for m in &models {
             assert!(m.starts_with("gpt-"));
         }
-        assert_eq!(models.len(), 6);
+        assert_eq!(models.len(), 10);
     }
 
     #[test]
@@ -600,10 +627,10 @@ mod tests {
     fn test_cycle_skips_claude_when_unavailable() {
         let mut app = app_default();
         app.claude_available = false;
-        app.selected_model = Some("gpt-5.4".to_string());
+        app.selected_model = Some("gpt-5.5".to_string());
         app.backend = Backend::Codex;
         // Should cycle only through Codex models and never land on Claude
-        for _ in 0..6 {
+        for _ in 0..10 {
             app.cycle_model();
             assert!(app.display_model_name().starts_with("gpt-"));
             assert_eq!(app.backend, Backend::Codex);
@@ -642,8 +669,8 @@ mod tests {
     // ── ALL_MODELS constant ──
 
     #[test]
-    fn test_all_models_has_nine() {
-        assert_eq!(ALL_MODELS.len(), 9);
+    fn test_all_models_has_thirteen() {
+        assert_eq!(ALL_MODELS.len(), 13);
     }
 
     #[test]
@@ -660,6 +687,24 @@ mod tests {
         for &m in &ALL_MODELS[3..] {
             assert_eq!(backend_for_model(m), Backend::Codex);
         }
+    }
+
+    #[test]
+    fn test_model_color_claude() {
+        assert_eq!(model_color("sonnet"), Color::Cyan);
+    }
+
+    #[test]
+    fn test_model_color_frontier_family() {
+        assert_eq!(model_color("gpt-5.5"), Color::Green);
+        assert_eq!(model_color("gpt-5.4-mini"), Color::LightGreen);
+        assert_eq!(model_color("gpt-5"), Color::LightBlue);
+        assert_eq!(model_color("gpt-4.1"), Color::Blue);
+    }
+
+    #[test]
+    fn test_model_color_unknown() {
+        assert_eq!(model_color("x"), Color::DarkGray);
     }
 
     // ── update_token_badge (sourced from session store chars / 400k threshold) ──

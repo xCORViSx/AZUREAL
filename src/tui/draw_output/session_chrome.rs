@@ -176,20 +176,7 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
     // Model indicator on bottom border (right-aligned)
     {
         let model_name = app.display_model_name();
-        let model_color = match model_name {
-            // Claude models
-            "opus" => Color::Magenta,
-            "sonnet" => Color::Cyan,
-            "haiku" => Color::Yellow,
-            // Codex models
-            "gpt-5.4" => Color::Green,
-            "gpt-5.3-codex" => Color::LightGreen,
-            "gpt-5.2-codex" => Color::Rgb(0, 200, 200),
-            "gpt-5.2" => Color::LightCyan,
-            "gpt-5.1-codex-max" => Color::Blue,
-            "gpt-5.1-codex-mini" => Color::LightBlue,
-            _ => Color::DarkGray,
-        };
+        let model_color = crate::app::state::model_color(model_name);
         let model_key = crate::tui::keybindings::find_key_adaptive(
             &crate::tui::keybindings::GLOBAL,
             crate::tui::keybindings::Action::CycleModel,
