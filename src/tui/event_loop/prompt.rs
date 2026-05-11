@@ -4,6 +4,7 @@
 //! agents, and auto-continuing after mid-turn compaction.
 
 use crate::app::state::backend_for_model;
+use crate::app::state::default_model;
 use crate::app::App;
 use crate::backend::AgentProcess;
 use crate::backend::Backend;
@@ -60,7 +61,7 @@ fn spawn_with_retry_and_fallback(
 ) -> Result<SpawnOutcome, String> {
     let primary_backend = selected_model
         .map(backend_for_model)
-        .unwrap_or(Backend::Claude);
+        .unwrap_or_else(|| backend_for_model(default_model()));
     let primary_label = selected_model
         .map(str::to_string)
         .unwrap_or_else(|| primary_backend.to_string());

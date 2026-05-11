@@ -648,7 +648,7 @@ pub struct App {
     pub session_search_results: Vec<(usize, String, String)>,
 
     // ── Model selection (⌃m cycle) ──
-    /// User-selected model override (None = use Claude CLI default)
+    /// User-selected model. Always initialized; None falls back to `default_model()`.
     pub selected_model: Option<String>,
     /// Whether the Claude CLI was detected in PATH at startup
     pub claude_available: bool,
@@ -659,7 +659,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
-            backend: Backend::Claude,
+            backend: model::backend_for_model(model::default_model()),
             project: None,
             worktrees: Vec::new(),
             selected_worktree: None,
@@ -925,7 +925,7 @@ impl App {
             new_session_name_cursor: 0,
             session_content_search: false,
             session_search_results: Vec::new(),
-            selected_model: Some("opus".to_string()),
+            selected_model: Some(model::default_model().to_string()),
             claude_available: true,
             codex_available: true,
         }

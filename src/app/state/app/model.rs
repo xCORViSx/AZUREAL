@@ -44,9 +44,9 @@ fn last_codex_model() -> Option<&'static str> {
     OPENAI_FRONTIER_MODELS.last().copied()
 }
 
-/// Default model (first in the unified pool)
+/// Default model for new/empty sessions.
 pub fn default_model() -> &'static str {
-    CLAUDE_MODELS[0]
+    OPENAI_FRONTIER_MODELS[0]
 }
 
 /// Map a model string from an Init event back to a unified model-pool alias.
@@ -119,10 +119,11 @@ impl App {
 
     /// First available model (respects backend availability).
     pub fn first_available_model(&self) -> &'static str {
-        self.available_models()
-            .first()
-            .copied()
-            .unwrap_or(default_model())
+        let pool = self.available_models();
+        if pool.contains(&default_model()) {
+            return default_model();
+        }
+        pool.first().copied().unwrap_or(default_model())
     }
 
     /// Extract the model from the loaded session's event stream.
@@ -291,8 +292,8 @@ mod tests {
     // ── default_model ──
 
     #[test]
-    fn test_default_model_is_opus() {
-        assert_eq!(default_model(), "opus");
+    fn test_default_model_is_gpt55() {
+        assert_eq!(default_model(), "gpt-5.5");
     }
 
     // ── backend_for_model ──
@@ -489,6 +490,8 @@ mod tests {
     #[test]
     fn test_cycle_opus_to_sonnet() {
         let mut app = app_default();
+        app.selected_model = Some("opus".to_string());
+        app.backend = Backend::Claude;
         assert_eq!(app.display_model_name(), "opus");
         app.cycle_model();
         assert_eq!(app.display_model_name(), "sonnet");
@@ -517,9 +520,17 @@ mod tests {
     #[test]
     fn test_full_cycle_all_models() {
         let mut app = app_default();
-        let expected: Vec<&str> = all_models()
-            .skip(1)
-            .chain(std::iter::once(default_model()))
+        let models = all_models_vec();
+        let default_idx = models
+            .iter()
+            .position(|&model| model == default_model())
+            .unwrap();
+        let expected: Vec<&str> = models
+            .iter()
+            .cycle()
+            .skip(default_idx + 1)
+            .take(models.len())
+            .copied()
             .collect();
         for name in expected {
             app.cycle_model();
@@ -545,7 +556,7 @@ mod tests {
         app.cycle_model();
         assert_eq!(app.display_events.len(), 1);
         match &app.display_events[0] {
-            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
+            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.5-pro"),
             other => panic!("expected ModelSwitch, got {:?}", other),
         }
     }
@@ -558,7 +569,7 @@ mod tests {
         let sid = store.create_session("test").unwrap();
         app.session_store = Some(store);
         app.current_session_id = Some(sid);
-        app.cycle_model(); // opus → sonnet
+        app.cycle_model(); // gpt-5.5 → gpt-5.5-pro
                            // Verify the ModelSwitch event was persisted to the store
         let events = app
             .session_store
@@ -568,7 +579,7 @@ mod tests {
             .unwrap();
         assert_eq!(events.len(), 1);
         match &events[0] {
-            crate::events::DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
+            crate::events::DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.5-pro"),
             other => panic!("expected ModelSwitch, got {:?}", other),
         }
     }
@@ -634,9 +645,9 @@ mod tests {
     }
 
     #[test]
-    fn test_first_available_model_defaults_opus() {
+    fn test_first_available_model_defaults_gpt55() {
         let app = app_default();
-        assert_eq!(app.first_available_model(), "opus");
+        assert_eq!(app.first_available_model(), "gpt-5.5");
     }
 
     #[test]
@@ -649,10 +660,10 @@ mod tests {
     // ── display_model_name ──
 
     #[test]
-    fn test_display_model_none_defaults_opus() {
+    fn test_display_model_none_defaults_gpt55() {
         let mut app = App::new();
         app.selected_model = None;
-        assert_eq!(app.display_model_name(), "opus");
+        assert_eq!(app.display_model_name(), "gpt-5.5");
     }
 
     #[test]
@@ -673,8 +684,8 @@ mod tests {
     }
 
     #[test]
-    fn test_all_models_first_is_default() {
-        assert_eq!(all_models_vec()[0], default_model());
+    fn test_all_models_contains_default() {
+        assert!(all_models_vec().contains(&default_model()));
     }
 
     #[test]

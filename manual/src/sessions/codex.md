@@ -53,16 +53,20 @@ Full auto mode allows the agent to operate autonomously while still respecting s
 
 ## Model Selection
 
-The Codex backend serves six models:
+The Codex backend serves the OpenAI frontier models:
 
 | Model | Alias |
 |-------|-------|
+| GPT-5.5 | `gpt-5.5` |
+| GPT-5.5 Pro | `gpt-5.5-pro` |
 | GPT-5.4 | `gpt-5.4` |
-| GPT-5.3 Codex | `gpt-5.3-codex` |
-| GPT-5.2 Codex | `gpt-5.2-codex` |
-| GPT-5.2 | `gpt-5.2` |
-| GPT-5.1 Codex Max | `gpt-5.1-codex-max` |
-| GPT-5.1 Codex Mini | `gpt-5.1-codex-mini` |
+| GPT-5.4 Pro | `gpt-5.4-pro` |
+| GPT-5.4 Mini | `gpt-5.4-mini` |
+| GPT-5.4 Nano | `gpt-5.4-nano` |
+| GPT-5 Mini | `gpt-5-mini` |
+| GPT-5 Nano | `gpt-5-nano` |
+| GPT-5 | `gpt-5` |
+| GPT-4.1 | `gpt-4.1` |
 
 All models with names starting with `gpt-` are automatically routed to the Codex backend. See [Model Switcher](./model-switcher.md) for the full model cycle.
 

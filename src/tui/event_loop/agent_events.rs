@@ -154,7 +154,7 @@ pub fn spawn_compaction_agent(
     let selected_model_ref = selected_model.as_deref();
     let primary_backend = selected_model_ref
         .map(backend_for_model)
-        .unwrap_or(Backend::Claude);
+        .unwrap_or_else(|| backend_for_model(crate::app::state::default_model()));
     let primary_label = selected_model
         .clone()
         .unwrap_or_else(|| primary_backend.to_string());

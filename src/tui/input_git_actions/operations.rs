@@ -891,8 +891,11 @@ pub(super) fn exec_commit_start(app: &mut App) {
     let stat = Git::get_staged_stat(&wt).unwrap_or_default();
     let config = crate::config::Config::load().unwrap_or_default();
     let selected_model = app.selected_model.clone();
-    let commit_backend =
-        crate::app::state::backend_for_model(selected_model.as_deref().unwrap_or("opus"));
+    let commit_backend = crate::app::state::backend_for_model(
+        selected_model
+            .as_deref()
+            .unwrap_or_else(|| crate::app::state::default_model()),
+    );
 
     let (tx, rx) = std::sync::mpsc::channel();
     let wt_clone = wt.clone();

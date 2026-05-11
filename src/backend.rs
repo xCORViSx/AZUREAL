@@ -34,7 +34,7 @@ impl Backend {
 
 impl Default for Backend {
     fn default() -> Self {
-        Backend::Claude
+        Backend::Codex
     }
 }
 
@@ -104,7 +104,9 @@ impl AgentProcess {
     ) -> Result<(mpsc::Receiver<AgentEvent>, u32)> {
         let backend = model
             .map(crate::app::state::backend_for_model)
-            .unwrap_or(Backend::Claude);
+            .unwrap_or_else(|| {
+                crate::app::state::backend_for_model(crate::app::state::default_model())
+            });
         self.spawn_on_backend(backend, working_dir, prompt, resume_session_id, model)
     }
 }
@@ -147,8 +149,8 @@ mod tests {
     // ── Backend enum ──
 
     #[test]
-    fn backend_default_is_claude() {
-        assert_eq!(Backend::default(), Backend::Claude);
+    fn backend_default_is_codex() {
+        assert_eq!(Backend::default(), Backend::Codex);
     }
 
     #[test]
@@ -259,11 +261,11 @@ mod tests {
     }
 
     #[test]
-    fn agent_process_spawn_no_model_defaults_claude() {
+    fn agent_process_spawn_no_model_defaults_codex() {
         let ap = AgentProcess::new(Config::default());
         let result = ap.spawn(Path::new("/tmp"), "", None, None);
         assert!(result.is_err());
-        // Default (None) → Claude backend, which rejects empty prompts
+        // Default (None) follows the default model's backend, which rejects empty prompts.
         assert!(result.unwrap_err().to_string().contains("empty"));
     }
 

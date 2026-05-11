@@ -592,7 +592,7 @@ pub(super) fn execute_action(
         | Action::HistoryNext
         | Action::EnterTerminalType => {}
 
-        // ⌃m: cycle Claude model (opus → sonnet → haiku → default)
+        // ⌃m: cycle through the unified Claude/Codex model pool.
         Action::CycleModel => {
             app.cycle_model();
         }

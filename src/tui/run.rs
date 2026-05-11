@@ -151,8 +151,9 @@ pub async fn run() -> Result<()> {
     let config = Config::load().unwrap_or_default();
     app.claude_available = config.is_backend_installed(crate::backend::Backend::Claude);
     app.codex_available = config.is_backend_installed(crate::backend::Backend::Codex);
-    // If the default model's backend is unavailable, pick the first available
-    if !app.claude_available {
+    // If the default model's backend is unavailable, pick the first available.
+    let default_backend = crate::app::state::backend_for_model(crate::app::state::default_model());
+    if !config.is_backend_installed(default_backend) {
         app.selected_model = Some(app.first_available_model().to_string());
         app.backend = crate::app::state::backend_for_model(app.selected_model.as_deref().unwrap());
     }
