@@ -4,14 +4,13 @@ use super::App;
 use crate::backend::Backend;
 use ratatui::style::Color;
 
-/// Unified model pool — Claude models first, then OpenAI frontier models.
-/// Ctrl+M cycles through the entire pool regardless of backend.
+const CLAUDE_MODELS: &[&str] = &["opus", "sonnet", "haiku"];
+
+// BEGIN OPENAI_FRONTIER_MODELS
+/// OpenAI frontier models in docs order.
 /// Sourced from the OpenAI docs "Frontier models" section on 2026-05-11.
-/// opus → sonnet → haiku → gpt-5.5 → gpt-5.5-pro → gpt-5.4 → gpt-5.4-pro → gpt-5.4-mini → gpt-5.4-nano → gpt-5-mini → gpt-5-nano → gpt-5 → gpt-4.1 → wrap
-const ALL_MODELS: &[&str] = &[
-    "opus",
-    "sonnet",
-    "haiku",
+/// `azureal models sync-openai-frontier` rewrites this block.
+const OPENAI_FRONTIER_MODELS: &[&str] = &[
     "gpt-5.5",
     "gpt-5.5-pro",
     "gpt-5.4",
@@ -23,33 +22,54 @@ const ALL_MODELS: &[&str] = &[
     "gpt-5",
     "gpt-4.1",
 ];
+// END OPENAI_FRONTIER_MODELS
+
+fn all_models() -> impl Iterator<Item = &'static str> {
+    CLAUDE_MODELS
+        .iter()
+        .chain(OPENAI_FRONTIER_MODELS.iter())
+        .copied()
+}
+
+fn all_models_vec() -> Vec<&'static str> {
+    all_models().collect()
+}
+
+fn first_codex_model() -> Option<&'static str> {
+    OPENAI_FRONTIER_MODELS.first().copied()
+}
+
+#[cfg(test)]
+fn last_codex_model() -> Option<&'static str> {
+    OPENAI_FRONTIER_MODELS.last().copied()
+}
 
 /// Default model (first in the unified pool)
 pub fn default_model() -> &'static str {
-    ALL_MODELS[0]
+    CLAUDE_MODELS[0]
 }
 
-/// Map a model string from an Init event back to an ALL_MODELS alias.
+/// Map a model string from an Init event back to a unified model-pool alias.
 /// Handles exact matches ("gpt-5.4"), Claude API names ("claude-3-5-sonnet-20241022" → "sonnet"),
 /// and short aliases passed through `--model`.
 pub fn model_alias_from_init(model: &str) -> Option<&'static str> {
     // Exact match first
-    if let Some(&m) = ALL_MODELS.iter().find(|&&m| m == model) {
+    if let Some(m) = all_models().find(|&m| m == model) {
         return Some(m);
     }
     // Claude API model names contain the alias as a substring
-    for &alias in &["opus", "sonnet", "haiku"] {
+    for &alias in CLAUDE_MODELS {
         if model.contains(alias) {
             return Some(alias);
         }
     }
-    // Codex models start with gpt- but might not be in ALL_MODELS
+    // Codex models start with gpt- but might not be in OPENAI_FRONTIER_MODELS
     if model.starts_with("gpt-") {
-        return ALL_MODELS.iter().find(|&&m| m.starts_with("gpt-")).copied();
+        return first_codex_model();
     }
     // Legacy: old sessions stored "codex" as the model string — map to first Codex model
     if model == "codex" {
-        return ALL_MODELS.iter().find(|&&m| m.starts_with("gpt-")).copied();
+        return first_codex_model();
     }
     None
 }
@@ -80,20 +100,18 @@ pub fn model_color(model: &str) -> Color {
 }
 
 impl App {
-    /// Return the subset of ALL_MODELS whose backend is detected as installed.
+    /// Return the subset of the unified model pool whose backend is detected as installed.
     /// Falls back to the full pool if neither backend is found (the app can't
     /// function without at least one, so don't hide everything).
     fn available_models(&self) -> Vec<&'static str> {
-        let filtered: Vec<&str> = ALL_MODELS
-            .iter()
-            .copied()
+        let filtered: Vec<&str> = all_models()
             .filter(|m| match backend_for_model(m) {
                 Backend::Claude => self.claude_available,
                 Backend::Codex => self.codex_available,
             })
             .collect();
         if filtered.is_empty() {
-            ALL_MODELS.to_vec()
+            all_models_vec()
         } else {
             filtered
         }
@@ -281,23 +299,16 @@ mod tests {
 
     #[test]
     fn test_backend_for_claude_models() {
-        assert_eq!(backend_for_model("opus"), Backend::Claude);
-        assert_eq!(backend_for_model("sonnet"), Backend::Claude);
-        assert_eq!(backend_for_model("haiku"), Backend::Claude);
+        for &model in CLAUDE_MODELS {
+            assert_eq!(backend_for_model(model), Backend::Claude);
+        }
     }
 
     #[test]
     fn test_backend_for_codex_models() {
-        assert_eq!(backend_for_model("gpt-5.5"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.5-pro"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.4"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.4-pro"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.4-mini"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5.4-nano"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5-mini"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5-nano"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-5"), Backend::Codex);
-        assert_eq!(backend_for_model("gpt-4.1"), Backend::Codex);
+        for &model in OPENAI_FRONTIER_MODELS {
+            assert_eq!(backend_for_model(model), Backend::Codex);
+        }
         assert_eq!(backend_for_model("codex"), Backend::Codex);
     }
 
@@ -310,10 +321,9 @@ mod tests {
 
     #[test]
     fn test_alias_exact_match() {
-        assert_eq!(model_alias_from_init("opus"), Some("opus"));
-        assert_eq!(model_alias_from_init("gpt-5.5"), Some("gpt-5.5"));
-        assert_eq!(model_alias_from_init("gpt-5.4"), Some("gpt-5.4"));
-        assert_eq!(model_alias_from_init("gpt-4.1"), Some("gpt-4.1"));
+        for model in all_models_vec() {
+            assert_eq!(model_alias_from_init(model), Some(model));
+        }
     }
 
     #[test]
@@ -490,14 +500,14 @@ mod tests {
         let mut app = app_default();
         app.selected_model = Some("haiku".to_string());
         app.cycle_model();
-        assert_eq!(app.display_model_name(), "gpt-5.5");
+        assert_eq!(app.display_model_name(), first_codex_model().unwrap());
         assert_eq!(app.backend, Backend::Codex);
     }
 
     #[test]
     fn test_cycle_last_codex_wraps_to_opus() {
         let mut app = app_default();
-        app.selected_model = Some("gpt-4.1".to_string());
+        app.selected_model = Some(last_codex_model().unwrap().to_string());
         app.backend = Backend::Codex;
         app.cycle_model();
         assert_eq!(app.display_model_name(), "opus");
@@ -505,27 +515,16 @@ mod tests {
     }
 
     #[test]
-    fn test_full_cycle_all_thirteen() {
+    fn test_full_cycle_all_models() {
         let mut app = app_default();
-        let expected = [
-            ("sonnet", Backend::Claude),
-            ("haiku", Backend::Claude),
-            ("gpt-5.5", Backend::Codex),
-            ("gpt-5.5-pro", Backend::Codex),
-            ("gpt-5.4", Backend::Codex),
-            ("gpt-5.4-pro", Backend::Codex),
-            ("gpt-5.4-mini", Backend::Codex),
-            ("gpt-5.4-nano", Backend::Codex),
-            ("gpt-5-mini", Backend::Codex),
-            ("gpt-5-nano", Backend::Codex),
-            ("gpt-5", Backend::Codex),
-            ("gpt-4.1", Backend::Codex),
-            ("opus", Backend::Claude),
-        ];
-        for &(name, backend) in &expected {
+        let expected: Vec<&str> = all_models()
+            .skip(1)
+            .chain(std::iter::once(default_model()))
+            .collect();
+        for name in expected {
             app.cycle_model();
             assert_eq!(app.display_model_name(), name);
-            assert_eq!(app.backend, backend);
+            assert_eq!(app.backend, backend_for_model(name));
         }
     }
 
@@ -579,7 +578,7 @@ mod tests {
     #[test]
     fn test_available_models_both_available() {
         let app = app_default();
-        assert_eq!(app.available_models().len(), ALL_MODELS.len());
+        assert_eq!(app.available_models().len(), all_models_vec().len());
     }
 
     #[test]
@@ -587,7 +586,7 @@ mod tests {
         let mut app = app_default();
         app.codex_available = false;
         let models = app.available_models();
-        assert_eq!(models, vec!["opus", "sonnet", "haiku"]);
+        assert_eq!(models, CLAUDE_MODELS.to_vec());
     }
 
     #[test]
@@ -595,10 +594,7 @@ mod tests {
         let mut app = app_default();
         app.claude_available = false;
         let models = app.available_models();
-        for m in &models {
-            assert!(m.starts_with("gpt-"));
-        }
-        assert_eq!(models.len(), 10);
+        assert_eq!(models, OPENAI_FRONTIER_MODELS.to_vec());
     }
 
     #[test]
@@ -606,7 +602,7 @@ mod tests {
         let mut app = app_default();
         app.claude_available = false;
         app.codex_available = false;
-        assert_eq!(app.available_models().len(), ALL_MODELS.len());
+        assert_eq!(app.available_models().len(), all_models_vec().len());
     }
 
     #[test]
@@ -627,10 +623,10 @@ mod tests {
     fn test_cycle_skips_claude_when_unavailable() {
         let mut app = app_default();
         app.claude_available = false;
-        app.selected_model = Some("gpt-5.5".to_string());
+        app.selected_model = Some(first_codex_model().unwrap().to_string());
         app.backend = Backend::Codex;
         // Should cycle only through Codex models and never land on Claude
-        for _ in 0..10 {
+        for _ in 0..OPENAI_FRONTIER_MODELS.len() {
             app.cycle_model();
             assert!(app.display_model_name().starts_with("gpt-"));
             assert_eq!(app.backend, Backend::Codex);
@@ -647,7 +643,7 @@ mod tests {
     fn test_first_available_model_claude_unavailable() {
         let mut app = app_default();
         app.claude_available = false;
-        assert!(app.first_available_model().starts_with("gpt-"));
+        assert_eq!(app.first_available_model(), first_codex_model().unwrap());
     }
 
     // ── display_model_name ──
@@ -666,25 +662,27 @@ mod tests {
         assert_eq!(app.display_model_name(), "gpt-5.4");
     }
 
-    // ── ALL_MODELS constant ──
+    // ── Unified model pool ──
 
     #[test]
-    fn test_all_models_has_thirteen() {
-        assert_eq!(ALL_MODELS.len(), 13);
+    fn test_all_models_count_matches_segments() {
+        assert_eq!(
+            all_models_vec().len(),
+            CLAUDE_MODELS.len() + OPENAI_FRONTIER_MODELS.len()
+        );
     }
 
     #[test]
     fn test_all_models_first_is_default() {
-        assert_eq!(ALL_MODELS[0], default_model());
+        assert_eq!(all_models_vec()[0], default_model());
     }
 
     #[test]
     fn test_all_models_claude_then_codex() {
-        // First 3 are Claude, rest are Codex
-        for &m in &ALL_MODELS[..3] {
+        for &m in CLAUDE_MODELS {
             assert_eq!(backend_for_model(m), Backend::Claude);
         }
-        for &m in &ALL_MODELS[3..] {
+        for &m in OPENAI_FRONTIER_MODELS {
             assert_eq!(backend_for_model(m), Backend::Codex);
         }
     }

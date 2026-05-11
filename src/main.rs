@@ -11,6 +11,7 @@ mod events;
 mod git;
 mod install;
 mod models;
+mod openai_models;
 mod stt;
 mod syntax;
 mod tui;
@@ -21,7 +22,7 @@ use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use cli::{Cli, Commands, ProjectCommands, SessionCommands};
+use cli::{Cli, Commands, ModelsCommands, ProjectCommands, SessionCommands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -230,6 +231,13 @@ async fn main() -> Result<()> {
         }) => cmd::handle_session_new(prompt, project, name, output_format)?,
         Some(Commands::Status { session }) => cmd::handle_session_status(&session, output_format)?,
         Some(Commands::Diff { session, stat }) => cmd::handle_session_diff(&session, stat)?,
+
+        // Model maintenance subcommands
+        Some(Commands::Models(cmd)) => match cmd {
+            ModelsCommands::SyncOpenaiFrontier { check } => {
+                cmd::handle_models_sync_openai_frontier(check)?
+            }
+        },
 
         // Session subcommands
         Some(Commands::Session(cmd)) => match cmd {

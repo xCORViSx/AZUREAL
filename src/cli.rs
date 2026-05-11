@@ -52,6 +52,10 @@ pub enum Commands {
     #[command(subcommand)]
     Project(ProjectCommands),
 
+    /// Model maintenance commands
+    #[command(subcommand)]
+    Models(ModelsCommands),
+
     // Shortcuts for common session operations
     /// List all sessions (shortcut for 'session list')
     #[command(alias = "ls")]
@@ -232,6 +236,16 @@ pub enum ProjectCommands {
         /// Set the main branch name (shows instructions in stateless mode)
         #[arg(long)]
         main_branch: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ModelsCommands {
+    /// Sync OpenAI frontier models from the official docs page
+    SyncOpenaiFrontier {
+        /// Verify model.rs matches the current docs without rewriting it
+        #[arg(long)]
+        check: bool,
     },
 }
 
@@ -708,6 +722,31 @@ mod tests {
         } else {
             panic!("expected Project Config");
         }
+    }
+
+    // ── Cli parsing: model subcommands ──
+
+    #[test]
+    fn test_parse_models_sync_openai_frontier() {
+        let cli = Cli::try_parse_from(["azureal", "models", "sync-openai-frontier"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Models(ModelsCommands::SyncOpenaiFrontier {
+                check: false
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_models_sync_openai_frontier_check() {
+        let cli =
+            Cli::try_parse_from(["azureal", "models", "sync-openai-frontier", "--check"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Models(ModelsCommands::SyncOpenaiFrontier {
+                check: true
+            }))
+        ));
     }
 
     // ── global flags propagate to subcommands ──
