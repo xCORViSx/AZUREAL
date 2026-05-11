@@ -33,6 +33,26 @@ pub fn strip_injected_context(content: &str) -> &str {
     }
 }
 
+/// Strip injected context from parsed event streams before display or storage.
+/// Agent JSONL files record the actual prompt sent to the backend, which may
+/// include Azureal's hidden context wrapper. The UI/store should retain only
+/// the user's real prompt.
+pub fn strip_injected_context_from_events(events: Vec<DisplayEvent>) -> Vec<DisplayEvent> {
+    events
+        .into_iter()
+        .map(|event| match event {
+            DisplayEvent::UserMessage { _uuid, content } => {
+                let stripped = strip_injected_context(&content);
+                DisplayEvent::UserMessage {
+                    _uuid,
+                    content: stripped.to_string(),
+                }
+            }
+            other => other,
+        })
+        .collect()
+}
+
 /// Build a transcript string from a ContextPayload.
 fn build_transcript(payload: &ContextPayload) -> String {
     let mut out = String::new();
@@ -256,6 +276,33 @@ mod tests {
         let prompt = "line 1\nline 2\nline 3";
         let injected = format!("{CONTEXT_OPEN}\nctx\n{CONTEXT_CLOSE}\n\n{prompt}");
         assert_eq!(strip_injected_context(&injected), prompt);
+    }
+
+    #[test]
+    fn strip_events_removes_context_from_user_messages_only() {
+        let injected = format!("{CONTEXT_OPEN}\nctx\n{CONTEXT_CLOSE}\n\nreal prompt");
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: injected,
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a".into(),
+                _message_id: "m".into(),
+                text: "answer".into(),
+            },
+        ];
+
+        let stripped = strip_injected_context_from_events(events);
+
+        assert!(matches!(
+            &stripped[0],
+            DisplayEvent::UserMessage { content, .. } if content == "real prompt"
+        ));
+        assert!(matches!(
+            &stripped[1],
+            DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
     }
 
     // ── format_event ──

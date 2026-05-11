@@ -118,38 +118,92 @@ impl App {
             )
         };
 
+        if slot_owns_display && turn_backend == Backend::Claude {
+            if let Some(ref path) = jsonl_path {
+                if path.exists() && events_offset <= self.display_events.len() {
+                    let prefix_events: Vec<_> = self.display_events[..events_offset].to_vec();
+                    let parsed = crate::app::session_parser::parse_session_file(path);
+                    let parsed_events =
+                        crate::app::context_injection::strip_injected_context_from_events(
+                            parsed.events,
+                        );
+                    let overlap = crate::app::session_store::overlap_prefix_len(
+                        &prefix_events,
+                        &parsed_events,
+                    );
+                    let parsed_suffix: Vec<_> = parsed_events.into_iter().skip(overlap).collect();
+                    let parsed_has_completion = parsed_suffix
+                        .iter()
+                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+                    let live_has_completion = events
+                        .iter()
+                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+
+                    if !parsed_suffix.is_empty()
+                        && (parsed_has_completion
+                            || !live_has_completion
+                            || parsed_suffix.len() >= events.len())
+                    {
+                        events = parsed_suffix;
+                        if self.session_file_path.as_ref() == Some(path) {
+                            self.display_events = prefix_events;
+                            self.display_events.extend(events.clone());
+                            let (pending, failed) =
+                                Self::tool_status_from_events(&self.display_events);
+                            self.pending_tool_calls = pending;
+                            self.failed_tool_calls = failed;
+                            self.invalidate_render_cache();
+                        }
+                    }
+                }
+            }
+        } else if slot_owns_display && turn_backend == Backend::Codex {
+            if let Some(ref path) = jsonl_path {
+                if path.exists() && events_offset <= self.display_events.len() {
+                    let prefix_events: Vec<_> = self.display_events[..events_offset].to_vec();
+                    let parsed = crate::app::codex_session_parser::parse_codex_session_file(path);
+                    let parsed_events =
+                        crate::app::context_injection::strip_injected_context_from_events(
+                            parsed.events,
+                        );
+                    let overlap = crate::app::session_store::overlap_prefix_len(
+                        &prefix_events,
+                        &parsed_events,
+                    );
+                    let parsed_suffix: Vec<_> = parsed_events.into_iter().skip(overlap).collect();
+                    let parsed_has_completion = parsed_suffix
+                        .iter()
+                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+                    let live_has_completion = events
+                        .iter()
+                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+
+                    if !parsed_suffix.is_empty()
+                        && (parsed_has_completion
+                            || !live_has_completion
+                            || parsed_suffix.len() >= events.len())
+                    {
+                        events = parsed_suffix;
+                        if self.session_file_path.as_ref() == Some(path) {
+                            self.display_events = prefix_events;
+                            self.display_events.extend(events.clone());
+                            let (pending, failed) =
+                                Self::tool_status_from_events(&self.display_events);
+                            self.pending_tool_calls = pending;
+                            self.failed_tool_calls = failed;
+                            self.invalidate_render_cache();
+                        }
+                    }
+                }
+            }
+        }
+
         if events.is_empty() {
             // Still delete the JSONL (and companion dir) even if no events to store
             if let Some(p) = jsonl_path.filter(|p| p.exists()) {
                 crate::config::remove_session_file(&p);
             }
             return;
-        }
-        if slot_owns_display && turn_backend == Backend::Codex {
-            if let Some(ref path) = jsonl_path {
-                if path.exists() && events_offset <= self.display_events.len() {
-                    let prefix_events = &self.display_events[..events_offset];
-                    let (prefix_pending, prefix_failed) =
-                        Self::tool_status_from_events(prefix_events);
-                    let parsed =
-                        crate::app::codex_session_parser::parse_codex_session_file_incremental(
-                            path,
-                            session_file_offset,
-                            prefix_events,
-                            &prefix_pending,
-                            &prefix_failed,
-                        );
-                    if parsed.events.len() >= prefix_events.len() {
-                        events = parsed.events[events_offset..].to_vec();
-                        if self.session_file_path.as_ref() == Some(path) {
-                            self.display_events = parsed.events;
-                            self.pending_tool_calls = parsed.pending_tools;
-                            self.failed_tool_calls = parsed.failed_tools;
-                            self.invalidate_render_cache();
-                        }
-                    }
-                }
-            }
         }
 
         // Open store at the target worktree path (may differ from current worktree
@@ -214,7 +268,7 @@ impl App {
         session_id: i64,
         wt_path: &std::path::Path,
         _project_path: &std::path::Path,
-        session_file_offset: u64,
+        _session_file_offset: u64,
     ) {
         let (session_backend, jsonl_path) = match self.agent_session_ids.get(slot_id) {
             Some(uuid) => match crate::config::session_file_with_backend(wt_path, uuid) {
@@ -234,38 +288,21 @@ impl App {
                     if parsed.events.is_empty() {
                         return;
                     }
-                    parsed
-                        .events
-                        .into_iter()
-                        .map(|ev| match ev {
-                            crate::events::DisplayEvent::UserMessage { _uuid, content } => {
-                                let stripped =
-                                    crate::app::context_injection::strip_injected_context(&content);
-                                crate::events::DisplayEvent::UserMessage {
-                                    _uuid,
-                                    content: stripped.to_string(),
-                                }
-                            }
-                            other => other,
-                        })
-                        .collect()
+                    crate::app::context_injection::strip_injected_context_from_events(parsed.events)
                 }
                 crate::backend::Backend::Codex => {
                     let existing_events = store.load_events(session_id).unwrap_or_default();
-                    let (existing_pending, existing_failed) =
-                        Self::tool_status_from_events(&existing_events);
                     let parsed =
-                        crate::app::codex_session_parser::parse_codex_session_file_incremental(
-                            &jsonl_path,
-                            session_file_offset,
-                            &existing_events,
-                            &existing_pending,
-                            &existing_failed,
+                        crate::app::codex_session_parser::parse_codex_session_file(&jsonl_path);
+                    let parsed_events =
+                        crate::app::context_injection::strip_injected_context_from_events(
+                            parsed.events,
                         );
-                    if parsed.events.len() < existing_events.len() {
-                        return;
-                    }
-                    parsed.events[existing_events.len()..].to_vec()
+                    let overlap = crate::app::session_store::overlap_prefix_len(
+                        &existing_events,
+                        &parsed_events,
+                    );
+                    parsed_events.into_iter().skip(overlap).collect()
                 }
             };
             if events.is_empty() {
@@ -284,7 +321,7 @@ impl App {
     fn parse_jsonl_for_store(
         jsonl_path: &Option<std::path::PathBuf>,
         turn_backend: Backend,
-        session_file_offset: u64,
+        _session_file_offset: u64,
         wt_path: &std::path::Path,
         session_id: i64,
     ) -> Vec<crate::events::DisplayEvent> {
@@ -299,42 +336,25 @@ impl App {
                 let parsed = crate::app::session_parser::parse_session_file(path);
                 // Strip injected context from user messages (same as
                 // store_append_background and recover_orphaned_jsonls).
-                parsed
-                    .events
-                    .into_iter()
-                    .map(|ev| match ev {
-                        crate::events::DisplayEvent::UserMessage { _uuid, content } => {
-                            let stripped =
-                                crate::app::context_injection::strip_injected_context(&content);
-                            crate::events::DisplayEvent::UserMessage {
-                                _uuid,
-                                content: stripped.to_string(),
-                            }
-                        }
-                        other => other,
-                    })
-                    .collect()
+                crate::app::context_injection::strip_injected_context_from_events(parsed.events)
             }
             Backend::Codex => {
-                // Load prior-turn events from the store for Codex prefix context
+                // Load prior-turn events from the store for prefix overlap.
+                // Codex session files are per-rollout and the saved byte offset
+                // can belong to a previous deleted JSONL, so parse the file from
+                // byte 0 and dedupe against SQLite instead of seeking.
                 let prefix_events = crate::app::session_store::SessionStore::open(wt_path)
                     .ok()
                     .and_then(|s| s.load_events(session_id).ok())
                     .unwrap_or_default();
-                let (prefix_pending, prefix_failed) = Self::tool_status_from_events(&prefix_events);
-                let parsed = crate::app::codex_session_parser::parse_codex_session_file_incremental(
-                    path,
-                    session_file_offset,
-                    &prefix_events,
-                    &prefix_pending,
-                    &prefix_failed,
-                );
-                let offset = prefix_events.len();
-                if parsed.events.len() > offset {
-                    parsed.events[offset..].to_vec()
-                } else {
-                    Vec::new()
-                }
+                let parsed = crate::app::codex_session_parser::parse_codex_session_file(path);
+                let parsed_events =
+                    crate::app::context_injection::strip_injected_context_from_events(
+                        parsed.events,
+                    );
+                let overlap =
+                    crate::app::session_store::overlap_prefix_len(&prefix_events, &parsed_events);
+                parsed_events.into_iter().skip(overlap).collect()
             }
         }
     }

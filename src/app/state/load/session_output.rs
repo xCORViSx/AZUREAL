@@ -200,14 +200,19 @@ impl App {
                                         ),
                                     };
 
-                                    if !parsed.events.is_empty() || !store_events.is_empty() {
+                                    let parsed_events =
+                                        crate::app::context_injection::strip_injected_context_from_events(
+                                            parsed.events,
+                                        );
+
+                                    if !parsed_events.is_empty() || !store_events.is_empty() {
                                         let events_offset = store_events.len();
                                         let overlap = crate::app::session_store::overlap_prefix_len(
                                             &store_events,
-                                            &parsed.events,
+                                            &parsed_events,
                                         );
                                         let jsonl_suffix: Vec<_> =
-                                            parsed.events.into_iter().skip(overlap).collect();
+                                            parsed_events.into_iter().skip(overlap).collect();
                                         // Count only the JSONL suffix that is not already in store.
                                         jsonl_chars = jsonl_suffix
                                             .iter()

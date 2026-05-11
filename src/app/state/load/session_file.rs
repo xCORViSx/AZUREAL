@@ -88,26 +88,29 @@ impl App {
 
         // Incremental parse: only read new bytes since last offset
         let was_full_reparse = self.session_file_parse_offset == 0;
-        let parsed = match crate::config::backend_from_session_path(&path).unwrap_or(self.backend) {
-            crate::backend::Backend::Claude => {
-                crate::app::session_parser::parse_session_file_incremental(
-                    &path,
-                    self.session_file_parse_offset,
-                    &self.display_events,
-                    &self.pending_tool_calls,
-                    &self.failed_tool_calls,
-                )
-            }
-            crate::backend::Backend::Codex => {
-                crate::app::codex_session_parser::parse_codex_session_file_incremental(
-                    &path,
-                    self.session_file_parse_offset,
-                    &self.display_events,
-                    &self.pending_tool_calls,
-                    &self.failed_tool_calls,
-                )
-            }
-        };
+        let mut parsed =
+            match crate::config::backend_from_session_path(&path).unwrap_or(self.backend) {
+                crate::backend::Backend::Claude => {
+                    crate::app::session_parser::parse_session_file_incremental(
+                        &path,
+                        self.session_file_parse_offset,
+                        &self.display_events,
+                        &self.pending_tool_calls,
+                        &self.failed_tool_calls,
+                    )
+                }
+                crate::backend::Backend::Codex => {
+                    crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                        &path,
+                        self.session_file_parse_offset,
+                        &self.display_events,
+                        &self.pending_tool_calls,
+                        &self.failed_tool_calls,
+                    )
+                }
+            };
+        parsed.events =
+            crate::app::context_injection::strip_injected_context_from_events(parsed.events);
         // Guard: if the parse returned empty events but we already had content,
         // the file was likely temporarily unavailable (locked, atomic rewrite,
         // or deleted during Claude Code compaction). Preserve existing display

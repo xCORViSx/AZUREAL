@@ -110,21 +110,9 @@ impl App {
             };
             if !parsed.events.is_empty() {
                 // Strip injected context from UserMessage events
-                let events: Vec<crate::events::DisplayEvent> = parsed
-                    .events
-                    .into_iter()
-                    .map(|ev| match ev {
-                        crate::events::DisplayEvent::UserMessage { _uuid, content } => {
-                            let stripped =
-                                crate::app::context_injection::strip_injected_context(&content);
-                            crate::events::DisplayEvent::UserMessage {
-                                _uuid,
-                                content: stripped.to_string(),
-                            }
-                        }
-                        other => other,
-                    })
-                    .collect();
+                let events = crate::app::context_injection::strip_injected_context_from_events(
+                    parsed.events,
+                );
 
                 let existing_events = store.load_events(*session_id).unwrap_or_default();
                 let overlap =

@@ -916,6 +916,135 @@ mod tests {
     }
 
     #[test]
+    fn store_append_from_jsonl_reparses_viewed_claude_turn_from_session_file() {
+        use crate::backend::Backend;
+        use crate::events::DisplayEvent;
+        use std::io::Write;
+
+        fn encode_project_path(path: &std::path::Path) -> String {
+            path.to_string_lossy()
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                .collect()
+        }
+
+        let mut app = super::super::App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::path::PathBuf::from(format!(
+            "/tmp/azureal-claude-reparse-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+
+        let claude_session_id = format!("12345678-1234-1234-1234-{:012x}", unique & 0xffffffffffff);
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".claude")
+            .join("projects")
+            .join(encode_project_path(&wt_path));
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("{}.jsonl", claude_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "user",
+                "message": { "content": "Prompt" },
+                "timestamp": "2026-01-01T00:00:00Z",
+                "uuid": "user-1",
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{ "type": "text", "text": "complete response" }],
+                    "model": "claude-opus-4-6",
+                },
+                "timestamp": "2026-01-01T00:00:01Z",
+                "uuid": "assistant-1",
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "result",
+                "durationMs": 1000,
+                "costUsd": 0.01,
+                "sessionId": claude_session_id,
+                "timestamp": "2026-01-01T00:00:02Z",
+            })
+        )
+        .unwrap();
+        drop(file);
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert("main".into(), "55".into());
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), claude_session_id.clone());
+        app.session_file_path = Some(session_path.clone());
+        app.display_events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "Prompt".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "partial response".into(),
+            },
+        ];
+
+        app.store_append_from_jsonl("55", Backend::Claude);
+
+        let stored = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .load_events(sid)
+            .unwrap();
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "complete response")
+        }));
+        assert!(!stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "partial response")
+        }));
+        assert!(stored
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::Complete { .. })));
+        assert!(app.display_events.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "complete response")
+        }));
+        assert!(app
+            .display_events
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::Complete { .. })));
+        assert!(!session_path.exists());
+        let _ = std::fs::remove_dir(&session_dir);
+    }
+
+    #[test]
     fn store_append_from_jsonl_reparses_codex_turn_from_session_file() {
         use crate::backend::Backend;
         use crate::events::DisplayEvent;
@@ -943,6 +1072,17 @@ mod tests {
         std::fs::create_dir_all(&session_dir).unwrap();
         let session_path = session_dir.join(format!("rollout-{}.jsonl", codex_session_id));
         let patch = "*** Begin Patch\n*** Update File: /tmp/codex-reparse.txt\n@@\n-old line\n+new line\n*** End Patch";
+        let injected_prompt = crate::app::context_injection::build_context_prompt(
+            &crate::app::session_store::ContextPayload {
+                compaction_summary: None,
+                events: vec![DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "prior context".into(),
+                }],
+            },
+            "Prompt",
+        );
         let mut file = std::fs::File::create(&session_path).unwrap();
         writeln!(
             file,
@@ -953,6 +1093,20 @@ mod tests {
                 "payload": {
                     "id": codex_session_id,
                     "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": injected_prompt,
                 }
             })
         )
@@ -986,6 +1140,32 @@ mod tests {
             })
         )
         .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:03Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": "complete codex response" }],
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-01-01T00:00:04Z",
+                "payload": {
+                    "type": "task_complete",
+                }
+            })
+        )
+        .unwrap();
         // Set up worktree + active_slot so is_viewing_slot("55") returns true
         app.worktrees.push(crate::models::Worktree {
             branch_name: "main".into(),
@@ -996,7 +1176,7 @@ mod tests {
         app.selected_worktree = Some(0);
         app.active_slot.insert("main".into(), "55".into());
         app.pid_session_target
-            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+            .insert("55".into(), (sid, wt_path.clone(), 0, 999_999));
         app.agent_session_ids
             .insert("55".into(), codex_session_id.clone());
         app.session_file_path = Some(session_path.clone());
@@ -1015,6 +1195,11 @@ mod tests {
                 content: "File update: /tmp/codex-reparse.txt".into(),
                 is_error: false,
             },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "partial codex response".into(),
+            },
         ];
 
         app.store_append_from_jsonl("55", Backend::Codex);
@@ -1025,6 +1210,12 @@ mod tests {
             .unwrap()
             .load_events(sid)
             .unwrap();
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::UserMessage { content, .. } if content == "Prompt")
+        }));
+        assert!(!stored.iter().any(|event| {
+            matches!(event, DisplayEvent::UserMessage { content, .. } if content.contains(crate::app::context_injection::CONTEXT_OPEN))
+        }));
         let stored_tool_call = stored
             .iter()
             .find(|event| matches!(event, DisplayEvent::ToolCall { .. }))
@@ -1042,6 +1233,15 @@ mod tests {
             }
             other => panic!("expected reparsed ToolCall, got {:?}", other),
         }
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "complete codex response")
+        }));
+        assert!(!stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "partial codex response")
+        }));
+        assert!(stored
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::Complete { .. })));
         let live_tool_call = app
             .display_events
             .iter()
@@ -1054,6 +1254,132 @@ mod tests {
             other => panic!("expected live display to be replaced, got {:?}", other),
         }
         assert!(app.session_file_path.is_none());
+        assert!(!session_path.exists());
+    }
+
+    #[test]
+    fn store_append_from_jsonl_reparses_non_viewed_codex_turn_with_stale_offset() {
+        use crate::backend::Backend;
+        use crate::events::DisplayEvent;
+        use std::io::Write;
+
+        let mut app = super::super::App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let wt_path = std::path::PathBuf::from("/tmp/codex-background-reparse");
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let codex_session_id = format!("codex-background-{}-{}", std::process::id(), unique);
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("rollout-{}.jsonl", codex_session_id));
+        let injected_prompt = crate::app::context_injection::build_context_prompt(
+            &crate::app::session_store::ContextPayload {
+                compaction_summary: None,
+                events: vec![DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "prior context".into(),
+                }],
+            },
+            "Background prompt",
+        );
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": codex_session_id,
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": injected_prompt,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": "background response" }],
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-01-01T00:00:03Z",
+                "payload": {
+                    "type": "task_complete",
+                }
+            })
+        )
+        .unwrap();
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "other".into(),
+            worktree_path: Some(std::path::PathBuf::from("/tmp/other")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert("other".into(), "99".into());
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 999_999));
+        app.agent_session_ids
+            .insert("55".into(), codex_session_id.clone());
+
+        app.store_append_from_jsonl("55", Backend::Codex);
+
+        let stored = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .load_events(sid)
+            .unwrap();
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::UserMessage { content, .. } if content == "Background prompt")
+        }));
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "background response")
+        }));
+        assert!(stored
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::Complete { .. })));
         assert!(!session_path.exists());
     }
 
