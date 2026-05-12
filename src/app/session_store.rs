@@ -405,10 +405,13 @@ impl SessionStore {
                 completion = Some((*success, *duration_ms, *cost_usd));
             }
             let compacted = compact_event(event);
+            if should_skip_sanitized_event(event, &compacted) {
+                continue;
+            }
             let kind = event_kind(&compacted);
             let json = serde_json::to_string(&compacted).unwrap_or_default();
             let data = compress_data(&json);
-            let char_len = event_char_len(event) as i64;
+            let char_len = event_char_len(&compacted) as i64;
             stmt.execute(params![session_id, seq, kind, data, char_len])?;
             seq += 1;
             count += 1;
@@ -443,7 +446,7 @@ impl SessionStore {
                 events.push(ev);
             }
         }
-        Ok(events)
+        Ok(crate::app::context_injection::strip_injected_context_from_events(events))
     }
 
     /// Load events from a specific sequence position onward (for context building).
@@ -469,7 +472,7 @@ impl SessionStore {
                 events.push(ev);
             }
         }
-        Ok(events)
+        Ok(crate::app::context_injection::strip_injected_context_from_events(events))
     }
 
     /// Count events, optionally filtered by kind(s).
@@ -618,7 +621,7 @@ impl SessionStore {
                 events.push(ev);
             }
         }
-        Ok(events)
+        Ok(crate::app::context_injection::strip_injected_context_from_events(events))
     }
 
     /// Search event data across sessions for a query string. Returns up to `limit`
@@ -724,6 +727,13 @@ fn event_kind(event: &DisplayEvent) -> &'static str {
 /// ToolCall input is stripped to only the key field `extract_tool_param` reads.
 fn compact_event(event: &DisplayEvent) -> DisplayEvent {
     match event {
+        DisplayEvent::UserMessage { _uuid, content } => {
+            let content = crate::app::context_injection::strip_injected_context(content);
+            DisplayEvent::UserMessage {
+                _uuid: _uuid.clone(),
+                content: content.to_string(),
+            }
+        }
         DisplayEvent::ToolResult {
             tool_use_id,
             tool_name,
@@ -823,7 +833,8 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
             input,
         } => {
             // Strip input to only the key field the render pipeline reads.
-            // Edit is kept fully (needed for inline diff rendering).
+            // Edit is kept fully so click-to-open diff navigation can reconstruct
+            // old/new content without the source JSONL.
             let compacted_input = match tool_name.as_str() {
                 "Edit" | "edit" => input.clone(),
                 "Write" | "write" => {
@@ -888,6 +899,20 @@ fn compact_event(event: &DisplayEvent) -> DisplayEvent {
         // All other variants pass through unchanged
         _ => event.clone(),
     }
+}
+
+fn should_skip_sanitized_event(original: &DisplayEvent, sanitized: &DisplayEvent) -> bool {
+    matches!(
+        (original, sanitized),
+        (
+            DisplayEvent::UserMessage {
+                content: original_content,
+                ..
+            },
+            DisplayEvent::UserMessage { content, .. }
+        ) if content.is_empty()
+            && crate::app::context_injection::contains_injected_context(original_content)
+    )
 }
 
 pub(crate) fn event_dedup_key(event: &DisplayEvent) -> String {
@@ -2487,6 +2512,108 @@ mod tests {
                 assert!(!content.contains("</azureal-session-context>"));
             }
         }
+    }
+
+    #[test]
+    fn append_events_strips_injected_context_from_user_messages() {
+        use crate::app::context_injection::build_context_prompt;
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        let injected = build_context_prompt(
+            &ContextPayload {
+                compaction_summary: None,
+                events: vec![DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "hidden prior response".into(),
+                }],
+            },
+            "visible prompt",
+        );
+
+        store
+            .append_events(
+                sid,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: injected,
+                }],
+            )
+            .unwrap();
+
+        let loaded = store.load_events(sid).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(matches!(
+            &loaded[0],
+            DisplayEvent::UserMessage { content, .. } if content == "visible prompt"
+        ));
+        assert_eq!(
+            store.total_chars_since_compaction(sid).unwrap(),
+            "visible prompt".len()
+        );
+    }
+
+    #[test]
+    fn append_events_skips_malformed_context_only_user_messages() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        let malformed = format!(
+            "{}\nthis context wrapper never closes",
+            crate::app::context_injection::CONTEXT_OPEN
+        );
+
+        let inserted = store
+            .append_events(
+                sid,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: malformed,
+                }],
+            )
+            .unwrap();
+
+        assert_eq!(inserted, 0);
+        assert!(store.load_events(sid).unwrap().is_empty());
+    }
+
+    #[test]
+    fn load_events_sanitizes_legacy_injected_context_rows() {
+        use crate::app::context_injection::build_context_prompt;
+
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        let injected = build_context_prompt(
+            &ContextPayload {
+                compaction_summary: None,
+                events: vec![DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "legacy hidden response".into(),
+                }],
+            },
+            "legacy visible prompt",
+        );
+        let raw = DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: injected,
+        };
+        let json = serde_json::to_string(&raw).unwrap();
+        let blob = compress_data(&json);
+        store
+            .conn
+            .execute(
+                "INSERT INTO events(session_id, seq, kind, data, char_len) VALUES (?1, 1, 'UserMessage', ?2, ?3)",
+                params![sid, blob, 9999_i64],
+            )
+            .unwrap();
+
+        let loaded = store.load_events(sid).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(matches!(
+            &loaded[0],
+            DisplayEvent::UserMessage { content, .. } if content == "legacy visible prompt"
+        ));
     }
 
     #[test]

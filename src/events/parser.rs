@@ -214,7 +214,12 @@ impl EventParser {
             return events;
         };
 
-        if let Some(content) = content_val.as_str() {
+        if let Some(raw_content) = content_val.as_str() {
+            let Some(content) =
+                crate::app::context_injection::sanitize_user_message_content(raw_content)
+            else {
+                return events;
+            };
             // Compaction summary — show banner instead of raw text
             if content.starts_with("This session is being continued from a previous conversation") {
                 events.push(DisplayEvent::Compacting);
@@ -239,14 +244,14 @@ impl EventParser {
                 return events;
             }
 
-            events.extend(Self::extract_hooks_from_content(content));
+            events.extend(Self::extract_hooks_from_content(&content));
             events.push(DisplayEvent::UserMessage {
                 _uuid: json
                     .get("uuid")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                content: content.to_string(),
+                content,
             });
         } else if let Some(arr) = content_val.as_array() {
             for block in arr {
@@ -304,8 +309,15 @@ impl EventParser {
                         if !self.active_agent_tool_ids.is_empty() {
                             continue;
                         }
-                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                            events.extend(Self::extract_hooks_from_content(text));
+                        if let Some(raw_text) = block.get("text").and_then(|t| t.as_str()) {
+                            let Some(text) =
+                                crate::app::context_injection::sanitize_user_message_content(
+                                    raw_text,
+                                )
+                            else {
+                                continue;
+                            };
+                            events.extend(Self::extract_hooks_from_content(&text));
                             if !text.is_empty() {
                                 events.push(DisplayEvent::UserMessage {
                                     _uuid: json
@@ -313,7 +325,7 @@ impl EventParser {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string(),
-                                    content: text.to_string(),
+                                    content: text,
                                 });
                             }
                         }

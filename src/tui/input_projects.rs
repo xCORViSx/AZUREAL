@@ -30,6 +30,24 @@ pub fn handle_projects_input(key: event::KeyEvent, app: &mut App) -> Result<()> 
     }
 }
 
+/// Handle bracketed paste while the Projects panel is active.
+/// Paste is consumed even in Browse mode so it cannot fall through to the
+/// regular prompt input hidden behind the modal.
+pub fn handle_projects_paste(text: &str, app: &mut App) -> Result<()> {
+    let Some(ref mut panel) = app.projects_panel else {
+        return Ok(());
+    };
+
+    match panel.mode {
+        ProjectsPanelMode::AddPath | ProjectsPanelMode::Rename | ProjectsPanelMode::Init => {
+            panel.input_text(text);
+        }
+        ProjectsPanelMode::Browse => {}
+    }
+
+    Ok(())
+}
+
 /// Browse mode: resolve key via centralized bindings, then dispatch on Action
 fn handle_browse(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // Clear any previous error on next keypress so it doesn't persist

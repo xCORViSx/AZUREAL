@@ -174,10 +174,17 @@ impl CodexEventParser {
         }
 
         match role {
-            "user" | "developer" => vec![DisplayEvent::UserMessage {
-                _uuid: String::new(),
-                content: text,
-            }],
+            "user" | "developer" => {
+                let Some(content) =
+                    crate::app::context_injection::sanitize_user_message_content(&text)
+                else {
+                    return Vec::new();
+                };
+                vec![DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content,
+                }]
+            }
             "assistant" => vec![DisplayEvent::AssistantText {
                 _uuid: String::new(),
                 _message_id: String::new(),
@@ -277,11 +284,16 @@ impl CodexEventParser {
 
         match msg_type {
             "user_message" => {
-                let text = payload
+                let raw_text = payload
                     .get("message")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                let Some(text) =
+                    crate::app::context_injection::sanitize_user_message_content(&raw_text)
+                else {
+                    return Vec::new();
+                };
                 if text.is_empty() {
                     Vec::new()
                 } else {

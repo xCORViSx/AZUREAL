@@ -174,6 +174,7 @@ pub async fn run_app(
         #[cfg(target_os = "macos")]
         let was_fast_path = app.prompt_mode
             && !app.terminal_mode
+            && !app.is_projects_panel_active()
             && !app.input.contains('\n')
             && !app.has_input_selection()
             && app.focus == Focus::Input
@@ -296,6 +297,7 @@ pub async fn run_app(
         #[cfg(target_os = "macos")]
         let has_fast_path = app.prompt_mode
             && !app.terminal_mode
+            && !app.is_projects_panel_active()
             && !app.input.contains('\n')
             && !app.has_input_selection();
         #[cfg(not(target_os = "macos"))]
@@ -311,7 +313,11 @@ pub async fn run_app(
         // never updated by the direct crossterm writes).
         #[cfg(target_os = "macos")]
         if had_key_event && was_fast_path && !has_fast_path && app.input_area.width > 2 {
-            fast_draw_input(app);
+            if app.is_projects_panel_active() {
+                app.force_full_redraw = true;
+            } else {
+                fast_draw_input(app);
+            }
         }
 
         // Compute ONCE per iteration. 300ms covers ~3 chars/sec typing with margin.
@@ -644,6 +650,7 @@ pub async fn run_app(
             if got_key
                 && app.prompt_mode
                 && !app.terminal_mode
+                && !app.is_projects_panel_active()
                 && app.focus == Focus::Input
                 && app.input_area.width > 2
                 && !app.input.contains('\n')

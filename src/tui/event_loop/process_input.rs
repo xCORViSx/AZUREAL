@@ -8,6 +8,7 @@ use crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
 
+use super::super::input_projects::handle_projects_paste;
 use super::actions::handle_key_event;
 use super::coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
 use super::mouse::{handle_mouse_click, handle_mouse_drag};
@@ -109,6 +110,13 @@ pub fn process_input_event(
             _ => {}
         },
         Event::Paste(text) => {
+            if app.is_projects_panel_active() {
+                handle_projects_paste(&text, app)?;
+                *had_key_event = true;
+                *needs_redraw = true;
+                return Ok(());
+            }
+
             // Bracketed paste: terminal wraps pasted content so we receive it
             // as a single event instead of individual keystrokes. This prevents
             // newlines in pasted text from triggering Enter (which submits the prompt).
@@ -178,4 +186,73 @@ pub fn process_input_event(
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::types::ProjectsPanel;
+    use crate::backend::AgentProcess;
+    use crate::config::Config;
+    use crossterm::event::Event;
+
+    fn dispatch_paste(app: &mut App, text: &str) -> (bool, bool) {
+        let claude_process = AgentProcess::new(Config::default());
+        let mut needs_redraw = false;
+        let mut scroll_delta = 0;
+        let mut scroll_col = 0;
+        let mut scroll_row = 0;
+        let mut had_key_event = false;
+        let mut cached_width = 80;
+        let mut cached_height = 24;
+
+        process_input_event(
+            Event::Paste(text.to_string()),
+            app,
+            &claude_process,
+            &mut needs_redraw,
+            &mut scroll_delta,
+            &mut scroll_col,
+            &mut scroll_row,
+            &mut had_key_event,
+            &mut cached_width,
+            &mut cached_height,
+        )
+        .unwrap();
+
+        (needs_redraw, had_key_event)
+    }
+
+    #[test]
+    fn paste_goes_to_projects_panel_input() {
+        let mut app = App::new();
+        app.focus = Focus::Input;
+        app.projects_panel = Some(ProjectsPanel::new(vec![]));
+        app.projects_panel.as_mut().unwrap().start_add();
+
+        let (needs_redraw, had_key_event) = dispatch_paste(&mut app, "/tmp/repo");
+
+        let panel = app.projects_panel.as_ref().unwrap();
+        assert_eq!(panel.input, "/tmp/repo");
+        assert_eq!(panel.input_cursor, 9);
+        assert!(app.input.is_empty());
+        assert!(!app.prompt_mode);
+        assert!(needs_redraw);
+        assert!(had_key_event);
+    }
+
+    #[test]
+    fn paste_in_projects_browse_mode_is_consumed() {
+        let mut app = App::new();
+        app.focus = Focus::Input;
+        app.projects_panel = Some(ProjectsPanel::new(vec![]));
+
+        let (needs_redraw, had_key_event) = dispatch_paste(&mut app, "/tmp/repo");
+
+        assert!(app.input.is_empty());
+        assert!(!app.prompt_mode);
+        assert!(app.projects_panel.as_ref().unwrap().input.is_empty());
+        assert!(needs_redraw);
+        assert!(had_key_event);
+    }
 }

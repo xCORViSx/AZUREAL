@@ -842,6 +842,34 @@ mod tests {
     }
 
     #[test]
+    fn projects_panel_input_text_inserts_at_cursor() {
+        let mut p = ProjectsPanel::new(vec![]);
+        p.input = "/Users//repo".into();
+        p.input_cursor = 7;
+        p.input_text("name");
+        assert_eq!(p.input, "/Users/name/repo");
+        assert_eq!(p.input_cursor, 11);
+    }
+
+    #[test]
+    fn projects_panel_input_text_ignores_line_endings() {
+        let mut p = ProjectsPanel::new(vec![]);
+        p.input_text("/tmp/repo\n");
+        assert_eq!(p.input, "/tmp/repo");
+        assert_eq!(p.input_cursor, 9);
+    }
+
+    #[test]
+    fn projects_panel_input_char_handles_unicode() {
+        let mut p = ProjectsPanel::new(vec![]);
+        p.input = "aé".into();
+        p.input_cursor = 1;
+        p.input_char('b');
+        assert_eq!(p.input, "abé");
+        assert_eq!(p.input_cursor, 2);
+    }
+
+    #[test]
     fn projects_panel_input_backspace() {
         let mut p = ProjectsPanel::new(vec![]);
         p.input = "abc".into();
@@ -885,6 +913,16 @@ mod tests {
         p.input_cursor = 3;
         p.input_delete(); // should do nothing
         assert_eq!(p.input, "abc");
+    }
+
+    #[test]
+    fn projects_panel_delete_handles_unicode() {
+        let mut p = ProjectsPanel::new(vec![]);
+        p.input = "aébc".into();
+        p.input_cursor = 1;
+        p.input_delete();
+        assert_eq!(p.input, "abc");
+        assert_eq!(p.input_cursor, 1);
     }
 
     #[test]

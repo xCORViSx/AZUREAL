@@ -447,14 +447,14 @@ fn parse_user_event(
         .unwrap_or(false);
 
     let content_str = if let Some(s) = content_val.and_then(|c| c.as_str()) {
-        Some(s.to_string())
+        crate::app::context_injection::sanitize_user_message_content(s)
     } else if let Some(arr) = content_val.and_then(|c| c.as_array()) {
-        Some(
-            arr.iter()
-                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
+        let joined = arr
+            .iter()
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        crate::app::context_injection::sanitize_user_message_content(&joined)
     } else {
         None
     };
@@ -479,7 +479,12 @@ fn parse_user_event(
         return;
     }
 
-    if let Some(content) = content_val.and_then(|c| c.as_str()) {
+    if let Some(raw_content) = content_val.and_then(|c| c.as_str()) {
+        let Some(content) =
+            crate::app::context_injection::sanitize_user_message_content(raw_content)
+        else {
+            return;
+        };
         if content.contains("<local-command-caveat>") {
             return;
         }
@@ -544,7 +549,7 @@ fn parse_user_event(
                     .and_then(|u| u.as_str())
                     .unwrap_or("")
                     .to_string(),
-                content: content.to_string(),
+                content,
             },
         ));
     } else if let Some(content_arr) = content_val.and_then(|c| c.as_array()) {

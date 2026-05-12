@@ -127,7 +127,7 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
             pending_user_message: None,
-            show_edit_previews: true,
+            show_edit_previews: false,
             existing_line_count,
             pre_scan,
             total_events: event_count,
@@ -159,7 +159,7 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
             pending_tools: app.pending_tool_calls.clone(),
             failed_tools: app.failed_tool_calls.clone(),
             pending_user_message: None,
-            show_edit_previews: true,
+            show_edit_previews: false,
             existing_line_count: 0,
             pre_scan,
             total_events: event_count,
@@ -1215,5 +1215,49 @@ mod tests {
         // The render was submitted (dirty cleared, in_flight set)
         assert!(!app.rendered_lines_dirty);
         assert!(app.render_in_flight);
+    }
+
+    #[test]
+    fn test_submit_does_not_render_inline_edit_patch_preview() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::ToolCall {
+            _uuid: String::new(),
+            tool_use_id: "patch-1".into(),
+            tool_name: "Edit".into(),
+            file_path: Some("/tmp/inline-preview.txt".into()),
+            input: json!({
+                "patch": "*** Begin Patch\n*** Update File: /tmp/inline-preview.txt\n@@\n-old line\n+new line\n*** End Patch"
+            }),
+        });
+        app.rendered_lines_dirty = true;
+
+        submit_render_request(&mut app, 80);
+
+        let mut applied = false;
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            if poll_render_result(&mut app) {
+                applied = true;
+                break;
+            }
+        }
+
+        assert!(applied, "expected render result");
+        let rendered = app
+            .rendered_lines_cache
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!rendered.contains("-old line"));
+        assert!(!rendered.contains("+new line"));
+        assert_eq!(app.clickable_paths.len(), 1);
+        assert_eq!(app.clickable_paths[0].4, "old line");
+        assert_eq!(app.clickable_paths[0].5, "new line");
     }
 }

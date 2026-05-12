@@ -23,13 +23,33 @@ pub fn build_context_prompt(payload: &ContextPayload, user_prompt: &str) -> Stri
 
 /// Strip injected context from a user message content string.
 /// Returns the actual user prompt (everything after the closing tag).
-/// If no context tags are found, returns the original content unchanged.
+/// If no context tags are found, returns the original content unchanged. If an
+/// opening tag is present but the closing tag is missing, the message is treated
+/// as internal context and stripped entirely so a malformed/truncated wrapper
+/// cannot leak into the visible transcript.
 pub fn strip_injected_context(content: &str) -> &str {
     if let Some(close_pos) = content.find(CONTEXT_CLOSE) {
         let after = &content[close_pos + CONTEXT_CLOSE.len()..];
         after.trim_start_matches('\n').trim_start_matches('\n')
+    } else if content.contains(CONTEXT_OPEN) {
+        ""
     } else {
         content
+    }
+}
+
+pub fn contains_injected_context(content: &str) -> bool {
+    content.contains(CONTEXT_OPEN) || content.contains(CONTEXT_CLOSE)
+}
+
+/// Return display/store-safe user content. A normal empty prompt is preserved,
+/// but a malformed context wrapper with no recoverable real prompt is dropped.
+pub fn sanitize_user_message_content(content: &str) -> Option<String> {
+    let stripped = strip_injected_context(content);
+    if stripped.is_empty() && contains_injected_context(content) {
+        None
+    } else {
+        Some(stripped.to_string())
     }
 }
 
@@ -40,15 +60,12 @@ pub fn strip_injected_context(content: &str) -> &str {
 pub fn strip_injected_context_from_events(events: Vec<DisplayEvent>) -> Vec<DisplayEvent> {
     events
         .into_iter()
-        .map(|event| match event {
+        .filter_map(|event| match event {
             DisplayEvent::UserMessage { _uuid, content } => {
-                let stripped = strip_injected_context(&content);
-                DisplayEvent::UserMessage {
-                    _uuid,
-                    content: stripped.to_string(),
-                }
+                let content = sanitize_user_message_content(&content)?;
+                Some(DisplayEvent::UserMessage { _uuid, content })
             }
-            other => other,
+            other => Some(other),
         })
         .collect()
 }
@@ -279,6 +296,13 @@ mod tests {
     }
 
     #[test]
+    fn strip_malformed_context_returns_empty() {
+        let malformed = format!("{CONTEXT_OPEN}\nctx without close");
+        assert_eq!(strip_injected_context(&malformed), "");
+        assert!(sanitize_user_message_content(&malformed).is_none());
+    }
+
+    #[test]
     fn strip_events_removes_context_from_user_messages_only() {
         let injected = format!("{CONTEXT_OPEN}\nctx\n{CONTEXT_CLOSE}\n\nreal prompt");
         let events = vec![
@@ -301,6 +325,29 @@ mod tests {
         ));
         assert!(matches!(
             &stripped[1],
+            DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
+    }
+
+    #[test]
+    fn strip_events_drops_malformed_context_user_message() {
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: format!("{CONTEXT_OPEN}\nctx without close"),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a".into(),
+                _message_id: "m".into(),
+                text: "answer".into(),
+            },
+        ];
+
+        let stripped = strip_injected_context_from_events(events);
+
+        assert_eq!(stripped.len(), 1);
+        assert!(matches!(
+            &stripped[0],
             DisplayEvent::AssistantText { text, .. } if text == "answer"
         ));
     }

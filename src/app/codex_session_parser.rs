@@ -259,7 +259,11 @@ fn parse_response_item(
             match role {
                 "user" | "developer" => {
                     // User or developer (system) message
-                    let text = extract_message_text(content);
+                    let Some(text) = crate::app::context_injection::sanitize_user_message_content(
+                        &extract_message_text(content),
+                    ) else {
+                        return;
+                    };
                     if !text.is_empty() && !recent_user_message_matches(events, &text) {
                         events.push(DisplayEvent::UserMessage {
                             _uuid: String::new(),
@@ -682,14 +686,18 @@ fn parse_event_msg(payload: &serde_json::Value, events: &mut Vec<DisplayEvent>) 
     match msg_type {
         "user_message" => {
             // User message from the event stream
-            let text = payload
+            let raw_text = payload
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if !text.is_empty() && !recent_user_message_matches(events, text) {
+            let Some(text) = crate::app::context_injection::sanitize_user_message_content(raw_text)
+            else {
+                return;
+            };
+            if !text.is_empty() && !recent_user_message_matches(events, &text) {
                 events.push(DisplayEvent::UserMessage {
                     _uuid: String::new(),
-                    content: text.to_string(),
+                    content: text,
                 });
             }
         }
@@ -1028,6 +1036,52 @@ mod tests {
             DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "hello world"),
             _ => panic!("Expected UserMessage"),
         }
+    }
+
+    #[test]
+    fn test_user_message_strips_injected_context_before_dedup() {
+        let injected = crate::app::context_injection::build_context_prompt(
+            &crate::app::session_store::ContextPayload {
+                compaction_summary: None,
+                events: vec![DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "hidden context".into(),
+                }],
+            },
+            "real prompt",
+        );
+        let first = serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-01-01T00:00:01Z",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": injected,
+            }
+        })
+        .to_string();
+        let duplicate = serde_json::json!({
+            "type": "event_msg",
+            "timestamp": "2026-01-01T00:00:02Z",
+            "payload": {
+                "type": "user_message",
+                "message": "real prompt",
+            }
+        })
+        .to_string();
+
+        let result = parse_lines(&[&first, &duplicate]);
+
+        let user_messages: Vec<_> = result
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::UserMessage { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(user_messages, vec!["real prompt"]);
     }
 
     #[test]
