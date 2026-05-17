@@ -388,6 +388,7 @@ impl SessionStore {
         )?;
         let mut count = 0usize;
         let mut completion: Option<(bool, u64, f64)> = None;
+        let mut saw_turn_content = false;
         for event in events {
             if matches!(
                 event,
@@ -403,6 +404,8 @@ impl SessionStore {
             } = event
             {
                 completion = Some((*success, *duration_ms, *cost_usd));
+            } else if clears_completion(event) {
+                saw_turn_content = true;
             }
             let compacted = compact_event(event);
             if should_skip_sanitized_event(event, &compacted) {
@@ -421,6 +424,11 @@ impl SessionStore {
             tx.execute(
                 "UPDATE sessions SET completed = ?1, duration_ms = ?2, cost_usd = ?3 WHERE id = ?4",
                 params![success as i64, duration_ms as i64, cost_usd, session_id],
+            )?;
+        } else if saw_turn_content {
+            tx.execute(
+                "UPDATE sessions SET completed = NULL, duration_ms = NULL, cost_usd = NULL WHERE id = ?1",
+                params![session_id],
             )?;
         }
         tx.commit()?;
@@ -719,6 +727,19 @@ fn event_kind(event: &DisplayEvent) -> &'static str {
         DisplayEvent::ModelSwitch { .. } => "ModelSwitch",
         DisplayEvent::Filtered => "Filtered",
     }
+}
+
+fn clears_completion(event: &DisplayEvent) -> bool {
+    matches!(
+        event,
+        DisplayEvent::Init { .. }
+            | DisplayEvent::UserMessage { .. }
+            | DisplayEvent::Command { .. }
+            | DisplayEvent::Plan { .. }
+            | DisplayEvent::AssistantText { .. }
+            | DisplayEvent::ToolCall { .. }
+            | DisplayEvent::ToolResult { .. }
+    )
 }
 
 /// Compact a DisplayEvent for storage, minimizing JSON size while preserving
@@ -1852,6 +1873,112 @@ mod tests {
             }
             _ => panic!("wrong variant"),
         }
+    }
+
+    #[test]
+    fn append_turn_content_clears_previous_completion() {
+        let store = SessionStore::open_memory().unwrap();
+        let id = store.create_session("main").unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::Complete {
+                    _session_id: String::new(),
+                    success: true,
+                    duration_ms: 5000,
+                    cost_usd: 0.05,
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            store.list_sessions(Some("main")).unwrap()[0].completed,
+            Some(true)
+        );
+
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "next turn".into(),
+                }],
+            )
+            .unwrap();
+
+        let session = store.list_sessions(Some("main")).unwrap().remove(0);
+        assert_eq!(session.completed, None);
+        assert_eq!(session.duration_ms, None);
+        assert_eq!(session.cost_usd, None);
+    }
+
+    #[test]
+    fn append_model_switch_preserves_previous_completion() {
+        let store = SessionStore::open_memory().unwrap();
+        let id = store.create_session("main").unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::Complete {
+                    _session_id: String::new(),
+                    success: true,
+                    duration_ms: 5000,
+                    cost_usd: 0.05,
+                }],
+            )
+            .unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::ModelSwitch {
+                    model: "gpt-5.5".into(),
+                }],
+            )
+            .unwrap();
+
+        let session = store.list_sessions(Some("main")).unwrap().remove(0);
+        assert_eq!(session.completed, Some(true));
+        assert_eq!(session.duration_ms, Some(5000));
+        assert_eq!(session.cost_usd, Some(0.05));
+    }
+
+    #[test]
+    fn load_events_hides_split_injected_context_from_existing_rows() {
+        let store = SessionStore::open_memory().unwrap();
+        let id = store.create_session("main").unwrap();
+        store
+            .append_events(
+                id,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "hidden developer instructions".into(),
+                    },
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: format!(
+                            "hidden transcript tail\n{}\n\nreal prompt",
+                            crate::app::context_injection::CONTEXT_CLOSE
+                        ),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "answer".into(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let loaded = store.load_events(id).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert!(matches!(
+            &loaded[0],
+            DisplayEvent::UserMessage { content, .. } if content == "real prompt"
+        ));
+        assert!(matches!(
+            &loaded[1],
+            DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
     }
 
     #[test]

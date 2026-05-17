@@ -53,21 +53,71 @@ pub fn sanitize_user_message_content(content: &str) -> Option<String> {
     }
 }
 
+fn push_stripped_user_message(out: &mut Vec<DisplayEvent>, _uuid: String, content: &str) {
+    let Some(stripped) = sanitize_user_message_content(content) else {
+        return;
+    };
+    if !stripped.trim().is_empty() {
+        out.push(DisplayEvent::UserMessage {
+            _uuid,
+            content: stripped,
+        });
+    }
+}
+
 /// Strip injected context from parsed event streams before display or storage.
 /// Agent JSONL files record the actual prompt sent to the backend, which may
 /// include Azureal's hidden context wrapper. The UI/store should retain only
 /// the user's real prompt.
 pub fn strip_injected_context_from_events(events: Vec<DisplayEvent>) -> Vec<DisplayEvent> {
-    events
-        .into_iter()
-        .filter_map(|event| match event {
+    let mut out = Vec::with_capacity(events.len());
+    let mut pending_user_messages = Vec::new();
+    let mut inside_injected_context = false;
+
+    for event in events {
+        match event {
             DisplayEvent::UserMessage { _uuid, content } => {
-                let content = sanitize_user_message_content(&content)?;
-                Some(DisplayEvent::UserMessage { _uuid, content })
+                if inside_injected_context {
+                    if content.contains(CONTEXT_CLOSE) {
+                        inside_injected_context = false;
+                        push_stripped_user_message(&mut out, _uuid, &content);
+                    }
+                    continue;
+                }
+
+                if contains_injected_context(&content) {
+                    // Codex may serialize one prompt as several user/developer
+                    // message items. If the context close tag appears in this
+                    // contiguous user-message run, all earlier buffered user
+                    // items belong to hidden injected context.
+                    pending_user_messages.clear();
+                    if content.contains(CONTEXT_CLOSE) {
+                        push_stripped_user_message(&mut out, _uuid, &content);
+                    } else {
+                        inside_injected_context = true;
+                    }
+                    continue;
+                }
+
+                pending_user_messages.push(DisplayEvent::UserMessage { _uuid, content });
             }
-            other => Some(other),
-        })
-        .collect()
+            other => {
+                if !inside_injected_context {
+                    out.append(&mut pending_user_messages);
+                } else {
+                    pending_user_messages.clear();
+                    inside_injected_context = false;
+                }
+                out.push(other);
+            }
+        }
+    }
+
+    if !inside_injected_context {
+        out.append(&mut pending_user_messages);
+    }
+
+    out
 }
 
 /// Build a transcript string from a ContextPayload.
@@ -349,6 +399,72 @@ mod tests {
         assert!(matches!(
             &stripped[0],
             DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
+    }
+
+    #[test]
+    fn strip_events_removes_split_context_user_messages() {
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "<permissions instructions>hidden</permissions instructions>".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "older transcript fragment".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u3".into(),
+                content: format!("last hidden chunk\n{CONTEXT_CLOSE}\n\nreal prompt"),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a".into(),
+                _message_id: "m".into(),
+                text: "answer".into(),
+            },
+        ];
+
+        let stripped = strip_injected_context_from_events(events);
+
+        assert_eq!(stripped.len(), 2);
+        assert!(matches!(
+            &stripped[0],
+            DisplayEvent::UserMessage { content, .. } if content == "real prompt"
+        ));
+        assert!(matches!(
+            &stripped[1],
+            DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
+    }
+
+    #[test]
+    fn strip_events_preserves_consecutive_real_user_messages() {
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u1".into(),
+                content: "first".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: "u2".into(),
+                content: "second".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a".into(),
+                _message_id: "m".into(),
+                text: "answer".into(),
+            },
+        ];
+
+        let stripped = strip_injected_context_from_events(events);
+
+        assert_eq!(stripped.len(), 3);
+        assert!(matches!(
+            &stripped[0],
+            DisplayEvent::UserMessage { content, .. } if content == "first"
+        ));
+        assert!(matches!(
+            &stripped[1],
+            DisplayEvent::UserMessage { content, .. } if content == "second"
         ));
     }
 

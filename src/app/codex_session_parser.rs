@@ -257,8 +257,7 @@ fn parse_response_item(
             let content = payload.get("content");
 
             match role {
-                "user" | "developer" => {
-                    // User or developer (system) message
+                "user" => {
                     let Some(text) = crate::app::context_injection::sanitize_user_message_content(
                         &extract_message_text(content),
                     ) else {
@@ -270,6 +269,10 @@ fn parse_response_item(
                             content: text,
                         });
                     }
+                }
+                "developer" | "system" => {
+                    // Codex records hidden instructions as developer/system
+                    // messages. They are prompt context, not visible user turns.
                 }
                 "assistant" => {
                     // Assistant response text
@@ -1099,15 +1102,11 @@ mod tests {
     }
 
     #[test]
-    fn test_developer_message_treated_as_user() {
+    fn test_developer_message_ignored() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"developer","content":"system instructions"}}"#,
         ]);
-        assert_eq!(result.events.len(), 1);
-        assert!(matches!(
-            &result.events[0],
-            DisplayEvent::UserMessage { .. }
-        ));
+        assert!(result.events.is_empty());
     }
 
     #[test]
