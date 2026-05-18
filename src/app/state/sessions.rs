@@ -22,8 +22,10 @@ impl App {
             .map(|slot| self.running_sessions.contains(slot))
             .unwrap_or(false);
         if is_live && !self.display_events.is_empty() {
-            self.live_display_events_cache
-                .insert(branch, self.display_events.clone());
+            let events = crate::app::context_injection::strip_injected_context_from_events(
+                self.display_events.clone(),
+            );
+            self.live_display_events_cache.insert(branch, events);
         }
     }
 
@@ -614,6 +616,39 @@ mod tests {
             app.selected_worktree = Some(0);
         }
         app
+    }
+
+    #[test]
+    fn test_save_live_display_events_sanitizes_hidden_context() {
+        let mut app = app_with_worktrees(1);
+        let branch = "azureal/wt-0".to_string();
+        app.active_slot.insert(branch.clone(), "slot-1".into());
+        app.running_sessions.insert("slot-1".into());
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: concat!(
+                    "# AGENTS.md instructions for /tmp/project\n",
+                    "<INSTRUCTIONS>\n",
+                    "hidden\n"
+                )
+                .into(),
+            });
+        app.display_events
+            .push(crate::events::DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "answer".into(),
+            });
+
+        app.save_live_display_events();
+
+        let cached = app.live_display_events_cache.get(&branch).unwrap();
+        assert_eq!(cached.len(), 1);
+        assert!(matches!(
+            &cached[0],
+            crate::events::DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
     }
 
     #[test]

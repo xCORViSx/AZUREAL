@@ -10,6 +10,7 @@ use crate::events::DisplayEvent;
 
 pub const CONTEXT_OPEN: &str = "<azureal-session-context>";
 pub const CONTEXT_CLOSE: &str = "</azureal-session-context>";
+const AGENTS_INSTRUCTIONS_PREFIX: &str = "# AGENTS.md instructions for ";
 
 /// Build a context-injected prompt. If the payload has no content, returns
 /// the original prompt unchanged.
@@ -45,12 +46,24 @@ pub fn contains_injected_context(content: &str) -> bool {
 /// Return display/store-safe user content. A normal empty prompt is preserved,
 /// but a malformed context wrapper with no recoverable real prompt is dropped.
 pub fn sanitize_user_message_content(content: &str) -> Option<String> {
+    if is_hidden_codex_context(content) {
+        return None;
+    }
     let stripped = strip_injected_context(content);
     if stripped.is_empty() && contains_injected_context(content) {
         None
     } else {
         Some(stripped.to_string())
     }
+}
+
+/// Codex can emit hidden developer context in its JSONL stream. Older Azureal
+/// builds stored those developer messages as visible user messages, so hide
+/// AGENTS instruction blocks, including rows truncated before their closing
+/// environment-context tag.
+pub fn is_hidden_codex_context(content: &str) -> bool {
+    let trimmed = content.trim_start();
+    trimmed.starts_with(AGENTS_INSTRUCTIONS_PREFIX) && trimmed.contains("<INSTRUCTIONS>")
 }
 
 fn push_stripped_user_message(out: &mut Vec<DisplayEvent>, _uuid: String, content: &str) {
@@ -77,6 +90,10 @@ pub fn strip_injected_context_from_events(events: Vec<DisplayEvent>) -> Vec<Disp
     for event in events {
         match event {
             DisplayEvent::UserMessage { _uuid, content } => {
+                if is_hidden_codex_context(&content) {
+                    continue;
+                }
+
                 if inside_injected_context {
                     if content.contains(CONTEXT_CLOSE) {
                         inside_injected_context = false;
@@ -281,6 +298,20 @@ mod tests {
         }
     }
 
+    fn hidden_codex_context() -> String {
+        concat!(
+            "# AGENTS.md instructions for /tmp/project\n",
+            "<INSTRUCTIONS>\n",
+            "Keep this hidden.\n",
+            "</INSTRUCTIONS>\n",
+            "<environment_context>\n",
+            "  <cwd>/tmp/project</cwd>\n",
+            "  <shell>bash</shell>\n",
+            "</environment_context>"
+        )
+        .to_string()
+    }
+
     // ── build_context_prompt ──
 
     #[test]
@@ -353,6 +384,25 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_drops_hidden_codex_context() {
+        let hidden = hidden_codex_context();
+        assert!(is_hidden_codex_context(&hidden));
+        assert!(sanitize_user_message_content(&hidden).is_none());
+    }
+
+    #[test]
+    fn sanitize_drops_truncated_hidden_codex_context() {
+        let hidden = concat!(
+            "# AGENTS.md instructions for /tmp/project\n",
+            "<INSTRUCTIONS>\n",
+            "Keep this hidden.\n"
+        );
+
+        assert!(is_hidden_codex_context(hidden));
+        assert!(sanitize_user_message_content(hidden).is_none());
+    }
+
+    #[test]
     fn strip_events_removes_context_from_user_messages_only() {
         let injected = format!("{CONTEXT_OPEN}\nctx\n{CONTEXT_CLOSE}\n\nreal prompt");
         let events = vec![
@@ -385,6 +435,29 @@ mod tests {
             DisplayEvent::UserMessage {
                 _uuid: "u".into(),
                 content: format!("{CONTEXT_OPEN}\nctx without close"),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: "a".into(),
+                _message_id: "m".into(),
+                text: "answer".into(),
+            },
+        ];
+
+        let stripped = strip_injected_context_from_events(events);
+
+        assert_eq!(stripped.len(), 1);
+        assert!(matches!(
+            &stripped[0],
+            DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
+    }
+
+    #[test]
+    fn strip_events_drops_legacy_hidden_codex_context_user_message() {
+        let events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: "u".into(),
+                content: hidden_codex_context(),
             },
             DisplayEvent::AssistantText {
                 _uuid: "a".into(),

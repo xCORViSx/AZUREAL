@@ -396,20 +396,20 @@ impl SessionStore {
             ) {
                 continue;
             }
+            let compacted = compact_event(event);
+            if should_skip_sanitized_event(event, &compacted) {
+                continue;
+            }
             if let DisplayEvent::Complete {
                 success,
                 duration_ms,
                 cost_usd,
                 ..
-            } = event
+            } = &compacted
             {
                 completion = Some((*success, *duration_ms, *cost_usd));
-            } else if clears_completion(event) {
+            } else if clears_completion(&compacted) {
                 saw_turn_content = true;
-            }
-            let compacted = compact_event(event);
-            if should_skip_sanitized_event(event, &compacted) {
-                continue;
             }
             let kind = event_kind(&compacted);
             let json = serde_json::to_string(&compacted).unwrap_or_default();
@@ -749,10 +749,11 @@ fn clears_completion(event: &DisplayEvent) -> bool {
 fn compact_event(event: &DisplayEvent) -> DisplayEvent {
     match event {
         DisplayEvent::UserMessage { _uuid, content } => {
-            let content = crate::app::context_injection::strip_injected_context(content);
+            let content = crate::app::context_injection::sanitize_user_message_content(content)
+                .unwrap_or_default();
             DisplayEvent::UserMessage {
                 _uuid: _uuid.clone(),
-                content: content.to_string(),
+                content,
             }
         }
         DisplayEvent::ToolResult {
@@ -932,7 +933,8 @@ fn should_skip_sanitized_event(original: &DisplayEvent, sanitized: &DisplayEvent
             },
             DisplayEvent::UserMessage { content, .. }
         ) if content.is_empty()
-            && crate::app::context_injection::contains_injected_context(original_content)
+            && (crate::app::context_injection::contains_injected_context(original_content)
+                || crate::app::context_injection::is_hidden_codex_context(original_content))
     )
 }
 
@@ -1022,6 +1024,20 @@ mod tests {
                 is_error: false,
             },
         ]
+    }
+
+    fn hidden_codex_context() -> String {
+        concat!(
+            "# AGENTS.md instructions for /tmp/project\n",
+            "<INSTRUCTIONS>\n",
+            "Hidden developer context.\n",
+            "</INSTRUCTIONS>\n",
+            "<environment_context>\n",
+            "  <cwd>/tmp/project</cwd>\n",
+            "  <shell>bash</shell>\n",
+            "</environment_context>"
+        )
+        .to_string()
     }
 
     // ── open / schema ──
@@ -1945,29 +1961,35 @@ mod tests {
     fn load_events_hides_split_injected_context_from_existing_rows() {
         let store = SessionStore::open_memory().unwrap();
         let id = store.create_session("main").unwrap();
-        store
-            .append_events(
-                id,
-                &[
-                    DisplayEvent::UserMessage {
-                        _uuid: String::new(),
-                        content: "hidden developer instructions".into(),
-                    },
-                    DisplayEvent::UserMessage {
-                        _uuid: String::new(),
-                        content: format!(
-                            "hidden transcript tail\n{}\n\nreal prompt",
-                            crate::app::context_injection::CONTEXT_CLOSE
-                        ),
-                    },
-                    DisplayEvent::AssistantText {
-                        _uuid: String::new(),
-                        _message_id: String::new(),
-                        text: "answer".into(),
-                    },
-                ],
-            )
-            .unwrap();
+        let raw_events = [
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "hidden developer instructions".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: format!(
+                    "hidden transcript tail\n{}\n\nreal prompt",
+                    crate::app::context_injection::CONTEXT_CLOSE
+                ),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "answer".into(),
+            },
+        ];
+        for (idx, event) in raw_events.iter().enumerate() {
+            let json = serde_json::to_string(event).unwrap();
+            let blob = compress_data(&json);
+            store
+                .conn
+                .execute(
+                    "INSERT INTO events(session_id, seq, kind, data, char_len) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![id, idx as i64 + 1, event_kind(event), blob, event_char_len(event) as i64],
+                )
+                .unwrap();
+        }
 
         let loaded = store.load_events(id).unwrap();
         assert_eq!(loaded.len(), 2);
@@ -1977,6 +1999,42 @@ mod tests {
         ));
         assert!(matches!(
             &loaded[1],
+            DisplayEvent::AssistantText { text, .. } if text == "answer"
+        ));
+    }
+
+    #[test]
+    fn load_events_hides_legacy_codex_agents_context_rows() {
+        let store = SessionStore::open_memory().unwrap();
+        let id = store.create_session("main").unwrap();
+        let raw = DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: hidden_codex_context(),
+        };
+        let json = serde_json::to_string(&raw).unwrap();
+        let blob = compress_data(&json);
+        store
+            .conn
+            .execute(
+                "INSERT INTO events(session_id, seq, kind, data, char_len) VALUES (?1, 1, 'UserMessage', ?2, ?3)",
+                params![id, blob, 9999_i64],
+            )
+            .unwrap();
+        store
+            .append_events(
+                id,
+                &[DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "answer".into(),
+                }],
+            )
+            .unwrap();
+
+        let loaded = store.load_events(id).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(matches!(
+            &loaded[0],
             DisplayEvent::AssistantText { text, .. } if text == "answer"
         ));
     }
@@ -2702,6 +2760,39 @@ mod tests {
 
         assert_eq!(inserted, 0);
         assert!(store.load_events(sid).unwrap().is_empty());
+    }
+
+    #[test]
+    fn append_events_skips_hidden_codex_context_without_clearing_completion() {
+        let store = SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        store
+            .append_events(
+                sid,
+                &[DisplayEvent::Complete {
+                    _session_id: String::new(),
+                    success: true,
+                    duration_ms: 1200,
+                    cost_usd: 0.01,
+                }],
+            )
+            .unwrap();
+
+        let inserted = store
+            .append_events(
+                sid,
+                &[DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: hidden_codex_context(),
+                }],
+            )
+            .unwrap();
+
+        assert_eq!(inserted, 0);
+        let session = store.list_sessions(Some("main")).unwrap().remove(0);
+        assert_eq!(session.completed, Some(true));
+        assert_eq!(session.duration_ms, Some(1200));
+        assert_eq!(session.cost_usd, Some(0.01));
     }
 
     #[test]

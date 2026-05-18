@@ -81,13 +81,15 @@ impl App {
         if let Some(session) = self.current_worktree() {
             let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
-            let prior_live_events = if previous_branch.as_deref() == Some(branch_name.as_str())
+            let raw_prior_live_events = if previous_branch.as_deref() == Some(branch_name.as_str())
                 && !previous_viewing_historic
             {
                 Some(previous_display_events.clone())
             } else {
                 self.live_display_events_cache.get(&branch_name).cloned()
             };
+            let prior_live_events = raw_prior_live_events
+                .map(crate::app::context_injection::strip_injected_context_from_events);
 
             // Reset current_session_id — it belongs to the previous worktree.
             // Will be set below if a session is found for this worktree.
@@ -246,7 +248,10 @@ impl App {
                 if !restored_from_jsonl {
                     // Fall back to cache if JSONL re-parse was not possible
                     if let Some(cached) = self.live_display_events_cache.remove(&branch_name) {
-                        self.display_events = cached;
+                        self.display_events =
+                            crate::app::context_injection::strip_injected_context_from_events(
+                                cached,
+                            );
                     }
                     // Set up JSONL file watching
                     if let Some(ref slot) = slot {

@@ -174,7 +174,7 @@ impl CodexEventParser {
         }
 
         match role {
-            "user" | "developer" => {
+            "user" => {
                 let Some(content) =
                     crate::app::context_injection::sanitize_user_message_content(&text)
                 else {
@@ -185,6 +185,7 @@ impl CodexEventParser {
                     content,
                 }]
             }
+            "developer" | "system" => Vec::new(),
             "assistant" => vec![DisplayEvent::AssistantText {
                 _uuid: String::new(),
                 _message_id: String::new(),
@@ -1029,6 +1030,34 @@ mod tests {
             }
             _ => panic!("expected AssistantText"),
         }
+    }
+
+    #[test]
+    fn parse_response_item_user_message() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":"hello world"}}"#;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            DisplayEvent::UserMessage { content, .. } => assert_eq!(content, "hello world"),
+            _ => panic!("expected UserMessage"),
+        }
+    }
+
+    #[test]
+    fn parse_response_item_developer_message_ignored() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = r##"{"type":"response_item","payload":{"type":"message","role":"developer","content":"# AGENTS.md instructions for /tmp/project\n<INSTRUCTIONS>\nhidden\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/tmp/project</cwd>\n</environment_context>"}}"##;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn parse_response_item_system_message_ignored() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = r#"{"type":"response_item","payload":{"type":"message","role":"system","content":"hidden system instructions"}}"#;
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert!(events.is_empty());
     }
 
     #[test]
