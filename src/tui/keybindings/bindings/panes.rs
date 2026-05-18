@@ -340,8 +340,8 @@ pub static EDIT_MODE: [Keybinding; 5] = [
 /// Convo/Output bindings
 pub static SESSION: [Keybinding; 14] = [
     Keybinding::new(
-        KeyCombo::plain(KeyCode::Char('a')),
-        "Add session",
+        KeyCombo::plain(KeyCode::Char('n')),
+        "New session",
         Action::NewSession,
     ),
     Keybinding::new(

@@ -35,6 +35,8 @@ pub struct RunCommandDialog {
     pub command: String,
     pub name_cursor: usize,
     pub command_cursor: usize,
+    /// Selection range in the active field, stored as character indices.
+    pub selection: Option<(usize, usize)>,
     pub editing_name: bool,
     pub editing_idx: Option<usize>,
     /// Whether the second field is "Command" (raw shell) or "Prompt" (AI-generated)
@@ -50,6 +52,7 @@ impl RunCommandDialog {
             command: String::new(),
             name_cursor: 0,
             command_cursor: 0,
+            selection: None,
             editing_name: true,
             editing_idx: None,
             field_mode: CommandFieldMode::Command,
@@ -61,8 +64,9 @@ impl RunCommandDialog {
         Self {
             name: cmd.name.clone(),
             command: cmd.command.clone(),
-            name_cursor: cmd.name.len(),
-            command_cursor: cmd.command.len(),
+            name_cursor: cmd.name.chars().count(),
+            command_cursor: cmd.command.chars().count(),
+            selection: None,
             editing_name: true,
             editing_idx: Some(idx),
             field_mode: CommandFieldMode::Command,

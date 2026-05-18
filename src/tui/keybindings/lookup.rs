@@ -973,11 +973,20 @@ mod tests {
     // ══════════════════════════════════════════════════════════════════
 
     #[test]
-    fn session_a_new_session() {
+    fn session_n_new_session() {
+        let ctx = cmd_ctx(Focus::Session);
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('n')),
+            Some(Action::NewSession)
+        );
+    }
+
+    #[test]
+    fn session_a_is_unbound() {
         let ctx = cmd_ctx(Focus::Session);
         assert_eq!(
             lookup_action(&ctx, KeyModifiers::NONE, KeyCode::Char('a')),
-            Some(Action::NewSession)
+            None
         );
     }
 

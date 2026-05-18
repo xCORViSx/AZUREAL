@@ -324,11 +324,10 @@ pub async fn run_app(
         let streaming = !app.agent_receivers.is_empty();
         let typing_recently = last_key_time.elapsed() < Duration::from_millis(300);
 
-        // Reset the background JSON parser when session changed (flag set by
-        // load_session_output / clear_session_state). Drain stale results too.
+        // Session switches used to reset a single global stream parser. Parsing
+        // is now slot-scoped, so switching panes must not discard background
+        // worktree output that is still streaming through the parser thread.
         if app.agent_processor_needs_reset {
-            claude_proc.reset(app.backend, app.display_model_name().to_string());
-            claude_proc.drain();
             app.agent_processor_needs_reset = false;
         }
 
@@ -353,11 +352,15 @@ pub async fn run_app(
             for (session_id, event) in claude_events {
                 match event {
                     crate::claude::AgentEvent::Output(output) => {
-                        // Only parse output for the active/viewed slot — other
-                        // slots' output is discarded (no display needed)
-                        if app.is_viewing_slot(&session_id) {
-                            claude_proc.submit(session_id, output.output_type, output.data);
-                        }
+                        let backend = app.backend_for_slot(&session_id);
+                        let model = app.model_for_slot(&session_id);
+                        claude_proc.submit(
+                            session_id,
+                            backend,
+                            model,
+                            output.output_type,
+                            output.data,
+                        );
                     }
                     other => {
                         handle_claude_event(&session_id, other, app, &claude_process)?;
@@ -387,10 +390,6 @@ pub async fn run_app(
             while parsed_count < MAX_CLAUDE_EVENTS_PER_TICK {
                 match claude_proc.try_recv() {
                     Some(result) => {
-                        // Guard: discard stale results from a previous session.
-                        // The is_viewing_slot check at submit time (line 292) gates
-                        // most output, but results can arrive from the background
-                        // parser thread after a project/worktree switch.
                         if app.is_viewing_slot(&result.slot_id) {
                             app.apply_parsed_output(
                                 &result.slot_id,
@@ -400,6 +399,8 @@ pub async fn run_app(
                                 &result.data,
                             );
                             needs_redraw = true;
+                        } else {
+                            app.apply_background_parsed_output(&result.slot_id, result.events);
                         }
                         parsed_count += 1;
                     }

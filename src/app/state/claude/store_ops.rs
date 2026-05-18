@@ -94,11 +94,25 @@ impl App {
             .get(slot_id)
             .and_then(|uuid| crate::config::session_file(&wt_path, uuid));
 
+        let cached_live_branch = self.branch_for_slot(slot_id).or_else(|| {
+            self.worktrees
+                .iter()
+                .chain(self.main_worktree.iter())
+                .find(|wt| wt.worktree_path.as_deref() == Some(wt_path.as_path()))
+                .map(|wt| wt.branch_name.clone())
+        });
+        let cached_live_events = cached_live_branch
+            .as_ref()
+            .and_then(|branch| self.live_display_events_cache.get(branch).cloned())
+            .map(crate::app::context_injection::strip_injected_context_from_events);
+
         // When the slot isn't being viewed, display_events belongs to a
         // different worktree — reading display_events[events_offset..] would
         // either corrupt the store (wrong events) or produce empty results
         // (offset past end). Fall back to parsing the JSONL file directly.
-        let slot_owns_display = self.is_viewing_slot(slot_id);
+        let slot_owns_display = self.is_viewing_slot(slot_id)
+            || (self.current_session_id == Some(session_id)
+                && self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path));
 
         let mut events: Vec<crate::events::DisplayEvent> = if slot_owns_display {
             // Viewed slot — use live display_events
@@ -117,6 +131,28 @@ impl App {
                 session_id,
             )
         };
+
+        if !slot_owns_display {
+            if let Some(cached_events) = cached_live_events {
+                if events_offset <= cached_events.len() {
+                    let cached_suffix: Vec<_> =
+                        cached_events.into_iter().skip(events_offset).collect();
+                    let cached_has_completion = cached_suffix
+                        .iter()
+                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+                    let jsonl_has_completion = events
+                        .iter()
+                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+                    if !cached_suffix.is_empty()
+                        && (events.is_empty()
+                            || cached_has_completion
+                            || (!jsonl_has_completion && cached_suffix.len() > events.len()))
+                    {
+                        events = cached_suffix;
+                    }
+                }
+            }
+        }
 
         if slot_owns_display && turn_backend == Backend::Claude {
             if let Some(ref path) = jsonl_path {
@@ -257,17 +293,21 @@ impl App {
                 // Update context percentage badge from store character count
                 self.update_token_badge();
             }
+            if let Some(branch) = cached_live_branch {
+                self.live_display_events_cache.remove(&branch);
+            }
         }
     }
 
     /// Parse JSONL and append to store for a background (non-active) project.
     /// Opens a temporary store connection to the worktree's .azs file.
     pub(crate) fn store_append_background(
-        &self,
+        &mut self,
         slot_id: &str,
         session_id: i64,
         wt_path: &std::path::Path,
-        _project_path: &std::path::Path,
+        project_path: &std::path::Path,
+        cache_branch: Option<&str>,
         _session_file_offset: u64,
     ) {
         let (session_backend, jsonl_path) = match self.agent_session_ids.get(slot_id) {
@@ -282,16 +322,13 @@ impl App {
         };
 
         if let Ok(store) = crate::app::session_store::SessionStore::open(wt_path) {
-            let events: Vec<crate::events::DisplayEvent> = match session_backend {
+            let existing_events = store.load_events(session_id).unwrap_or_default();
+            let mut events: Vec<crate::events::DisplayEvent> = match session_backend {
                 crate::backend::Backend::Claude => {
                     let parsed = crate::app::session_parser::parse_session_file(&jsonl_path);
-                    if parsed.events.is_empty() {
-                        return;
-                    }
                     crate::app::context_injection::strip_injected_context_from_events(parsed.events)
                 }
                 crate::backend::Backend::Codex => {
-                    let existing_events = store.load_events(session_id).unwrap_or_default();
                     let parsed =
                         crate::app::codex_session_parser::parse_codex_session_file(&jsonl_path);
                     let parsed_events =
@@ -305,12 +342,43 @@ impl App {
                     parsed_events.into_iter().skip(overlap).collect()
                 }
             };
+            if let Some(cached_events) = cache_branch
+                .and_then(|branch| {
+                    self.project_snapshots
+                        .get(project_path)
+                        .and_then(|snapshot| snapshot.live_display_events_cache.get(branch))
+                })
+                .cloned()
+                .map(crate::app::context_injection::strip_injected_context_from_events)
+            {
+                let overlap =
+                    crate::app::session_store::overlap_prefix_len(&existing_events, &cached_events);
+                let cached_suffix: Vec<_> = cached_events.into_iter().skip(overlap).collect();
+                let cached_has_completion = cached_suffix
+                    .iter()
+                    .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+                let jsonl_has_completion = events
+                    .iter()
+                    .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
+                if !cached_suffix.is_empty()
+                    && (events.is_empty()
+                        || cached_has_completion
+                        || (!jsonl_has_completion && cached_suffix.len() > events.len()))
+                {
+                    events = cached_suffix;
+                }
+            }
             if events.is_empty() {
                 return;
             }
             if store.append_events(session_id, &events).is_ok() {
                 // Source JSONL ingested — delete the original file and companion dir
                 crate::config::remove_session_file(&jsonl_path);
+                if let Some(branch) = cache_branch {
+                    if let Some(snapshot) = self.project_snapshots.get_mut(project_path) {
+                        snapshot.live_display_events_cache.remove(branch);
+                    }
+                }
             }
         }
     }

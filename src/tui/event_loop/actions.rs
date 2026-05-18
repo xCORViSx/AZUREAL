@@ -301,6 +301,7 @@ pub fn handle_key_event(
                                 app.agent_exit_codes.remove(slot);
                                 app.agent_session_ids.remove(slot);
                                 app.codex_slot_started_at.remove(slot);
+                                app.agent_slot_models.remove(slot);
                             }
                         }
                         app.active_slot.remove(&branch);
@@ -442,6 +443,7 @@ pub fn handle_key_event(
                                 app.agent_exit_codes.remove(slot);
                                 app.agent_session_ids.remove(slot);
                                 app.codex_slot_started_at.remove(slot);
+                                app.agent_slot_models.remove(slot);
                             }
                         }
                         app.active_slot.remove(&d.branch);
@@ -639,6 +641,18 @@ pub fn handle_key_event(
         return handle_session_input(key, app);
     }
 
+    // Confirmed session search keeps vim-style n/N match navigation. This must
+    // run before normal Session-pane keybindings because plain `n` now creates a
+    // new session when no search is active.
+    if app.focus == Focus::Session
+        && !app.show_session_list
+        && !app.session_find_matches.is_empty()
+        && matches!(key.code, KeyCode::Char('n') | KeyCode::Char('N'))
+        && (key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT)
+    {
+        return handle_session_input(key, app);
+    }
+
     // Session list overlay: handle list-specific keys (j/k nav, Enter select, etc.)
     // Unhandled keys fall through to lookup_action() so globals work while list is open.
     if app.show_session_list {
@@ -747,6 +761,25 @@ mod tests {
     fn test_key_event_backspace() {
         let key = KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE);
         assert!(matches!(key.code, KeyCode::Backspace));
+    }
+
+    #[test]
+    fn session_search_n_takes_precedence_over_new_session_binding() {
+        let claude_process = AgentProcess::new(crate::config::Config::default());
+        let mut app = App::new();
+        app.focus = Focus::Session;
+        app.session_find_matches = vec![(0, 0, 3), (10, 0, 3)];
+        app.session_find_current = 0;
+
+        handle_key_event(
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+            &mut app,
+            &claude_process,
+        )
+        .unwrap();
+
+        assert_eq!(app.session_find_current, 1);
+        assert!(!app.new_session_dialog_active);
     }
 
     // -- Modifier key detection --

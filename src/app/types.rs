@@ -572,6 +572,7 @@ mod tests {
         assert!(d.command.is_empty());
         assert_eq!(d.name_cursor, 0);
         assert_eq!(d.command_cursor, 0);
+        assert!(d.selection.is_none());
         assert!(d.editing_name);
         assert!(d.editing_idx.is_none());
         assert_eq!(d.field_mode, CommandFieldMode::Command);
@@ -586,6 +587,7 @@ mod tests {
         assert_eq!(d.command, "cargo test --all");
         assert_eq!(d.name_cursor, 4); // len of "test"
         assert_eq!(d.command_cursor, 16); // len of "cargo test --all"
+        assert!(d.selection.is_none());
         assert!(d.editing_name);
         assert_eq!(d.editing_idx, Some(3));
         assert_eq!(d.field_mode, CommandFieldMode::Command);

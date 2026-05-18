@@ -8,6 +8,7 @@ use crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
 
+use super::super::input_dialogs::paste_into_run_command_dialog;
 use super::super::input_projects::handle_projects_paste;
 use super::actions::handle_key_event;
 use super::coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
@@ -110,6 +111,14 @@ pub fn process_input_event(
             _ => {}
         },
         Event::Paste(text) => {
+            if app.run_command_dialog.is_some() {
+                if paste_into_run_command_dialog(app, &text) {
+                    *had_key_event = true;
+                }
+                *needs_redraw = true;
+                return Ok(());
+            }
+
             if app.is_projects_panel_active() {
                 handle_projects_paste(&text, app)?;
                 *had_key_event = true;
@@ -191,7 +200,7 @@ pub fn process_input_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::types::ProjectsPanel;
+    use crate::app::types::{ProjectsPanel, RunCommandDialog};
     use crate::backend::AgentProcess;
     use crate::config::Config;
     use crossterm::event::Event;
@@ -235,6 +244,24 @@ mod tests {
         let panel = app.projects_panel.as_ref().unwrap();
         assert_eq!(panel.input, "/tmp/repo");
         assert_eq!(panel.input_cursor, 9);
+        assert!(app.input.is_empty());
+        assert!(!app.prompt_mode);
+        assert!(needs_redraw);
+        assert!(had_key_event);
+    }
+
+    #[test]
+    fn paste_goes_to_run_command_dialog() {
+        let mut app = App::new();
+        app.focus = Focus::Input;
+        app.run_command_dialog = Some(RunCommandDialog::new());
+        app.run_command_dialog.as_mut().unwrap().editing_name = false;
+
+        let (needs_redraw, had_key_event) = dispatch_paste(&mut app, "cargo test\ncargo fmt");
+
+        let dialog = app.run_command_dialog.as_ref().unwrap();
+        assert_eq!(dialog.command, "cargo test\ncargo fmt");
+        assert_eq!(dialog.command_cursor, 20);
         assert!(app.input.is_empty());
         assert!(!app.prompt_mode);
         assert!(needs_redraw);

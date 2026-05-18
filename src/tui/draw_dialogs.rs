@@ -393,6 +393,7 @@ mod tests {
         assert!(d.command.is_empty());
         assert_eq!(d.name_cursor, 0);
         assert_eq!(d.command_cursor, 0);
+        assert!(d.selection.is_none());
         assert!(d.editing_name);
         assert!(d.editing_idx.is_none());
         assert_eq!(d.field_mode, CommandFieldMode::Command);
@@ -406,6 +407,7 @@ mod tests {
         assert_eq!(d.name, "build");
         assert_eq!(d.command, "cargo build");
         assert_eq!(d.editing_idx, Some(3));
+        assert!(d.selection.is_none());
         assert!(d.global);
     }
 

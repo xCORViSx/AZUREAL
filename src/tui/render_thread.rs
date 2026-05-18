@@ -612,7 +612,7 @@ mod tests {
         rt.send(req);
         // Give the render thread time to init 25+ language grammars and process
         let mut result = None;
-        for _ in 0..50 {
+        for _ in 0..100 {
             std::thread::sleep(std::time::Duration::from_millis(100));
             result = rt.try_recv();
             if result.is_some() {

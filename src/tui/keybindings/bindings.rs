@@ -724,7 +724,9 @@ mod tests {
 
     #[test]
     fn session_has_new_session() {
-        assert!(SESSION.iter().any(|b| b.action == Action::NewSession));
+        assert!(SESSION
+            .iter()
+            .any(|b| { b.action == Action::NewSession && b.primary.code == KeyCode::Char('n') }));
     }
 
     #[test]

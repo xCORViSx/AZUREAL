@@ -7,6 +7,7 @@
 //!
 //! Backend-aware: resets create the correct parser (Claude or Codex).
 
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
 
@@ -29,11 +30,11 @@ enum ProcessorInput {
     /// Raw agent output to parse
     Parse {
         slot_id: String,
+        backend: Backend,
+        model: String,
         output_type: OutputType,
         data: String,
     },
-    /// Reset parser state (session changed or backend switched)
-    Reset { backend: Backend, model: String },
 }
 
 /// Trait for streaming event parsers (used only inside processor thread)
@@ -61,6 +62,12 @@ fn create_parser(backend: Backend, model: String) -> Box<dyn StreamParser> {
     }
 }
 
+struct SlotParser {
+    backend: Backend,
+    model: String,
+    parser: Box<dyn StreamParser>,
+}
+
 /// Background JSON parser for agent streaming events
 pub struct AgentProcessor {
     tx: mpsc::Sender<ProcessorInput>,
@@ -69,22 +76,39 @@ pub struct AgentProcessor {
 
 impl AgentProcessor {
     /// Spawn the processor background thread with a given backend
-    pub fn spawn(backend: Backend, model: String) -> Self {
+    pub fn spawn(_backend: Backend, _model: String) -> Self {
         let (input_tx, input_rx) = mpsc::channel();
         let (output_tx, output_rx) = mpsc::channel();
 
         thread::Builder::new()
             .name("agent-parser".into())
             .spawn(move || {
-                let mut parser = create_parser(backend, model);
+                let mut parsers: HashMap<String, SlotParser> = HashMap::new();
                 while let Ok(input) = input_rx.recv() {
                     match input {
                         ProcessorInput::Parse {
                             slot_id,
+                            backend,
+                            model,
                             output_type,
                             data,
                         } => {
-                            let (events, parsed_json) = parser.parse(&data);
+                            let slot_parser =
+                                parsers
+                                    .entry(slot_id.clone())
+                                    .or_insert_with(|| SlotParser {
+                                        backend,
+                                        model: model.clone(),
+                                        parser: create_parser(backend, model.clone()),
+                                    });
+                            if slot_parser.backend != backend || slot_parser.model != model {
+                                *slot_parser = SlotParser {
+                                    backend,
+                                    model: model.clone(),
+                                    parser: create_parser(backend, model),
+                                };
+                            }
+                            let (events, parsed_json) = slot_parser.parser.parse(&data);
                             let _ = output_tx.send(ProcessedOutput {
                                 slot_id,
                                 events,
@@ -92,9 +116,6 @@ impl AgentProcessor {
                                 output_type,
                                 data,
                             });
-                        }
-                        ProcessorInput::Reset { backend, model } => {
-                            parser = create_parser(backend, model);
                         }
                     }
                 }
@@ -108,27 +129,101 @@ impl AgentProcessor {
     }
 
     /// Send raw output to the processor for JSON parsing (non-blocking)
-    pub fn submit(&self, slot_id: String, output_type: OutputType, data: String) {
+    pub fn submit(
+        &self,
+        slot_id: String,
+        backend: Backend,
+        model: String,
+        output_type: OutputType,
+        data: String,
+    ) {
         let _ = self.tx.send(ProcessorInput::Parse {
             slot_id,
+            backend,
+            model,
             output_type,
             data,
         });
     }
 
-    /// Reset parser state with a specific backend (call on session switch)
-    pub fn reset(&self, backend: Backend, model: String) {
-        let _ = self.tx.send(ProcessorInput::Reset { backend, model });
-    }
-
-    /// Drain all pending results, discarding them (call after session switch
-    /// to prevent stale parsed events from the old session being applied)
-    pub fn drain(&self) {
-        while self.rx.try_recv().is_ok() {}
-    }
-
     /// Poll for a parsed result (non-blocking)
     pub fn try_recv(&self) -> Option<ProcessedOutput> {
         self.rx.try_recv().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::DisplayEvent;
+    use std::time::{Duration, Instant};
+
+    fn wait_for_nonempty(processor: &AgentProcessor, expected: usize) -> Vec<ProcessedOutput> {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut results = Vec::new();
+        while Instant::now() < deadline && results.len() < expected {
+            if let Some(result) = processor.try_recv() {
+                if !result.events.is_empty() {
+                    results.push(result);
+                }
+            } else {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        results
+    }
+
+    #[test]
+    fn parses_interleaved_slots_with_independent_buffers() {
+        let processor = AgentProcessor::spawn(Backend::Codex, "gpt-default".into());
+        let a =
+            r#"{"type":"session_meta","payload":{"id":"slot-a","cwd":"/a"}}"#.to_string() + "\n";
+        let b =
+            r#"{"type":"session_meta","payload":{"id":"slot-b","cwd":"/b"}}"#.to_string() + "\n";
+        let split_at = a.len() / 2;
+        let (a1, a2) = a.split_at(split_at);
+
+        processor.submit(
+            "a".into(),
+            Backend::Codex,
+            "gpt-a".into(),
+            OutputType::Stdout,
+            a1.into(),
+        );
+        processor.submit(
+            "b".into(),
+            Backend::Codex,
+            "gpt-b".into(),
+            OutputType::Stdout,
+            b,
+        );
+        processor.submit(
+            "a".into(),
+            Backend::Codex,
+            "gpt-a".into(),
+            OutputType::Stdout,
+            a2.into(),
+        );
+
+        let results = wait_for_nonempty(&processor, 2);
+        assert_eq!(results.len(), 2);
+        let mut seen = results
+            .iter()
+            .filter_map(|result| match result.events.first() {
+                Some(DisplayEvent::Init {
+                    _session_id, model, ..
+                }) => Some((
+                    result.slot_id.as_str(),
+                    _session_id.as_str(),
+                    model.as_str(),
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        seen.sort_unstable();
+        assert_eq!(
+            seen,
+            vec![("a", "slot-a", "gpt-a"), ("b", "slot-b", "gpt-b")]
+        );
     }
 }

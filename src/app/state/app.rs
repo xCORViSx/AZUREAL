@@ -119,6 +119,9 @@ pub struct App {
     pub agent_exit_codes: HashMap<String, i32>,
     /// Claude API session UUIDs per slot_id (for --resume)
     pub agent_session_ids: HashMap<String, String>,
+    /// Model label used when each slot was spawned. Kept per slot so background
+    /// parser state does not depend on whichever worktree is currently viewed.
+    pub agent_slot_models: HashMap<String, String>,
     /// Maps branch_name → list of active slot_ids (PID strings, spawn order)
     pub branch_slots: HashMap<String, Vec<String>>,
     /// Which slot_id is actively displayed per branch (its output feeds display_events)
@@ -633,7 +636,7 @@ pub struct App {
     /// Session ID being renamed (resolved when 'r' is pressed)
     pub session_rename_id: Option<String>,
 
-    // ── New session name dialog (shown when pressing 'a') ──
+    // ── New session name dialog (shown when pressing 'n') ──
     /// Whether the new session name dialog is active
     pub new_session_dialog_active: bool,
     /// Text buffer for the new session name input
@@ -695,6 +698,7 @@ impl App {
             unread_session_ids: HashSet::new(),
             agent_exit_codes: HashMap::new(),
             agent_session_ids: HashMap::new(),
+            agent_slot_models: HashMap::new(),
             branch_slots: HashMap::new(),
             active_slot: HashMap::new(),
             session_scroll: usize::MAX, // Start at bottom (most recent messages)

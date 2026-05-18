@@ -324,6 +324,7 @@ impl App {
                 self.agent_exit_codes.remove(slot);
                 self.agent_session_ids.remove(slot);
                 self.codex_slot_started_at.remove(slot);
+                self.agent_slot_models.remove(slot);
             }
         }
         self.active_slot.remove(&branch);
@@ -503,6 +504,7 @@ impl App {
         if let Some(slot) = self.active_slot.get(&branch) {
             let slot = slot.clone();
             self.agent_session_ids.remove(&slot);
+            self.agent_slot_models.remove(&slot);
         }
         self.agent_session_ids.remove(&branch);
         self.display_events.clear();

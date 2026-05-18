@@ -8,7 +8,7 @@
 use anyhow::Result;
 use crossterm::event::{self, KeyCode};
 
-use super::keybindings::{lookup_branch_dialog_action, lookup_picker_action, Action};
+use super::keybindings::{is_cmd_key, lookup_branch_dialog_action, lookup_picker_action, Action};
 use crate::app::types::{
     is_git_safe_char, CommandFieldMode, PresetPrompt, PresetPromptDialog, RunCommandDialog,
 };
@@ -226,13 +226,68 @@ pub fn handle_run_command_dialog_input(
     app: &mut App,
     claude_process: &AgentProcess,
 ) -> Result<()> {
+    if app.run_command_dialog.is_none() {
+        return Ok(());
+    }
+
+    // ⌃s toggles global/project scope (works from any field)
+    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
+        let Some(ref mut dialog) = app.run_command_dialog else {
+            return Ok(());
+        };
+        dialog.global = !dialog.global;
+        return Ok(());
+    }
+
+    if is_cmd_key(key.modifiers, key.code, 'a') {
+        if let Some(ref mut dialog) = app.run_command_dialog {
+            let len = active_run_dialog_len(dialog);
+            *active_run_dialog_cursor_mut(dialog) = len;
+            dialog.selection = Some((0, len));
+        }
+        return Ok(());
+    }
+    if is_cmd_key(key.modifiers, key.code, 'c') {
+        if let Some(text) = app
+            .run_command_dialog
+            .as_ref()
+            .and_then(run_dialog_selected_text)
+        {
+            app.copy_to_clipboard(&text);
+            app.set_status("Copied to clipboard");
+        }
+        return Ok(());
+    }
+    if is_cmd_key(key.modifiers, key.code, 'x') {
+        let deleted = app
+            .run_command_dialog
+            .as_mut()
+            .and_then(delete_run_dialog_selection);
+        if let Some(text) = deleted {
+            app.copy_to_clipboard(&text);
+            app.set_status("Cut to clipboard");
+        }
+        return Ok(());
+    }
+    if is_cmd_key(key.modifiers, key.code, 'v') {
+        let paste_text = app.paste_from_clipboard();
+        paste_into_run_command_dialog(app, &paste_text);
+        return Ok(());
+    }
+
     let Some(ref mut dialog) = app.run_command_dialog else {
         return Ok(());
     };
 
-    // ⌃s toggles global/project scope (works from any field)
-    if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
-        dialog.global = !dialog.global;
+    if !dialog.editing_name
+        && matches!(
+            (key.modifiers, key.code),
+            (event::KeyModifiers::SHIFT, KeyCode::Enter)
+                | (event::KeyModifiers::ALT, KeyCode::Enter)
+                | (event::KeyModifiers::CONTROL, KeyCode::Char('j'))
+        )
+    {
+        insert_run_dialog_text(dialog, "\n");
         return Ok(());
     }
 
@@ -241,6 +296,7 @@ pub fn handle_run_command_dialog_input(
         KeyCode::Tab => {
             if dialog.editing_name {
                 dialog.editing_name = false;
+                dialog.selection = None;
             } else {
                 dialog.field_mode = match dialog.field_mode {
                     CommandFieldMode::Command => CommandFieldMode::Prompt,
@@ -252,6 +308,7 @@ pub fn handle_run_command_dialog_input(
         KeyCode::BackTab => {
             if !dialog.editing_name {
                 dialog.editing_name = true;
+                dialog.selection = None;
             }
         }
         // Enter: advance name→command, or save/generate when in command/prompt field
@@ -303,44 +360,218 @@ pub fn handle_run_command_dialog_input(
         }
         // Text editing for the active field
         KeyCode::Backspace => {
-            if dialog.editing_name {
-                if dialog.name_cursor > 0 {
-                    dialog.name_cursor -= 1;
-                    dialog.name.remove(dialog.name_cursor);
-                }
-            } else if dialog.command_cursor > 0 {
-                dialog.command_cursor -= 1;
-                dialog.command.remove(dialog.command_cursor);
+            if !delete_run_dialog_selection(dialog).is_some() {
+                run_dialog_backspace(dialog);
+            }
+        }
+        KeyCode::Delete => {
+            if !delete_run_dialog_selection(dialog).is_some() {
+                run_dialog_delete(dialog);
             }
         }
         KeyCode::Left => {
-            if dialog.editing_name {
-                dialog.name_cursor = dialog.name_cursor.saturating_sub(1);
-            } else {
-                dialog.command_cursor = dialog.command_cursor.saturating_sub(1);
-            }
+            run_dialog_move_left(dialog, key.modifiers.contains(event::KeyModifiers::SHIFT));
         }
         KeyCode::Right => {
-            if dialog.editing_name {
-                if dialog.name_cursor < dialog.name.len() {
-                    dialog.name_cursor += 1;
-                }
-            } else if dialog.command_cursor < dialog.command.len() {
-                dialog.command_cursor += 1;
-            }
+            run_dialog_move_right(dialog, key.modifiers.contains(event::KeyModifiers::SHIFT));
         }
-        KeyCode::Char(c) if !c.is_control() => {
-            if dialog.editing_name {
-                dialog.name.insert(dialog.name_cursor, c);
-                dialog.name_cursor += 1;
-            } else {
-                dialog.command.insert(dialog.command_cursor, c);
-                dialog.command_cursor += 1;
-            }
+        KeyCode::Home => {
+            *active_run_dialog_cursor_mut(dialog) = 0;
+            dialog.selection = None;
+        }
+        KeyCode::End => {
+            let len = active_run_dialog_len(dialog);
+            *active_run_dialog_cursor_mut(dialog) = len;
+            dialog.selection = None;
+        }
+        KeyCode::Char(c)
+            if !c.is_control()
+                && !key.modifiers.intersects(
+                    event::KeyModifiers::CONTROL
+                        | event::KeyModifiers::ALT
+                        | event::KeyModifiers::SUPER,
+                ) =>
+        {
+            insert_run_dialog_char(dialog, c);
         }
         _ => {}
     }
     Ok(())
+}
+
+/// Insert bracketed paste text into the active run command dialog field.
+pub fn paste_into_run_command_dialog(app: &mut App, text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+    let Some(ref mut dialog) = app.run_command_dialog else {
+        return false;
+    };
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    insert_run_dialog_text(dialog, &normalized);
+    true
+}
+
+fn active_run_dialog_len(dialog: &RunCommandDialog) -> usize {
+    if dialog.editing_name {
+        dialog.name.chars().count()
+    } else {
+        dialog.command.chars().count()
+    }
+}
+
+fn active_run_dialog_cursor(dialog: &RunCommandDialog) -> usize {
+    if dialog.editing_name {
+        dialog.name_cursor
+    } else {
+        dialog.command_cursor
+    }
+}
+
+fn active_run_dialog_cursor_mut(dialog: &mut RunCommandDialog) -> &mut usize {
+    if dialog.editing_name {
+        &mut dialog.name_cursor
+    } else {
+        &mut dialog.command_cursor
+    }
+}
+
+fn active_run_dialog_text(dialog: &RunCommandDialog) -> &str {
+    if dialog.editing_name {
+        &dialog.name
+    } else {
+        &dialog.command
+    }
+}
+
+fn active_run_dialog_text_mut(dialog: &mut RunCommandDialog) -> &mut String {
+    if dialog.editing_name {
+        &mut dialog.name
+    } else {
+        &mut dialog.command
+    }
+}
+
+fn char_to_byte(text: &str, char_idx: usize) -> usize {
+    text.char_indices()
+        .nth(char_idx)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len())
+}
+
+fn normalized_run_dialog_selection(dialog: &RunCommandDialog) -> Option<(usize, usize)> {
+    let (start, end) = dialog.selection?;
+    if start == end {
+        None
+    } else if start < end {
+        Some((start, end))
+    } else {
+        Some((end, start))
+    }
+}
+
+fn run_dialog_selected_text(dialog: &RunCommandDialog) -> Option<String> {
+    let (start, end) = normalized_run_dialog_selection(dialog)?;
+    let chars: Vec<char> = active_run_dialog_text(dialog).chars().collect();
+    if start >= end || start >= chars.len() {
+        return None;
+    }
+    Some(chars[start..end.min(chars.len())].iter().collect())
+}
+
+fn delete_run_dialog_selection(dialog: &mut RunCommandDialog) -> Option<String> {
+    let (start, end) = normalized_run_dialog_selection(dialog)?;
+    let text = run_dialog_selected_text(dialog)?;
+    let field = active_run_dialog_text_mut(dialog);
+    let chars: Vec<char> = field.chars().collect();
+    *field = chars[..start]
+        .iter()
+        .chain(chars[end.min(chars.len())..].iter())
+        .collect();
+    *active_run_dialog_cursor_mut(dialog) = start;
+    dialog.selection = None;
+    Some(text)
+}
+
+fn insert_run_dialog_char(dialog: &mut RunCommandDialog, c: char) {
+    if delete_run_dialog_selection(dialog).is_some() {
+        // Cursor was moved to the start of the deleted range.
+    }
+    let cursor = active_run_dialog_cursor(dialog);
+    let field = active_run_dialog_text_mut(dialog);
+    let byte_pos = char_to_byte(field, cursor);
+    field.insert(byte_pos, c);
+    *active_run_dialog_cursor_mut(dialog) = cursor + 1;
+    dialog.selection = None;
+}
+
+fn insert_run_dialog_text(dialog: &mut RunCommandDialog, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    if delete_run_dialog_selection(dialog).is_some() {
+        // Cursor was moved to the start of the deleted range.
+    }
+    let cursor = active_run_dialog_cursor(dialog);
+    let field = active_run_dialog_text_mut(dialog);
+    let byte_pos = char_to_byte(field, cursor);
+    field.insert_str(byte_pos, text);
+    *active_run_dialog_cursor_mut(dialog) = cursor + text.chars().count();
+    dialog.selection = None;
+}
+
+fn run_dialog_backspace(dialog: &mut RunCommandDialog) {
+    let cursor = active_run_dialog_cursor(dialog);
+    if cursor == 0 {
+        return;
+    }
+    let field = active_run_dialog_text_mut(dialog);
+    let byte_pos = char_to_byte(field, cursor - 1);
+    field.remove(byte_pos);
+    *active_run_dialog_cursor_mut(dialog) = cursor - 1;
+}
+
+fn run_dialog_delete(dialog: &mut RunCommandDialog) {
+    let cursor = active_run_dialog_cursor(dialog);
+    if cursor >= active_run_dialog_len(dialog) {
+        return;
+    }
+    let field = active_run_dialog_text_mut(dialog);
+    let byte_pos = char_to_byte(field, cursor);
+    field.remove(byte_pos);
+}
+
+fn run_dialog_move_left(dialog: &mut RunCommandDialog, extend: bool) {
+    if extend && dialog.selection.is_none() {
+        let cursor = active_run_dialog_cursor(dialog);
+        dialog.selection = Some((cursor, cursor));
+    }
+    let cursor = active_run_dialog_cursor(dialog).saturating_sub(1);
+    *active_run_dialog_cursor_mut(dialog) = cursor;
+    if extend {
+        if let Some((start, _)) = dialog.selection {
+            dialog.selection = Some((start, cursor));
+        }
+    } else {
+        dialog.selection = None;
+    }
+}
+
+fn run_dialog_move_right(dialog: &mut RunCommandDialog, extend: bool) {
+    if extend && dialog.selection.is_none() {
+        let cursor = active_run_dialog_cursor(dialog);
+        dialog.selection = Some((cursor, cursor));
+    }
+    let len = active_run_dialog_len(dialog);
+    let cursor = (active_run_dialog_cursor(dialog) + 1).min(len);
+    *active_run_dialog_cursor_mut(dialog) = cursor;
+    if extend {
+        if let Some((start, _)) = dialog.selection {
+            dialog.selection = Some((start, cursor));
+        }
+    } else {
+        dialog.selection = None;
+    }
 }
 
 /// Handle keyboard input when preset prompt picker overlay is open.
@@ -697,6 +928,14 @@ mod tests {
         }
     }
 
+    fn cmd_mod() -> KeyModifiers {
+        if cfg!(target_os = "macos") {
+            KeyModifiers::SUPER
+        } else {
+            KeyModifiers::CONTROL
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════════
     //  format_run_cmd_display_name
     // ══════════════════════════════════════════════════════════════════
@@ -967,6 +1206,7 @@ mod tests {
         assert!(d.command.is_empty());
         assert_eq!(d.name_cursor, 0);
         assert_eq!(d.command_cursor, 0);
+        assert!(d.selection.is_none());
         assert!(d.editing_name);
         assert!(d.editing_idx.is_none());
         assert_eq!(d.field_mode, CommandFieldMode::Command);
@@ -981,9 +1221,91 @@ mod tests {
         assert_eq!(d.command, "cargo build");
         assert_eq!(d.name_cursor, 5);
         assert_eq!(d.command_cursor, 11);
+        assert!(d.selection.is_none());
         assert!(d.editing_name);
         assert_eq!(d.editing_idx, Some(0));
         assert!(d.global);
+    }
+
+    #[test]
+    fn run_command_dialog_shift_enter_inserts_newline_in_command_field() {
+        let mut app = App::new();
+        app.run_command_dialog = Some(RunCommandDialog::new());
+        {
+            let dialog = app.run_command_dialog.as_mut().unwrap();
+            dialog.editing_name = false;
+            dialog.command = "first".into();
+            dialog.command_cursor = 5;
+        }
+        let process = AgentProcess::new(crate::config::Config::default());
+
+        handle_run_command_dialog_input(
+            key_mod(KeyCode::Enter, KeyModifiers::SHIFT),
+            &mut app,
+            &process,
+        )
+        .unwrap();
+
+        let dialog = app.run_command_dialog.as_ref().unwrap();
+        assert_eq!(dialog.command, "first\n");
+        assert_eq!(dialog.command_cursor, 6);
+    }
+
+    #[test]
+    fn run_command_dialog_clipboard_round_trip_active_field() {
+        let mut app = App::new();
+        app.run_command_dialog = Some(RunCommandDialog::new());
+        {
+            let dialog = app.run_command_dialog.as_mut().unwrap();
+            dialog.editing_name = false;
+            dialog.command = "cargo test".into();
+            dialog.command_cursor = dialog.command.chars().count();
+        }
+        let process = AgentProcess::new(crate::config::Config::default());
+        let mods = cmd_mod();
+
+        handle_run_command_dialog_input(key_mod(KeyCode::Char('a'), mods), &mut app, &process)
+            .unwrap();
+        assert_eq!(
+            app.run_command_dialog.as_ref().unwrap().selection,
+            Some((0, 10))
+        );
+
+        handle_run_command_dialog_input(key_mod(KeyCode::Char('c'), mods), &mut app, &process)
+            .unwrap();
+        assert_eq!(app.clipboard, "cargo test");
+
+        handle_run_command_dialog_input(key_mod(KeyCode::Char('x'), mods), &mut app, &process)
+            .unwrap();
+        assert_eq!(app.run_command_dialog.as_ref().unwrap().command, "");
+        assert_eq!(app.clipboard, "cargo test");
+
+        handle_run_command_dialog_input(key_mod(KeyCode::Char('v'), mods), &mut app, &process)
+            .unwrap();
+        assert_eq!(
+            app.run_command_dialog.as_ref().unwrap().command,
+            "cargo test"
+        );
+    }
+
+    #[test]
+    fn run_command_dialog_paste_replaces_selection_and_normalizes_newlines() {
+        let mut app = App::new();
+        app.run_command_dialog = Some(RunCommandDialog::new());
+        {
+            let dialog = app.run_command_dialog.as_mut().unwrap();
+            dialog.editing_name = false;
+            dialog.command = "hello world".into();
+            dialog.command_cursor = 5;
+            dialog.selection = Some((6, 11));
+        }
+
+        assert!(paste_into_run_command_dialog(&mut app, "one\r\ntwo"));
+
+        let dialog = app.run_command_dialog.as_ref().unwrap();
+        assert_eq!(dialog.command, "hello one\ntwo");
+        assert_eq!(dialog.command_cursor, 13);
+        assert!(dialog.selection.is_none());
     }
 
     // ══════════════════════════════════════════════════════════════════

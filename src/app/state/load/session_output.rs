@@ -81,12 +81,18 @@ impl App {
         if let Some(session) = self.current_worktree() {
             let branch_name = session.branch_name.clone();
             let worktree_path = session.worktree_path.clone();
-            let raw_prior_live_events = if previous_branch.as_deref() == Some(branch_name.as_str())
-                && !previous_viewing_historic
-            {
+            let prior_live_from_previous_display = previous_branch.as_deref()
+                == Some(branch_name.as_str())
+                && !previous_viewing_historic;
+            let cached_prior_live_events =
+                self.live_display_events_cache.get(&branch_name).cloned();
+            let prior_live_from_cache = cached_prior_live_events.is_some();
+            let raw_prior_live_events = if let Some(cached) = cached_prior_live_events {
+                Some(cached)
+            } else if prior_live_from_previous_display {
                 Some(previous_display_events.clone())
             } else {
-                self.live_display_events_cache.get(&branch_name).cloned()
+                None
             };
             let prior_live_events = raw_prior_live_events
                 .map(crate::app::context_injection::strip_injected_context_from_events);
@@ -269,7 +275,10 @@ impl App {
                 }
 
                 if let Some(previous_live) = prior_live_events {
-                    if previous_session_id == self.current_session_id {
+                    let prior_live_matches_current = prior_live_from_cache
+                        || (prior_live_from_previous_display
+                            && previous_session_id == self.current_session_id);
+                    if prior_live_matches_current {
                         let overlap = crate::app::session_store::overlap_prefix_len(
                             &self.display_events,
                             &previous_live,
@@ -1229,6 +1238,115 @@ mod tests {
             })
             .collect();
         assert_eq!(texts, vec!["prefix", "live-only tail"]);
+
+        let _ = std::fs::remove_file(&session_path);
+    }
+
+    #[test]
+    fn load_session_output_prefers_branch_live_cache_after_worktree_switch() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let codex_session_id = format!("load-cache-tail-{}", unique);
+        let session_path = session_dir.join(format!("{}.jsonl", codex_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": codex_session_id,
+                    "cwd": "/tmp/live-cache-tail",
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "prefix"}],
+                }
+            })
+        )
+        .unwrap();
+
+        let worktree_path = std::env::temp_dir().join(format!("azureal-cache-tail-{}", unique));
+        std::fs::create_dir_all(&worktree_path).unwrap();
+        let store = crate::app::session_store::SessionStore::open(&worktree_path).unwrap();
+        let sid = store.create_session("main").unwrap();
+        drop(store);
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(worktree_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(999);
+        app.display_events = vec![DisplayEvent::AssistantText {
+            _uuid: String::new(),
+            _message_id: String::new(),
+            text: "other branch display".into(),
+        }];
+        app.live_display_events_cache.insert(
+            "main".into(),
+            vec![
+                DisplayEvent::Init {
+                    _session_id: codex_session_id.clone(),
+                    cwd: "/tmp/live-cache-tail".into(),
+                    model: "gpt-5.4".into(),
+                },
+                DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "prefix".into(),
+                },
+                DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "cached tail".into(),
+                },
+            ],
+        );
+        app.active_slot.insert("main".into(), "55".into());
+        app.running_sessions.insert("55".into());
+        app.agent_session_ids
+            .insert("55".into(), codex_session_id.clone());
+        app.pid_session_target
+            .insert("55".into(), (sid, worktree_path, 0, 0));
+
+        app.load_session_output();
+
+        let texts: Vec<&str> = app
+            .display_events
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::AssistantText { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, vec!["prefix", "cached tail"]);
 
         let _ = std::fs::remove_file(&session_path);
     }

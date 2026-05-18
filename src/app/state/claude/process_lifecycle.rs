@@ -64,6 +64,7 @@ impl App {
         self.agent_receivers.remove(slot_id);
         self.slot_to_project.remove(slot_id);
         self.codex_slot_started_at.remove(slot_id);
+        self.agent_slot_models.remove(slot_id);
         if let Some(c) = code {
             self.agent_exit_codes.insert(slot_id.to_string(), c);
         }
@@ -254,6 +255,7 @@ impl App {
         self.agent_receivers.remove(slot_id);
         self.slot_to_project.remove(slot_id);
         self.codex_slot_started_at.remove(slot_id);
+        self.agent_slot_models.remove(slot_id);
         if let Some(c) = code {
             self.agent_exit_codes.insert(slot_id.to_string(), c);
         }
@@ -315,6 +317,7 @@ impl App {
                 session_id,
                 &wt_path,
                 &project_path,
+                branch.as_deref(),
                 session_file_offset,
             );
         }
@@ -477,6 +480,12 @@ impl App {
         let backend = model
             .map(crate::app::state::backend_for_model)
             .unwrap_or(crate::backend::Backend::Claude);
+        self.agent_slot_models.insert(
+            slot.clone(),
+            model
+                .map(str::to_string)
+                .unwrap_or_else(|| backend.to_string()),
+        );
         match backend {
             crate::backend::Backend::Codex => {
                 self.codex_slot_started_at

@@ -740,6 +740,7 @@ impl App {
         // Save the active terminal into worktree_terminals before snapshot capture
         // (otherwise the current worktree's shell session is lost)
         self.save_current_terminal();
+        self.save_live_display_events();
         if let Some(ref current_project) = self.project.clone() {
             let snapshot = ProjectSnapshot {
                 project: current_project.clone(),
@@ -920,6 +921,7 @@ impl App {
             }
             self.agent_receivers.remove(slot);
             self.codex_slot_started_at.remove(slot);
+            self.agent_slot_models.remove(slot);
         }
 
         // Kill background compaction agents

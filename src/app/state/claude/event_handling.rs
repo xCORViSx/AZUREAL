@@ -158,9 +158,63 @@ impl App {
         }
     }
 
-    /// Handle Claude output. Only processes events from the active slot (the one
-    /// displayed in the session pane). Non-active slots' output is silently drained
-    /// by the event loop to prevent channel backup.
+    /// Apply parsed output for a slot that is not currently displayed. The
+    /// events are still kept in that worktree's live cache so switching back to
+    /// it shows the current turn without waiting for process exit or JSONL
+    /// recovery.
+    pub fn apply_background_parsed_output(&mut self, slot_id: &str, events: Vec<DisplayEvent>) {
+        let mut events = crate::app::context_injection::strip_injected_context_from_events(events);
+        self.apply_slot_turn_duration(slot_id, &mut events);
+        if events.is_empty() {
+            return;
+        }
+
+        if let Some(branch) = self.branch_for_slot(slot_id) {
+            let is_active_for_branch = self
+                .active_slot
+                .get(&branch)
+                .map(|active| active == slot_id)
+                .unwrap_or(false);
+            if is_active_for_branch {
+                self.live_display_events_cache
+                    .entry(branch)
+                    .or_default()
+                    .extend(events);
+            }
+            return;
+        }
+
+        let Some(project_path) = self.slot_to_project.get(slot_id).cloned() else {
+            return;
+        };
+        let Some(snapshot) = self.project_snapshots.get_mut(&project_path) else {
+            return;
+        };
+        let branch = snapshot
+            .branch_slots
+            .iter()
+            .find(|(_, slots)| slots.iter().any(|slot| slot == slot_id))
+            .map(|(branch, _)| branch.clone());
+        let Some(branch) = branch else {
+            return;
+        };
+        let is_active_for_branch = snapshot
+            .active_slot
+            .get(&branch)
+            .map(|active| active == slot_id)
+            .unwrap_or(false);
+        if is_active_for_branch {
+            snapshot
+                .live_display_events_cache
+                .entry(branch)
+                .or_default()
+                .extend(events);
+        }
+    }
+
+    /// Handle already-filtered output for the slot currently displayed in the
+    /// session pane. Background slot output is parsed by the event loop and stored
+    /// in that worktree's live cache instead.
     pub fn handle_claude_output(&mut self, slot_id: &str, output_type: OutputType, data: String) {
         // Only display output from the active slot of the currently viewed branch.
         // Also suppress when the user is viewing a different session file (historic).

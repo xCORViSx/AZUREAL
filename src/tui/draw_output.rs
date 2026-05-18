@@ -235,7 +235,7 @@ pub fn draw_output(f: &mut Frame, app: &mut App, area: Rect) {
                     &crate::tui::keybindings::SESSION,
                     crate::tui::keybindings::Action::NewSession,
                 )
-                .unwrap_or_else(|| "a".into());
+                .unwrap_or_else(|| "n".into());
                 let hint = vec![Line::from(vec![
                     Span::styled("Press ", Style::default().fg(Color::DarkGray)),
                     Span::styled(key, Style::default().fg(AZURE).add_modifier(Modifier::BOLD)),

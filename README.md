@@ -220,6 +220,7 @@ azureal
 | `[/]` | Switch worktree tab |
 | `f` | Toggle file tree |
 | `s` | Toggle session list |
+| `n` | New session |
 | `/` | Search / filter |
 | `?` | Help |
 | `⌘c` / `Ctrl+C` | Copy selection (fallback: `⌥c` macOS) |

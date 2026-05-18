@@ -771,6 +771,8 @@ mod tests {
 
         assert!(!app.codex_slot_started_at.contains_key("10"));
         assert!(app.codex_slot_started_at.contains_key("20"));
+        assert_eq!(app.model_for_slot("10"), "claude");
+        assert_eq!(app.model_for_slot("20"), "gpt-5.4");
     }
 
     #[test]
@@ -858,6 +860,44 @@ mod tests {
         let (text, color) = app.token_badge_cache.unwrap();
         assert!(!text.contains("100"));
         assert_eq!(color, ratatui::style::Color::Green);
+    }
+
+    #[test]
+    fn apply_background_parsed_output_updates_non_viewed_worktree_cache() {
+        use crate::events::DisplayEvent;
+
+        let mut app = super::super::App::new();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "viewed".into(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "background".into(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.branch_slots
+            .insert("background".into(), vec!["42".into()]);
+        app.active_slot.insert("background".into(), "42".into());
+
+        app.apply_background_parsed_output(
+            "42",
+            vec![DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "background progress".into(),
+            }],
+        );
+
+        let cached = app.live_display_events_cache.get("background").unwrap();
+        assert!(cached.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "background progress")
+        }));
+        assert!(app.display_events.is_empty());
     }
 
     #[test]
@@ -998,7 +1038,12 @@ mod tests {
             archived: false,
         });
         app.selected_worktree = Some(0);
+        app.current_session_id = Some(sid);
         app.active_slot.insert("main".into(), "55".into());
+        // handle_claude_exited removes active_slot before it stores the final
+        // JSONL, so the store path must still recognize that this display owns
+        // the completed turn.
+        app.active_slot.remove("main");
         app.pid_session_target
             .insert("55".into(), (sid, wt_path.clone(), 0, 0));
         app.agent_session_ids
@@ -1042,6 +1087,66 @@ mod tests {
             .any(|event| matches!(event, DisplayEvent::Complete { .. })));
         assert!(!session_path.exists());
         let _ = std::fs::remove_dir(&session_dir);
+    }
+
+    #[test]
+    fn store_append_from_jsonl_uses_live_cache_for_non_viewed_slot_when_jsonl_missing() {
+        use crate::backend::Backend;
+        use crate::events::DisplayEvent;
+
+        let mut app = super::super::App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::env::temp_dir().join(format!(
+            "azureal-store-cache-fallback-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        std::fs::create_dir_all(&wt_path).unwrap();
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let sid = store.create_session("main").unwrap();
+        drop(store);
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "other".into(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(1);
+        app.branch_slots.insert("main".into(), vec!["55".into()]);
+        app.active_slot.insert("main".into(), "55".into());
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), format!("missing-jsonl-{}", unique));
+        app.live_display_events_cache.insert(
+            "main".into(),
+            vec![DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "cached completion".into(),
+            }],
+        );
+
+        app.store_append_from_jsonl("55", Backend::Codex);
+
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let stored = store.load_events(sid).unwrap();
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text == "cached completion")
+        }));
+        assert!(!app.live_display_events_cache.contains_key("main"));
+
+        let _ = std::fs::remove_dir_all(&wt_path);
     }
 
     #[test]

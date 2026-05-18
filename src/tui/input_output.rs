@@ -6,9 +6,9 @@ use crossterm::event;
 use crate::app::App;
 
 /// Handle keyboard input when Session pane is focused.
-/// ALL keybindings are resolved by lookup_action() in event_loop.rs BEFORE this
-/// is called. This handler only receives keys that weren't mapped — meaning only
-/// session list overlay, session find, and rebase mode input reach here.
+/// Most keybindings are resolved by lookup_action() in event_loop.rs before this
+/// is called. This handler owns session text inputs plus confirmed search-match
+/// navigation, where `n` must bypass the normal NewSession binding.
 pub fn handle_session_input(key: event::KeyEvent, app: &mut App) -> Result<()> {
     // New session name dialog: text input → Enter creates, Esc cancels
     if app.new_session_dialog_active {
@@ -256,8 +256,8 @@ pub fn handle_session_list_input(key: event::KeyEvent, app: &mut App) -> Result<
             start_session_rename(app);
             true
         }
-        // a: add new session (same as 'a' from session view)
-        (KeyModifiers::NONE, KeyCode::Char('a')) => {
+        // n: new session (same as 'n' from session view)
+        (KeyModifiers::NONE, KeyCode::Char('n')) => {
             app.show_session_list = false;
             app.session_filter.clear();
             app.session_filter_active = false;
@@ -1084,14 +1084,24 @@ mod tests {
     }
 
     #[test]
-    fn session_list_a_closes_overlay_for_new_session() {
-        // handle_session_list_input consumes 'a' by closing the overlay (add new session)
+    fn session_list_n_closes_overlay_for_new_session() {
+        // handle_session_list_input consumes 'n' by closing the overlay (new session)
         let mut app = App::new();
         app.show_session_list = true;
-        let k = key(KeyCode::Char('a'));
+        let k = key(KeyCode::Char('n'));
         let result = handle_session_list_input(k, &mut app);
         assert!(result.is_ok());
         assert!(!app.show_session_list);
+    }
+
+    #[test]
+    fn session_list_a_is_unhandled() {
+        let mut app = App::new();
+        app.show_session_list = true;
+        let k = key(KeyCode::Char('a'));
+        let result = handle_session_list_input(k, &mut app).unwrap();
+        assert!(!result);
+        assert!(app.show_session_list);
     }
 
     #[test]

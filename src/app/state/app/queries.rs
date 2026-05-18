@@ -45,6 +45,24 @@ impl App {
             .map(|(branch, _)| branch.clone())
     }
 
+    /// Backend used by a running slot.
+    pub fn backend_for_slot(&self, slot_id: &str) -> crate::backend::Backend {
+        if self.codex_slot_started_at.contains_key(slot_id) {
+            crate::backend::Backend::Codex
+        } else {
+            crate::backend::Backend::Claude
+        }
+    }
+
+    /// Model label used by a running slot. Falls back to the currently selected
+    /// display model only for legacy slots registered before this map existed.
+    pub fn model_for_slot(&self, slot_id: &str) -> String {
+        self.agent_slot_models
+            .get(slot_id)
+            .cloned()
+            .unwrap_or_else(|| self.display_model_name().to_string())
+    }
+
     /// Check if a Claude session UUID has a running process (for status dots in session list)
     pub fn is_claude_session_running(&self, claude_session_id: &str) -> bool {
         self.agent_session_ids
