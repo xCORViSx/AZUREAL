@@ -1090,6 +1090,128 @@ mod tests {
     }
 
     #[test]
+    fn store_append_from_jsonl_preserves_viewed_live_tail_when_claude_jsonl_is_shorter() {
+        use crate::backend::Backend;
+        use crate::events::DisplayEvent;
+        use std::io::Write;
+
+        fn encode_project_path(path: &std::path::Path) -> String {
+            path.to_string_lossy()
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                .collect()
+        }
+
+        let mut app = super::super::App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::path::PathBuf::from(format!(
+            "/tmp/azureal-claude-live-tail-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+
+        let claude_session_id = format!("12345678-1234-1234-1234-{:012x}", unique & 0xffffffffffff);
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".claude")
+            .join("projects")
+            .join(encode_project_path(&wt_path));
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("{}.jsonl", claude_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "user",
+                "message": { "content": "Prompt" },
+                "timestamp": "2026-01-01T00:00:00Z",
+                "uuid": "user-1",
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{ "type": "text", "text": "short jsonl response" }],
+                    "model": "claude-opus-4-6",
+                },
+                "timestamp": "2026-01-01T00:00:01Z",
+                "uuid": "assistant-1",
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "result",
+                "durationMs": 1000,
+                "costUsd": 0.01,
+                "sessionId": claude_session_id,
+                "timestamp": "2026-01-01T00:00:02Z",
+            })
+        )
+        .unwrap();
+        drop(file);
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(sid);
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), claude_session_id.clone());
+        app.session_file_path = Some(session_path.clone());
+        app.display_events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "Prompt".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "short jsonl response plus live-only tail".into(),
+            },
+        ];
+
+        app.store_append_from_jsonl("55", Backend::Claude);
+
+        let stored = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .load_events(sid)
+            .unwrap();
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text.contains("live-only tail"))
+        }));
+        assert!(stored
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::Complete { .. })));
+        assert!(app.display_events.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text.contains("live-only tail"))
+        }));
+        assert!(!session_path.exists());
+        let _ = std::fs::remove_dir(&session_dir);
+    }
+
+    #[test]
     fn store_append_from_jsonl_uses_live_cache_for_non_viewed_slot_when_jsonl_missing() {
         use crate::backend::Backend;
         use crate::events::DisplayEvent;
@@ -1145,6 +1267,137 @@ mod tests {
             matches!(event, DisplayEvent::AssistantText { text, .. } if text == "cached completion")
         }));
         assert!(!app.live_display_events_cache.contains_key("main"));
+
+        let _ = std::fs::remove_dir_all(&wt_path);
+    }
+
+    #[test]
+    fn store_append_from_jsonl_preserves_non_viewed_live_cache_tail_when_jsonl_is_shorter() {
+        use crate::backend::Backend;
+        use crate::events::DisplayEvent;
+        use std::io::Write;
+
+        let mut app = super::super::App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::env::temp_dir().join(format!(
+            "azureal-store-cache-tail-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        std::fs::create_dir_all(&wt_path).unwrap();
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let sid = store.create_session("main").unwrap();
+        drop(store);
+
+        let codex_session_id = format!("cache-tail-{}-{}", std::process::id(), unique);
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("rollout-{}.jsonl", codex_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": codex_session_id,
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": "Prompt",
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": "short jsonl response" }],
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-01-01T00:00:03Z",
+                "payload": {
+                    "type": "task_complete",
+                }
+            })
+        )
+        .unwrap();
+        drop(file);
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "other".into(),
+            worktree_path: Some(std::path::PathBuf::from("/tmp/other")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.branch_slots.insert("main".into(), vec!["55".into()]);
+        app.active_slot.insert("main".into(), "55".into());
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), codex_session_id.clone());
+        app.live_display_events_cache.insert(
+            "main".into(),
+            vec![
+                DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "Prompt".into(),
+                },
+                DisplayEvent::AssistantText {
+                    _uuid: String::new(),
+                    _message_id: String::new(),
+                    text: "short jsonl response plus cached live-only tail".into(),
+                },
+            ],
+        );
+
+        app.store_append_from_jsonl("55", Backend::Codex);
+
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let stored = store.load_events(sid).unwrap();
+        assert!(stored.iter().any(|event| {
+            matches!(event, DisplayEvent::AssistantText { text, .. } if text.contains("cached live-only tail"))
+        }));
+        assert!(stored
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::Complete { .. })));
+        assert!(!app.live_display_events_cache.contains_key("main"));
+        assert!(!session_path.exists());
 
         let _ = std::fs::remove_dir_all(&wt_path);
     }

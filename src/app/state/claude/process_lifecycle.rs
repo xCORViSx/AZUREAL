@@ -557,11 +557,29 @@ impl App {
             }
         }
 
-        // Persist UUID in the store so orphaned JSOLNs can be recovered on restart
-        if let Some((session_id, _, _, _)) = self.pid_session_target.get(slot_id) {
-            if let Some(ref store) = self.session_store {
-                let _ = store.set_session_uuid(*session_id, &claude_session_id);
-            }
+        // Persist UUID in the target worktree store so orphaned JSONLs can be
+        // recovered on restart, even if the user switched worktrees before the
+        // agent reported its real session ID.
+        if let Some((session_id, wt_path, _, _)) = self.pid_session_target.get(slot_id) {
+            let store = if self.session_store_path.as_ref().map(|p| p.as_path())
+                == Some(wt_path.as_path())
+            {
+                self.session_store.as_ref()
+            } else {
+                None
+            };
+            let temp_store;
+            let store = match store {
+                Some(store) => store,
+                None => {
+                    temp_store = crate::app::session_store::SessionStore::open(wt_path).ok();
+                    match temp_store.as_ref() {
+                        Some(store) => store,
+                        None => return,
+                    }
+                }
+            };
+            let _ = store.set_session_uuid(*session_id, &claude_session_id);
         }
     }
 
@@ -648,5 +666,56 @@ mod tests {
         assert!(app.session_file_dirty);
 
         crate::config::remove_session_file(&session_path);
+    }
+
+    #[test]
+    fn set_claude_session_id_persists_uuid_to_target_worktree_store_after_switch() {
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let target_wt = std::env::temp_dir().join(format!(
+            "azureal-target-store-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let current_wt = std::env::temp_dir().join(format!(
+            "azureal-current-store-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        std::fs::create_dir_all(&target_wt).unwrap();
+        std::fs::create_dir_all(&current_wt).unwrap();
+
+        let target_store = crate::app::session_store::SessionStore::open(&target_wt).unwrap();
+        let target_sid = target_store.create_session("target").unwrap();
+        drop(target_store);
+
+        let current_store = crate::app::session_store::SessionStore::open(&current_wt).unwrap();
+        current_store.create_session("current").unwrap();
+        app.session_store = Some(current_store);
+        app.session_store_path = Some(current_wt.clone());
+        app.pid_session_target
+            .insert("55".into(), (target_sid, target_wt.clone(), 0, 0));
+
+        let uuid = format!("target-session-{}", unique);
+        app.set_claude_session_id("55", uuid.clone());
+
+        let target_store = crate::app::session_store::SessionStore::open(&target_wt).unwrap();
+        assert_eq!(
+            target_store.sessions_with_uuid().unwrap(),
+            vec![(target_sid, "target".into(), uuid)]
+        );
+        assert!(app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .sessions_with_uuid()
+            .unwrap()
+            .is_empty());
+
+        let _ = std::fs::remove_dir_all(&target_wt);
+        let _ = std::fs::remove_dir_all(&current_wt);
     }
 }

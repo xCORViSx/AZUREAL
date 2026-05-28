@@ -7,9 +7,88 @@
 //! - **Exited slot** (`store_append_from_jsonl`): post-exit store with JSONL deletion
 //! - **Background project** (`store_append_background`): non-active project store
 
-use crate::backend::Backend;
-
 use crate::app::state::App;
+use crate::backend::Backend;
+use crate::events::DisplayEvent;
+
+fn has_completion(events: &[DisplayEvent]) -> bool {
+    events
+        .iter()
+        .any(|event| matches!(event, DisplayEvent::Complete { .. }))
+}
+
+fn last_completion(events: &[DisplayEvent]) -> Option<DisplayEvent> {
+    events
+        .iter()
+        .rev()
+        .find(|event| matches!(event, DisplayEvent::Complete { .. }))
+        .cloned()
+}
+
+fn unique_message_chars(events: &[DisplayEvent]) -> usize {
+    let mut seen = std::collections::HashSet::new();
+    let mut chars = 0usize;
+
+    for event in events {
+        let key = match event {
+            DisplayEvent::UserMessage { content, .. } => Some(("user", content.as_str())),
+            DisplayEvent::AssistantText { text, .. } => Some(("assistant", text.as_str())),
+            _ => None,
+        };
+        if let Some((role, text)) = key {
+            if seen.insert((role, text)) {
+                chars += text.len();
+            }
+        }
+    }
+
+    chars
+}
+
+fn with_completion_from(
+    mut events: Vec<DisplayEvent>,
+    completion_source: &[DisplayEvent],
+) -> Vec<DisplayEvent> {
+    if !has_completion(&events) {
+        if let Some(completion) = last_completion(completion_source) {
+            events.push(completion);
+        }
+    }
+    events
+}
+
+/// Prefer the parsed JSONL events because they contain the richest tool data,
+/// but never let them replace live/cache events that contain user or assistant
+/// text the parser failed to recover. This protects the already-visible turn
+/// before the source JSONL is deleted.
+fn choose_store_events(
+    parsed_events: Vec<DisplayEvent>,
+    live_events: Vec<DisplayEvent>,
+) -> Vec<DisplayEvent> {
+    if parsed_events.is_empty() {
+        return live_events;
+    }
+    if live_events.is_empty() {
+        return parsed_events;
+    }
+
+    let parsed_message_chars = unique_message_chars(&parsed_events);
+    let live_message_chars = unique_message_chars(&live_events);
+    if live_message_chars > parsed_message_chars {
+        return with_completion_from(live_events, &parsed_events);
+    }
+
+    let parsed_has_completion = has_completion(&parsed_events);
+    let live_has_completion = has_completion(&live_events);
+    if live_has_completion && !parsed_has_completion && live_events.len() >= parsed_events.len() {
+        return live_events;
+    }
+    if !parsed_has_completion && live_events.len() > parsed_events.len() {
+        return live_events;
+    }
+
+    parsed_events
+}
 
 impl App {
     fn tool_status_from_events(
@@ -137,18 +216,8 @@ impl App {
                 if events_offset <= cached_events.len() {
                     let cached_suffix: Vec<_> =
                         cached_events.into_iter().skip(events_offset).collect();
-                    let cached_has_completion = cached_suffix
-                        .iter()
-                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-                    let jsonl_has_completion = events
-                        .iter()
-                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-                    if !cached_suffix.is_empty()
-                        && (events.is_empty()
-                            || cached_has_completion
-                            || (!jsonl_has_completion && cached_suffix.len() > events.len()))
-                    {
-                        events = cached_suffix;
+                    if !cached_suffix.is_empty() {
+                        events = choose_store_events(events, cached_suffix);
                     }
                 }
             }
@@ -168,28 +237,16 @@ impl App {
                         &parsed_events,
                     );
                     let parsed_suffix: Vec<_> = parsed_events.into_iter().skip(overlap).collect();
-                    let parsed_has_completion = parsed_suffix
-                        .iter()
-                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-                    let live_has_completion = events
-                        .iter()
-                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-
-                    if !parsed_suffix.is_empty()
-                        && (parsed_has_completion
-                            || !live_has_completion
-                            || parsed_suffix.len() >= events.len())
-                    {
-                        events = parsed_suffix;
-                        if self.session_file_path.as_ref() == Some(path) {
-                            self.display_events = prefix_events;
-                            self.display_events.extend(events.clone());
-                            let (pending, failed) =
-                                Self::tool_status_from_events(&self.display_events);
-                            self.pending_tool_calls = pending;
-                            self.failed_tool_calls = failed;
-                            self.invalidate_render_cache();
-                        }
+                    if !parsed_suffix.is_empty() {
+                        events = choose_store_events(parsed_suffix, events);
+                    }
+                    if !events.is_empty() && self.session_file_path.as_ref() == Some(path) {
+                        self.display_events = prefix_events;
+                        self.display_events.extend(events.clone());
+                        let (pending, failed) = Self::tool_status_from_events(&self.display_events);
+                        self.pending_tool_calls = pending;
+                        self.failed_tool_calls = failed;
+                        self.invalidate_render_cache();
                     }
                 }
             }
@@ -207,28 +264,16 @@ impl App {
                         &parsed_events,
                     );
                     let parsed_suffix: Vec<_> = parsed_events.into_iter().skip(overlap).collect();
-                    let parsed_has_completion = parsed_suffix
-                        .iter()
-                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-                    let live_has_completion = events
-                        .iter()
-                        .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-
-                    if !parsed_suffix.is_empty()
-                        && (parsed_has_completion
-                            || !live_has_completion
-                            || parsed_suffix.len() >= events.len())
-                    {
-                        events = parsed_suffix;
-                        if self.session_file_path.as_ref() == Some(path) {
-                            self.display_events = prefix_events;
-                            self.display_events.extend(events.clone());
-                            let (pending, failed) =
-                                Self::tool_status_from_events(&self.display_events);
-                            self.pending_tool_calls = pending;
-                            self.failed_tool_calls = failed;
-                            self.invalidate_render_cache();
-                        }
+                    if !parsed_suffix.is_empty() {
+                        events = choose_store_events(parsed_suffix, events);
+                    }
+                    if !events.is_empty() && self.session_file_path.as_ref() == Some(path) {
+                        self.display_events = prefix_events;
+                        self.display_events.extend(events.clone());
+                        let (pending, failed) = Self::tool_status_from_events(&self.display_events);
+                        self.pending_tool_calls = pending;
+                        self.failed_tool_calls = failed;
+                        self.invalidate_render_cache();
                     }
                 }
             }
@@ -354,18 +399,8 @@ impl App {
                 let overlap =
                     crate::app::session_store::overlap_prefix_len(&existing_events, &cached_events);
                 let cached_suffix: Vec<_> = cached_events.into_iter().skip(overlap).collect();
-                let cached_has_completion = cached_suffix
-                    .iter()
-                    .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-                let jsonl_has_completion = events
-                    .iter()
-                    .any(|event| matches!(event, crate::events::DisplayEvent::Complete { .. }));
-                if !cached_suffix.is_empty()
-                    && (events.is_empty()
-                        || cached_has_completion
-                        || (!jsonl_has_completion && cached_suffix.len() > events.len()))
-                {
-                    events = cached_suffix;
+                if !cached_suffix.is_empty() {
+                    events = choose_store_events(events, cached_suffix);
                 }
             }
             if events.is_empty() {
