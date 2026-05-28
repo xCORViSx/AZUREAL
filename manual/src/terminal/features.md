@@ -66,17 +66,22 @@ Selections are tracked in scrollback-adjusted absolute coordinates. This means
 that if you scroll up into history, select text, and then the terminal scrolls
 further, the selection remains anchored to the correct text.
 
-### Clipboard Copy
+### Clipboard Copy and Paste
 
 With an active selection:
 
 - **macOS**: `Cmd+C` copies the selected text to the system clipboard.
-- **Linux / Windows**: `Ctrl+C` copies the selected text to the system
-  clipboard.
+- **Linux / Windows**: `Ctrl+C` or `Ctrl+Shift+C` copies the selected text to
+  the system clipboard.
 
-Without an active selection, the same key combination sends the standard
-interrupt signal (`SIGINT`) to the PTY, which is the expected behavior for
-canceling a running command.
+In terminal type mode, plain `Ctrl+C` without an active selection sends the
+standard interrupt signal (`SIGINT`) to the PTY, which is the expected behavior
+for canceling a running command.
+
+Clipboard paste is available in both terminal command mode and terminal type
+mode. `Cmd+V` on macOS, and `Ctrl+V` or `Ctrl+Shift+V` on Linux / Windows,
+pastes into the PTY using bracketed paste markers so multiline content is
+delivered as one paste.
 
 ---
 
@@ -97,7 +102,7 @@ from the shell session.
 | Cursor tracking | vt100 parser for accurate positioning |
 | Resize range | 5 to 40 lines (`+`/`-` keys) |
 | Selection | Mouse drag with auto-scroll |
-| Clipboard | `Cmd+C` / `Ctrl+C` with active selection |
+| Clipboard | `Cmd+C` / `Ctrl+C` copy, `Cmd+V` / `Ctrl+V` paste |
 | Scrollback | Mouse wheel navigation |
 | Per-worktree | Independent shell per worktree |
 | Environment | `TERM=xterm-256color` set automatically |

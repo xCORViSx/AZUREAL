@@ -165,6 +165,31 @@ impl App {
         }
     }
 
+    /// Paste text into the terminal PTY using bracketed paste markers.
+    pub fn paste_to_terminal(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.terminal_selection = None;
+
+        let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
+        let mut data = Vec::with_capacity(normalized.len() + 12);
+        data.extend_from_slice(b"\x1b[200~");
+        data.extend_from_slice(normalized.as_bytes());
+        data.extend_from_slice(b"\x1b[201~");
+        self.write_to_terminal(&data);
+    }
+
+    /// Paste current clipboard contents into the terminal PTY.
+    pub fn paste_clipboard_to_terminal(&mut self) -> bool {
+        let text = self.paste_from_clipboard();
+        if text.is_empty() {
+            return false;
+        }
+        self.paste_to_terminal(&text);
+        true
+    }
+
     /// Poll terminal for new output. Returns true if there was data.
     pub fn poll_terminal(&mut self) -> bool {
         if let Some(ref rx) = self.terminal_rx {
@@ -335,6 +360,27 @@ mod tests {
     use super::*;
     use crate::models::Worktree;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for SharedWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture_terminal_writer(app: &mut App) -> Arc<Mutex<Vec<u8>>> {
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        app.terminal_writer = Some(Box::new(SharedWriter(captured.clone())));
+        captured
+    }
 
     // ── close_terminal ──
 
@@ -381,6 +427,32 @@ mod tests {
     fn test_write_to_terminal_empty_data() {
         let mut app = App::new();
         app.write_to_terminal(b"");
+    }
+
+    #[test]
+    fn test_paste_to_terminal_wraps_bracketed_paste_and_normalizes_newlines() {
+        let mut app = App::new();
+        app.terminal_selection = Some((0, 0, 0, 1));
+        let captured = capture_terminal_writer(&mut app);
+
+        app.paste_to_terminal("one\r\ntwo\nthree");
+
+        let bytes = captured.lock().unwrap().clone();
+        assert_eq!(bytes, b"\x1b[200~one\rtwo\rthree\x1b[201~");
+        assert!(app.terminal_selection.is_none());
+    }
+
+    #[test]
+    fn test_paste_clipboard_to_terminal_uses_internal_clipboard_fallback() {
+        let mut app = App::new();
+        app.system_clipboard = None;
+        app.clipboard = "cargo test".to_string();
+        let captured = capture_terminal_writer(&mut app);
+
+        assert!(app.paste_clipboard_to_terminal());
+
+        let bytes = captured.lock().unwrap().clone();
+        assert_eq!(bytes, b"\x1b[200~cargo test\x1b[201~");
     }
 
     // ── poll_terminal: no rx ──

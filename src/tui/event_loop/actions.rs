@@ -41,11 +41,47 @@ use super::super::input_terminal::handle_input_mode;
 use super::super::input_viewer::handle_viewer_input;
 use super::super::input_worktrees::handle_worktrees_input;
 use super::super::keybindings::{
-    lookup_action, lookup_leader_action, Action, KeyContext, LeaderState,
+    is_cmd_key, lookup_action, lookup_leader_action, Action, KeyContext, LeaderState,
 };
+use super::mouse::copy_terminal_selection;
 
 use execute::execute_action;
 use rcr::{abort_rcr, accept_rcr};
+
+fn is_plain_ctrl_c(key: event::KeyEvent) -> bool {
+    key.modifiers == KeyModifiers::CONTROL
+        && matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&'c'))
+}
+
+/// Terminal clipboard keys need to run before global dispatch. Otherwise the
+/// global copy/cancel bindings swallow Ctrl+C before the PTY can receive SIGINT.
+fn handle_terminal_clipboard_key(key: event::KeyEvent, app: &mut App) -> bool {
+    if !(app.terminal_mode && app.focus == Focus::Input) {
+        return false;
+    }
+
+    if matches!(key.code, KeyCode::Char(_)) && is_cmd_key(key.modifiers, key.code, 'v') {
+        app.paste_clipboard_to_terminal();
+        return true;
+    }
+
+    if matches!(key.code, KeyCode::Char(_)) && is_cmd_key(key.modifiers, key.code, 'c') {
+        if app.terminal_selection.is_some() {
+            copy_terminal_selection(app);
+        } else if app.prompt_mode && is_plain_ctrl_c(key) {
+            app.write_to_terminal(&[0x03]);
+        }
+        return true;
+    }
+
+    if app.prompt_mode && is_plain_ctrl_c(key) {
+        app.terminal_selection = None;
+        app.write_to_terminal(&[0x03]);
+        return true;
+    }
+
+    false
+}
 
 /// Handle keyboard input events.
 /// All key → action resolution goes through lookup_action() in keybindings.rs.
@@ -681,6 +717,10 @@ pub fn handle_key_event(
         return Ok(());
     }
 
+    if handle_terminal_clipboard_key(key, app) {
+        return Ok(());
+    }
+
     // --- Centralized keybinding resolution ---
     // Build context from app state, resolve key once, dispatch action.
     // Input/terminal handlers and dialog handlers own their own key execution —
@@ -729,6 +769,35 @@ mod tests {
     use super::*;
     use crate::tui::keybindings::Action;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for SharedWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture_terminal_writer(app: &mut App) -> Arc<Mutex<Vec<u8>>> {
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        app.terminal_writer = Some(Box::new(SharedWriter(captured.clone())));
+        captured
+    }
+
+    fn terminal_input_app() -> App {
+        let mut app = App::new();
+        app.focus = Focus::Input;
+        app.terminal_mode = true;
+        app.prompt_mode = true;
+        app
+    }
 
     // -- KeyEvent construction --
 
@@ -780,6 +849,56 @@ mod tests {
 
         assert_eq!(app.session_find_current, 1);
         assert!(!app.new_session_dialog_active);
+    }
+
+    #[test]
+    fn terminal_ctrl_c_type_mode_writes_sigint() {
+        let mut app = terminal_input_app();
+        let captured = capture_terminal_writer(&mut app);
+
+        assert!(handle_terminal_clipboard_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &mut app,
+        ));
+
+        assert_eq!(captured.lock().unwrap().as_slice(), &[0x03]);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn terminal_ctrl_shift_c_without_selection_does_not_interrupt() {
+        let mut app = terminal_input_app();
+        let captured = capture_terminal_writer(&mut app);
+
+        assert!(handle_terminal_clipboard_key(
+            KeyEvent::new(
+                KeyCode::Char('C'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            &mut app,
+        ));
+
+        assert!(captured.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn terminal_paste_shortcut_writes_clipboard() {
+        let mut app = terminal_input_app();
+        app.system_clipboard = None;
+        app.clipboard = "echo ok".to_string();
+        let captured = capture_terminal_writer(&mut app);
+
+        #[cfg(target_os = "macos")]
+        let paste_key = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::SUPER);
+        #[cfg(not(target_os = "macos"))]
+        let paste_key = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL);
+
+        assert!(handle_terminal_clipboard_key(paste_key, &mut app));
+
+        assert_eq!(
+            captured.lock().unwrap().as_slice(),
+            b"\x1b[200~echo ok\x1b[201~"
+        );
     }
 
     // -- Modifier key detection --

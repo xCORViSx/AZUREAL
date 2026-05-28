@@ -22,20 +22,7 @@ pub fn handle_input_mode(
             // Paste from clipboard (⌘V / Ctrl+V) — check before character match
             if let KeyCode::Char(_) = key.code {
                 if is_cmd_key(key.modifiers, key.code, 'v') {
-                    let paste_text = app.paste_from_clipboard();
-                    if !paste_text.is_empty() {
-                        // Convert \n to \r (terminal convention) and normalize \r\n
-                        let text = paste_text.replace("\r\n", "\r").replace('\n', "\r");
-                        // Wrap in bracketed paste so shells (PowerShell/PSReadLine, bash,
-                        // zsh) treat multiline content as a single paste, not line-by-line
-                        // execution. Shells that don't support bracketed paste ignore the
-                        // escape sequences harmlessly.
-                        let mut buf = Vec::with_capacity(text.len() + 12);
-                        buf.extend_from_slice(b"\x1b[200~");
-                        buf.extend_from_slice(text.as_bytes());
-                        buf.extend_from_slice(b"\x1b[201~");
-                        app.write_to_terminal(&buf);
-                    }
+                    app.paste_clipboard_to_terminal();
                     return Ok(());
                 }
             }

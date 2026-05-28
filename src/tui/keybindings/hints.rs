@@ -130,7 +130,12 @@ pub fn terminal_type_title() -> (String, String, String) {
     } else {
         "Alt+←/→:word"
     };
-    let hints = format!("{}:exit | {}", esc, word);
+    let (copy, paste) = if cfg!(target_os = "macos") {
+        ("⌘C", "⌘V")
+    } else {
+        ("Ctrl+Shift+C", "Ctrl+Shift+V")
+    };
+    let hints = format!("{}:exit | {}:copy | {}:paste | {}", esc, copy, paste, word);
     (
         " TERMINAL ".to_string(),
         format!(" TERMINAL ({}) ", hints),

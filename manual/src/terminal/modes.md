@@ -76,6 +76,7 @@ moves the cursor to the clicked position within the shell's input line.
 | `Esc` | Exit type mode (return to command mode) |
 | `Alt+Left` or `Ctrl+Left` | Word navigation backward |
 | `Alt+Right` or `Ctrl+Right` | Word navigation forward |
+| `Cmd+V` / `Ctrl+V` / `Ctrl+Shift+V` | Paste clipboard into PTY |
 | All other keys | Forwarded to PTY |
 
 Word navigation sends readline-compatible escape sequences to the PTY:
@@ -100,14 +101,15 @@ Mouse input works in both modes:
 | Mouse drag | Select text with auto-scroll |
 | Mouse wheel | Scroll through terminal history |
 | `Cmd+C` / `Ctrl+C` (with selection) | Copy selected text to clipboard |
+| `Cmd+V` / `Ctrl+V` / `Ctrl+Shift+V` | Paste clipboard into PTY |
 
 Text selection operates in scrollback-adjusted absolute coordinates, meaning
 selections remain accurate even when scrolled through history. Dragging past the
 top or bottom edge of the terminal pane triggers automatic scrolling.
 
-When `Cmd+C` or `Ctrl+C` is pressed with an active selection, the selected text
-is copied to the system clipboard. Without a selection, the standard interrupt
-signal is sent to the PTY instead.
+When the platform copy shortcut is pressed with an active selection, the
+selected text is copied to the system clipboard. In terminal type mode, plain
+`Ctrl+C` without a selection sends the standard interrupt signal to the PTY.
 
 ---
 
@@ -121,5 +123,6 @@ p                  Close terminal / refocus prompt
 +/-                Resize terminal height (5-40 lines)
 Click              Enter type mode + reposition cursor
 Drag               Select text
-Cmd+C / Ctrl+C     Copy selection (or interrupt if no selection)
+Cmd+C / Ctrl+C     Copy selection; plain Ctrl+C interrupts in type mode
+Cmd+V / Ctrl+V     Paste clipboard into terminal
 ```
