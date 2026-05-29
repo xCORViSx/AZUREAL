@@ -59,12 +59,12 @@ fn spawn_with_retry_and_fallback(
     selected_model: Option<&str>,
     action: &str,
 ) -> Result<SpawnOutcome, String> {
-    let primary_backend = selected_model
-        .map(backend_for_model)
-        .unwrap_or_else(|| backend_for_model(default_model()));
-    let primary_label = selected_model
-        .map(str::to_string)
-        .unwrap_or_else(|| primary_backend.to_string());
+    let selected_model = match selected_model {
+        Some(model) => model,
+        None => default_model(),
+    };
+    let primary_backend = backend_for_model(selected_model);
+    let primary_label = selected_model.to_string();
 
     let mut primary_errors = Vec::new();
     for _ in 0..2 {
@@ -73,7 +73,7 @@ fn spawn_with_retry_and_fallback(
             wt_path,
             prompt,
             resume_session_id,
-            selected_model,
+            Some(selected_model),
         ) {
             Ok((rx, pid)) => {
                 let success_notice = if primary_errors.is_empty() {
@@ -89,7 +89,7 @@ fn spawn_with_retry_and_fallback(
                 return Ok(SpawnOutcome {
                     rx,
                     pid,
-                    registration_model: selected_model.map(str::to_string),
+                    registration_model: Some(selected_model.to_string()),
                     success_notice,
                 });
             }
@@ -98,20 +98,21 @@ fn spawn_with_retry_and_fallback(
     }
 
     let fallback_backend = primary_backend.alternate();
+    let fallback_model = match fallback_backend {
+        Backend::Claude => None,
+        Backend::Codex => Some(default_model()),
+    };
     match claude_process.spawn_on_backend(
         fallback_backend,
         wt_path,
         prompt,
         resume_session_id,
-        None,
+        fallback_model,
     ) {
         Ok((rx, pid)) => Ok(SpawnOutcome {
             rx,
             pid,
-            registration_model: match fallback_backend {
-                Backend::Claude => None,
-                Backend::Codex => Some("codex".to_string()),
-            },
+            registration_model: fallback_model.map(str::to_string),
             success_notice: Some(format_fallback_notice(
                 action,
                 &primary_label,

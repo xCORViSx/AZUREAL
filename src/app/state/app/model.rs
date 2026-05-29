@@ -46,7 +46,7 @@ fn last_codex_model() -> Option<&'static str> {
 
 /// Default model for new/empty sessions.
 pub fn default_model() -> &'static str {
-    CLAUDE_MODELS[0]
+    OPENAI_FRONTIER_MODELS[0]
 }
 
 /// Map a model string from an Init event back to a unified model-pool alias.
@@ -258,8 +258,12 @@ impl App {
         if pool.is_empty() {
             return;
         }
-        let current = self.selected_model.as_deref().unwrap_or(pool[0]);
-        let idx = pool.iter().position(|&m| m == current).unwrap_or(0);
+        let current = self.selected_model.as_deref().unwrap_or(default_model());
+        let idx = pool
+            .iter()
+            .position(|&m| m == current)
+            .or_else(|| pool.iter().position(|&m| m == default_model()))
+            .unwrap_or(0);
         let next = pool[(idx + 1) % pool.len()];
         self.selected_model = Some(next.to_string());
         let new_backend = backend_for_model(next);
@@ -292,8 +296,8 @@ mod tests {
     // ── default_model ──
 
     #[test]
-    fn test_default_model_is_opus() {
-        assert_eq!(default_model(), "opus");
+    fn test_default_model_is_gpt_5_5() {
+        assert_eq!(default_model(), "gpt-5.5");
     }
 
     // ── backend_for_model ──
@@ -540,12 +544,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cycle_unknown_model_defaults_to_sonnet() {
+    fn test_cycle_unknown_model_defaults_to_model_after_default() {
         let mut app = app_default();
         app.selected_model = Some("unknown".to_string());
         app.cycle_model();
-        // Unknown defaults to index 0 (opus), cycles to index 1 (sonnet)
-        assert_eq!(app.display_model_name(), "sonnet");
+        assert_eq!(app.display_model_name(), "gpt-5.5-pro");
     }
 
     #[test]
@@ -556,7 +559,7 @@ mod tests {
         app.cycle_model();
         assert_eq!(app.display_events.len(), 1);
         match &app.display_events[0] {
-            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
+            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.5-pro"),
             other => panic!("expected ModelSwitch, got {:?}", other),
         }
     }
@@ -569,7 +572,7 @@ mod tests {
         let sid = store.create_session("test").unwrap();
         app.session_store = Some(store);
         app.current_session_id = Some(sid);
-        app.cycle_model(); // opus → sonnet
+        app.cycle_model(); // gpt-5.5 → gpt-5.5-pro
                            // Verify the ModelSwitch event was persisted to the store
         let events = app
             .session_store
@@ -579,7 +582,7 @@ mod tests {
             .unwrap();
         assert_eq!(events.len(), 1);
         match &events[0] {
-            crate::events::DisplayEvent::ModelSwitch { model } => assert_eq!(model, "sonnet"),
+            crate::events::DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.5-pro"),
             other => panic!("expected ModelSwitch, got {:?}", other),
         }
     }
@@ -620,7 +623,7 @@ mod tests {
     fn test_cycle_skips_codex_when_unavailable() {
         let mut app = app_default();
         app.codex_available = false;
-        // opus → sonnet → haiku → wrap to opus
+        // Default gpt-5.5 is unavailable, so cycling uses the Claude-only pool.
         app.cycle_model();
         assert_eq!(app.display_model_name(), "sonnet");
         app.cycle_model();
@@ -645,9 +648,9 @@ mod tests {
     }
 
     #[test]
-    fn test_first_available_model_defaults_opus() {
+    fn test_first_available_model_defaults_gpt_5_5() {
         let app = app_default();
-        assert_eq!(app.first_available_model(), "opus");
+        assert_eq!(app.first_available_model(), "gpt-5.5");
     }
 
     #[test]
@@ -660,10 +663,10 @@ mod tests {
     // ── display_model_name ──
 
     #[test]
-    fn test_display_model_none_defaults_opus() {
+    fn test_display_model_none_defaults_gpt_5_5() {
         let mut app = App::new();
         app.selected_model = None;
-        assert_eq!(app.display_model_name(), "opus");
+        assert_eq!(app.display_model_name(), "gpt-5.5");
     }
 
     #[test]

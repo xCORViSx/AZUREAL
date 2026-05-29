@@ -291,13 +291,22 @@ pub fn handle_input_mode(
                     let cwd = rcr.worktree_path.clone();
                     let resume = rcr.session_id.clone();
                     let branch = rcr.branch.clone();
+                    let selected_model = app
+                        .selected_model
+                        .clone()
+                        .unwrap_or_else(|| crate::app::state::default_model().to_string());
 
                     let prompt_text = format!("You: {}\n", input);
                     app.add_user_message(input.clone());
                     app.process_session_chunk(&prompt_text);
                     app.current_todos.clear();
 
-                    match claude_process.spawn(&cwd, &input, resume.as_deref(), None) {
+                    match claude_process.spawn(
+                        &cwd,
+                        &input,
+                        resume.as_deref(),
+                        Some(selected_model.as_str()),
+                    ) {
                         Ok((rx, pid)) => {
                             let slot = pid.to_string();
                             // Update RCR to track the new process
@@ -305,7 +314,7 @@ pub fn handle_input_mode(
                                 m.slot_id = slot;
                                 m.approval_pending = false;
                             }
-                            app.register_claude(branch, pid, rx, None);
+                            app.register_claude(branch, pid, rx, Some(selected_model.as_str()));
                             app.set_status("[RCR] Running...");
                         }
                         Err(e) => app.set_status(format!("Failed to start: {}", e)),
@@ -388,12 +397,15 @@ pub fn handle_input_mode(
                                 })
                                 .unwrap_or_else(|| actual_prompt.clone());
                             let resume_id: Option<String> = None;
-                            let selected_model = app.selected_model.clone();
+                            let selected_model = app
+                                .selected_model
+                                .clone()
+                                .unwrap_or_else(|| crate::app::state::default_model().to_string());
                             match claude_process.spawn(
                                 &wt_path,
                                 &send_prompt,
                                 resume_id.as_deref(),
-                                selected_model.as_deref(),
+                                Some(selected_model.as_str()),
                             ) {
                                 Ok((rx, pid)) => {
                                     // Set pid → session target so post-exit flow writes to correct session
@@ -412,7 +424,7 @@ pub fn handle_input_mode(
                                         branch_name,
                                         pid,
                                         rx,
-                                        selected_model.as_deref(),
+                                        Some(selected_model.as_str()),
                                     );
                                     app.set_status("Running...");
                                 }

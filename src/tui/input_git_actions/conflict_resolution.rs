@@ -164,7 +164,10 @@ fn spawn_conflict_claude(
 ) {
     let display = crate::models::strip_branch_prefix(branch);
     let prompt = build_conflict_prompt(display, conflicted, auto_merged);
-    let selected_model = app.selected_model.clone();
+    let selected_model = app
+        .selected_model
+        .clone()
+        .unwrap_or_else(|| crate::app::state::default_model().to_string());
     let session_name = format!("[RCR] {}", display);
 
     // Create a dedicated store session for RCR
@@ -176,7 +179,7 @@ fn spawn_conflict_claude(
         })
     });
 
-    match claude_process.spawn(wt_path, &prompt, None, selected_model.as_deref()) {
+    match claude_process.spawn(wt_path, &prompt, None, Some(selected_model.as_str())) {
         Ok((rx, pid)) => {
             let slot = pid.to_string();
             // Map PID to the store session so post-exit flow persists events correctly
@@ -187,7 +190,7 @@ fn spawn_conflict_claude(
             }
             app.pending_session_names
                 .push((slot.clone(), session_name.clone()));
-            app.register_claude(branch.to_string(), pid, rx, None);
+            app.register_claude(branch.to_string(), pid, rx, Some(selected_model.as_str()));
             app.rcr_session = Some(RcrSession {
                 branch: branch.to_string(),
                 display_name: display.to_string(),

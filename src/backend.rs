@@ -102,12 +102,12 @@ impl AgentProcess {
         resume_session_id: Option<&str>,
         model: Option<&str>,
     ) -> Result<(mpsc::Receiver<AgentEvent>, u32)> {
-        let backend = model
-            .map(crate::app::state::backend_for_model)
-            .unwrap_or_else(|| {
-                crate::app::state::backend_for_model(crate::app::state::default_model())
-            });
-        self.spawn_on_backend(backend, working_dir, prompt, resume_session_id, model)
+        let model = match model {
+            Some(model) => model,
+            None => crate::app::state::default_model(),
+        };
+        let backend = crate::app::state::backend_for_model(model);
+        self.spawn_on_backend(backend, working_dir, prompt, resume_session_id, Some(model))
     }
 }
 

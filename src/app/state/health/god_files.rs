@@ -359,7 +359,10 @@ impl App {
         // Ensure the SQLite session store exists so each GFM file gets its own session
         self.ensure_session_store();
 
-        let selected_model = self.selected_model.clone();
+        let selected_model = self
+            .selected_model
+            .clone()
+            .unwrap_or_else(|| crate::app::state::default_model().to_string());
         let mut spawned = 0usize;
         let mut failed = 0usize;
         let mut last_session_id: Option<i64> = None;
@@ -379,7 +382,7 @@ impl App {
                 })
             });
 
-            match claude_process.spawn(&wt_path, &prompt, None, selected_model.as_deref()) {
+            match claude_process.spawn(&wt_path, &prompt, None, Some(selected_model.as_str())) {
                 Ok((rx, pid)) => {
                     let slot = pid.to_string();
                     // Map PID to the store session so post-exit flow persists events correctly
@@ -389,7 +392,7 @@ impl App {
                         last_session_id = Some(sid);
                     }
                     self.pending_session_names.push((slot, session_name));
-                    self.register_claude(branch.clone(), pid, rx, selected_model.as_deref());
+                    self.register_claude(branch.clone(), pid, rx, Some(selected_model.as_str()));
                     spawned += 1;
                 }
                 Err(_) => {

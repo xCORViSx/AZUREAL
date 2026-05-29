@@ -58,12 +58,15 @@ pub fn handle_claude_event(
                     })
                     .unwrap_or_else(|| prompt.clone());
                 let resume_id: Option<String> = None;
-                let selected_model = app.selected_model.clone();
+                let selected_model = app
+                    .selected_model
+                    .clone()
+                    .unwrap_or_else(|| crate::app::state::default_model().to_string());
                 match claude_process.spawn(
                     &wt_path,
                     &send_prompt,
                     resume_id.as_deref(),
-                    selected_model.as_deref(),
+                    Some(selected_model.as_str()),
                 ) {
                     Ok((rx, pid)) => {
                         if let Some(sid) = app.current_session_id {
@@ -72,7 +75,7 @@ pub fn handle_claude_event(
                                 (sid, wt_path.clone(), events_offset, app.session_file_size),
                             );
                         }
-                        app.register_claude(branch, pid, rx, selected_model.as_deref());
+                        app.register_claude(branch, pid, rx, Some(selected_model.as_str()));
                         app.set_status("Running...");
                     }
                     Err(e) => app.set_status(format!("Failed to start: {}", e)),
@@ -150,14 +153,13 @@ pub fn spawn_compaction_agent(
     let prompt = crate::app::context_injection::build_compaction_prompt(&payload);
 
     // Use whatever model is currently selected in the session pane
-    let selected_model = app.selected_model.clone();
-    let selected_model_ref = selected_model.as_deref();
-    let primary_backend = selected_model_ref
-        .map(backend_for_model)
-        .unwrap_or_else(|| backend_for_model(crate::app::state::default_model()));
-    let primary_label = selected_model
+    let selected_model = app
+        .selected_model
         .clone()
-        .unwrap_or_else(|| primary_backend.to_string());
+        .unwrap_or_else(|| crate::app::state::default_model().to_string());
+    let selected_model_ref = Some(selected_model.as_str());
+    let primary_backend = backend_for_model(selected_model.as_str());
+    let primary_label = selected_model.clone();
     let spawn_result = claude_process.spawn_on_backend(
         primary_backend,
         wt_path,
@@ -166,17 +168,30 @@ pub fn spawn_compaction_agent(
         selected_model_ref,
     );
 
-    // If primary spawn fails, try the alternate backend with no specific model
+    // If primary spawn fails, try the alternate backend. Codex fallback still
+    // uses Azureal's default model instead of the CLI's implicit default.
     let fallback_backend = primary_backend.alternate();
+    let fallback_model = match fallback_backend {
+        crate::backend::Backend::Claude => None,
+        crate::backend::Backend::Codex => Some(crate::app::state::default_model()),
+    };
     let (rx, pid, backend, model_label, used_fallback) = match spawn_result {
         Ok((rx, pid)) => (rx, pid, primary_backend, primary_label.clone(), false),
         Err(_) => {
-            match claude_process.spawn_on_backend(fallback_backend, wt_path, &prompt, None, None) {
+            match claude_process.spawn_on_backend(
+                fallback_backend,
+                wt_path,
+                &prompt,
+                None,
+                fallback_model,
+            ) {
                 Ok((rx, pid)) => (
                     rx,
                     pid,
                     fallback_backend,
-                    fallback_backend.to_string(),
+                    fallback_model
+                        .map(str::to_string)
+                        .unwrap_or_else(|| fallback_backend.to_string()),
                     true,
                 ),
                 Err(_) => return false,

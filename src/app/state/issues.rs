@@ -120,7 +120,10 @@ impl App {
             .map(|w| w.branch_name.clone())
             .unwrap_or_else(|| "main".into());
 
-        match agent.spawn(&wt_path, &prompt, None, selected_model.as_deref()) {
+        let selected_model =
+            selected_model.unwrap_or_else(|| crate::app::state::default_model().to_string());
+
+        match agent.spawn(&wt_path, &prompt, None, Some(selected_model.as_str())) {
             Ok((rx, pid)) => {
                 let slot = pid.to_string();
                 if let Some(sid) = store_id {
@@ -128,7 +131,7 @@ impl App {
                         .insert(slot.clone(), (sid, wt_path.clone(), 0, 0));
                     self.current_session_id = Some(sid);
                 }
-                self.register_claude(branch, pid, rx, selected_model.as_deref());
+                self.register_claude(branch, pid, rx, Some(selected_model.as_str()));
                 self.issue_session = Some(IssueSession {
                     slot_id: slot,
                     session_id: None,

@@ -890,12 +890,11 @@ pub(super) fn exec_commit_start(app: &mut App) {
 
     let stat = Git::get_staged_stat(&wt).unwrap_or_default();
     let config = crate::config::Config::load().unwrap_or_default();
-    let selected_model = app.selected_model.clone();
-    let commit_backend = crate::app::state::backend_for_model(
-        selected_model
-            .as_deref()
-            .unwrap_or_else(|| crate::app::state::default_model()),
-    );
+    let selected_model = app
+        .selected_model
+        .clone()
+        .unwrap_or_else(|| crate::app::state::default_model().to_string());
+    let commit_backend = crate::app::state::backend_for_model(selected_model.as_str());
 
     let (tx, rx) = std::sync::mpsc::channel();
     let wt_clone = wt.clone();
@@ -930,20 +929,26 @@ pub(super) fn exec_commit_start(app: &mut App) {
             }
         };
 
-        let result = match generate(commit_backend, selected_model.as_deref()) {
+        let result = match generate(commit_backend, Some(selected_model.as_str())) {
             Ok(msg) => Ok(GeneratedCommitMessage {
                 message: msg,
-                generator_label: commit_message_generator_label(selected_model.as_deref()),
+                generator_label: commit_message_generator_label(Some(selected_model.as_str())),
                 fallback_notice: None,
             }),
             Err(primary_err) => {
                 let alt = commit_backend.alternate();
-                match generate(alt, None) {
+                let fallback_model = match alt {
+                    Backend::Claude => None,
+                    Backend::Codex => Some(crate::app::state::default_model()),
+                };
+                match generate(alt, fallback_model) {
                     Ok(msg) => {
                         let notice = format!("{} failed — fell back to {}", commit_backend, alt);
                         Ok(GeneratedCommitMessage {
                             message: msg,
-                            generator_label: format!("{} default", alt),
+                            generator_label: fallback_model
+                                .map(|model| commit_message_generator_label(Some(model)))
+                                .unwrap_or_else(|| format!("{} default", alt)),
                             fallback_notice: Some(notice),
                         })
                     }

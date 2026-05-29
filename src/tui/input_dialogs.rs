@@ -885,17 +885,20 @@ fn spawn_run_command_prompt(
     let display_name = format_run_cmd_display_name(cmd_name);
     // Spawn Claude on current worktree (resume existing session if any)
     let resume_id = app.get_claude_session_id(&branch).cloned();
-    let selected_model = app.selected_model.clone();
+    let selected_model = app
+        .selected_model
+        .clone()
+        .unwrap_or_else(|| crate::app::state::default_model().to_string());
     match claude_process.spawn(
         &wt_path,
         &prompt,
         resume_id.as_deref(),
-        selected_model.as_deref(),
+        Some(selected_model.as_str()),
     ) {
         Ok((rx, pid)) => {
             app.pending_session_names
                 .push((pid.to_string(), display_name));
-            app.register_claude(branch, pid, rx, selected_model.as_deref());
+            app.register_claude(branch, pid, rx, Some(selected_model.as_str()));
             app.focus = Focus::Session;
             app.set_status(format!("Generating run command: {}...", cmd_name));
         }
