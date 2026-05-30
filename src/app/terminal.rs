@@ -22,17 +22,22 @@ pub struct SessionTerminal {
 impl App {
     /// Open terminal with PTY shell in session's worktree
     pub fn open_terminal(&mut self) {
+        let target_branch = self.current_worktree().map(|s| s.branch_name.clone());
+
         // If PTY already exists (active), just show it
         if self.terminal_pty.is_some() {
-            self.terminal_mode = true;
-            self.prompt_mode = true;
-            self.terminal_needs_resize = true;
-            return;
+            if self.terminal_branch_name.as_ref() == target_branch.as_ref() {
+                self.terminal_mode = true;
+                self.prompt_mode = true;
+                self.terminal_needs_resize = true;
+                return;
+            }
+            self.save_current_terminal();
         }
 
         // Check if this session has a saved terminal
-        if let Some(session) = self.current_worktree() {
-            if self.worktree_terminals.contains_key(&session.branch_name) {
+        if let Some(branch_name) = target_branch.as_ref() {
+            if self.worktree_terminals.contains_key(branch_name) {
                 self.restore_session_terminal();
                 self.terminal_mode = true;
                 self.prompt_mode = true;
@@ -140,6 +145,7 @@ impl App {
         self.terminal_child = Some(child);
         self.terminal_writer = Some(writer);
         self.terminal_rx = Some(rx);
+        self.terminal_branch_name = target_branch;
         self.terminal_rows = self.terminal_height;
         self.terminal_cols = 120;
         self.terminal_parser = vt100::Parser::new(self.terminal_rows, self.terminal_cols, 1000);
@@ -298,22 +304,30 @@ impl App {
 
     /// Save current terminal to worktree_terminals map (called before switching sessions)
     pub fn save_current_terminal(&mut self) {
-        // Get current session's branch name
-        let branch_name = match self.current_worktree() {
-            Some(s) => s.branch_name.clone(),
+        // Only save if we have a terminal
+        if self.terminal_pty.is_none()
+            || self.terminal_child.is_none()
+            || self.terminal_writer.is_none()
+            || self.terminal_rx.is_none()
+        {
+            return;
+        }
+
+        // Prefer the PTY's recorded owner. During some UI paths selection may
+        // already have changed before this method runs.
+        let branch_name = match self
+            .terminal_branch_name
+            .clone()
+            .or_else(|| self.current_worktree().map(|s| s.branch_name.clone()))
+        {
+            Some(branch_name) => branch_name,
             None => return,
         };
 
-        // Only save if we have a terminal
-        let (pty, child, writer, rx) = match (
-            self.terminal_pty.take(),
-            self.terminal_child.take(),
-            self.terminal_writer.take(),
-            self.terminal_rx.take(),
-        ) {
-            (Some(p), Some(c), Some(w), Some(r)) => (p, c, w, r),
-            _ => return,
-        };
+        let pty = self.terminal_pty.take().unwrap();
+        let child = self.terminal_child.take().unwrap();
+        let writer = self.terminal_writer.take().unwrap();
+        let rx = self.terminal_rx.take().unwrap();
 
         // Save terminal state to map
         let terminal = SessionTerminal {
@@ -329,6 +343,7 @@ impl App {
         self.worktree_terminals.insert(branch_name, terminal);
 
         // Reset current terminal state
+        self.terminal_branch_name = None;
         self.terminal_scroll = 0;
         self.terminal_mode = false;
     }
@@ -340,12 +355,22 @@ impl App {
             None => return,
         };
 
+        if self.terminal_pty.is_some() {
+            if self.terminal_branch_name.as_deref() == Some(branch_name.as_str()) {
+                return;
+            }
+            if self.terminal_branch_name.is_some() {
+                self.save_current_terminal();
+            }
+        }
+
         // Try to restore from map
         if let Some(terminal) = self.worktree_terminals.remove(&branch_name) {
             self.terminal_pty = Some(terminal.pty);
             self.terminal_child = Some(terminal.child);
             self.terminal_writer = Some(terminal.writer);
             self.terminal_rx = Some(terminal.rx);
+            self.terminal_branch_name = Some(branch_name);
             self.terminal_parser = terminal.parser;
             self.terminal_scroll = terminal.scroll;
             self.terminal_rows = terminal.rows;
@@ -361,6 +386,79 @@ mod tests {
     use crate::models::Worktree;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+
+    #[derive(Debug)]
+    struct FakeMasterPty;
+
+    impl portable_pty::MasterPty for FakeMasterPty {
+        fn resize(&self, _size: portable_pty::PtySize) -> Result<(), anyhow::Error> {
+            Ok(())
+        }
+
+        fn get_size(&self) -> Result<portable_pty::PtySize, anyhow::Error> {
+            Ok(portable_pty::PtySize {
+                rows: 24,
+                cols: 120,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+        }
+
+        fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>, anyhow::Error> {
+            Ok(Box::new(std::io::empty()))
+        }
+
+        fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>, anyhow::Error> {
+            Ok(Box::new(std::io::sink()))
+        }
+
+        #[cfg(unix)]
+        fn process_group_leader(&self) -> Option<libc::pid_t> {
+            None
+        }
+
+        #[cfg(unix)]
+        fn as_raw_fd(&self) -> Option<std::os::fd::RawFd> {
+            None
+        }
+
+        #[cfg(unix)]
+        fn tty_name(&self) -> Option<std::path::PathBuf> {
+            None
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeChild;
+
+    impl portable_pty::ChildKiller for FakeChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(FakeChild)
+        }
+    }
+
+    impl portable_pty::Child for FakeChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Ok(None)
+        }
+
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            Ok(portable_pty::ExitStatus::with_exit_code(0))
+        }
+
+        fn process_id(&self) -> Option<u32> {
+            None
+        }
+
+        #[cfg(windows)]
+        fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
+            None
+        }
+    }
 
     #[derive(Clone)]
     struct SharedWriter(Arc<Mutex<Vec<u8>>>);
@@ -380,6 +478,44 @@ mod tests {
         let captured = Arc::new(Mutex::new(Vec::new()));
         app.terminal_writer = Some(Box::new(SharedWriter(captured.clone())));
         captured
+    }
+
+    fn add_worktree(app: &mut App, branch_name: &str) {
+        app.worktrees.push(Worktree {
+            branch_name: branch_name.to_string(),
+            worktree_path: Some(PathBuf::from(format!("/tmp/{branch_name}"))),
+            claude_session_id: None,
+            archived: false,
+        });
+    }
+
+    fn fake_session_terminal(label: &[u8]) -> SessionTerminal {
+        let (_tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let mut parser = vt100::Parser::new(24, 120, 1000);
+        parser.process(label);
+        SessionTerminal {
+            pty: Box::new(FakeMasterPty),
+            child: Box::new(FakeChild),
+            writer: Box::new(std::io::sink()),
+            rx,
+            parser,
+            scroll: 0,
+            rows: 24,
+            cols: 120,
+        }
+    }
+
+    fn install_active_terminal(app: &mut App, branch_name: &str, label: &[u8]) {
+        let (_tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        app.terminal_pty = Some(Box::new(FakeMasterPty));
+        app.terminal_child = Some(Box::new(FakeChild));
+        app.terminal_writer = Some(Box::new(std::io::sink()));
+        app.terminal_rx = Some(rx);
+        app.terminal_branch_name = Some(branch_name.to_string());
+        app.terminal_parser = vt100::Parser::new(24, 120, 1000);
+        app.terminal_parser.process(label);
+        app.terminal_rows = 24;
+        app.terminal_cols = 120;
     }
 
     // ── close_terminal ──
@@ -722,6 +858,23 @@ mod tests {
         assert!(app.worktree_terminals.is_empty());
     }
 
+    #[test]
+    fn save_terminal_uses_recorded_owner_after_selection_changes() {
+        let mut app = App::new();
+        add_worktree(&mut app, "azureal/a");
+        add_worktree(&mut app, "azureal/b");
+        app.selected_worktree = Some(0);
+        install_active_terminal(&mut app, "azureal/a", b"active-a");
+
+        app.selected_worktree = Some(1);
+        app.save_current_terminal();
+
+        assert!(app.worktree_terminals.contains_key("azureal/a"));
+        assert!(!app.worktree_terminals.contains_key("azureal/b"));
+        assert!(app.terminal_pty.is_none());
+        assert!(app.terminal_branch_name.is_none());
+    }
+
     // ── restore_session_terminal ──
 
     #[test]
@@ -744,6 +897,47 @@ mod tests {
         app.restore_session_terminal();
         // No saved terminal — should do nothing
         assert!(app.terminal_pty.is_none());
+    }
+
+    #[test]
+    fn restore_terminal_saves_active_terminal_for_previous_owner() {
+        let mut app = App::new();
+        add_worktree(&mut app, "azureal/a");
+        add_worktree(&mut app, "azureal/b");
+        app.selected_worktree = Some(0);
+        install_active_terminal(&mut app, "azureal/a", b"active-a");
+        app.worktree_terminals
+            .insert("azureal/b".to_string(), fake_session_terminal(b"saved-b"));
+
+        app.selected_worktree = Some(1);
+        app.restore_session_terminal();
+
+        assert_eq!(app.terminal_branch_name.as_deref(), Some("azureal/b"));
+        assert!(app.worktree_terminals.contains_key("azureal/a"));
+        assert!(!app.worktree_terminals.contains_key("azureal/b"));
+        let contents = app.terminal_screen_contents();
+        assert!(String::from_utf8_lossy(&contents).contains("saved-b"));
+    }
+
+    #[test]
+    fn open_terminal_restores_target_when_active_terminal_belongs_elsewhere() {
+        let mut app = App::new();
+        add_worktree(&mut app, "azureal/a");
+        add_worktree(&mut app, "azureal/b");
+        app.selected_worktree = Some(0);
+        install_active_terminal(&mut app, "azureal/a", b"active-a");
+        app.worktree_terminals
+            .insert("azureal/b".to_string(), fake_session_terminal(b"saved-b"));
+
+        app.selected_worktree = Some(1);
+        app.open_terminal();
+
+        assert!(app.terminal_mode);
+        assert!(app.prompt_mode);
+        assert_eq!(app.terminal_branch_name.as_deref(), Some("azureal/b"));
+        assert!(app.worktree_terminals.contains_key("azureal/a"));
+        let contents = app.terminal_screen_contents();
+        assert!(String::from_utf8_lossy(&contents).contains("saved-b"));
     }
 
     // ── open_terminal: existing PTY ──
