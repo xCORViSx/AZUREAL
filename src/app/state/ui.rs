@@ -428,6 +428,7 @@ impl App {
     /// Exit main branch browse mode. Restores previous worktree selection and focus.
     pub fn exit_main_browse(&mut self) {
         self.save_live_display_events();
+        self.save_current_terminal();
         self.browsing_main = false;
         self.selected_worktree = self.pre_main_browse_selection.take();
         self.focus = Focus::FileTree;

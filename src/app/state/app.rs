@@ -198,6 +198,10 @@ pub struct App {
     pub terminal_child: Option<Box<dyn PtyChild + Send + Sync>>,
     pub terminal_writer: Option<Box<dyn Write + Send>>,
     pub terminal_rx: Option<Receiver<Vec<u8>>>,
+    /// Branch that owns the currently active PTY. Hidden terminals in
+    /// `worktree_terminals` are keyed by branch name; this keeps the active one
+    /// from being misattributed if selection changes before it is saved.
+    pub terminal_branch_name: Option<String>,
     pub terminal_parser: vt100::Parser,
     pub terminal_scroll: usize,
     pub terminal_height: u16,
@@ -729,6 +733,7 @@ impl App {
             terminal_child: None,
             terminal_writer: None,
             terminal_rx: None,
+            terminal_branch_name: None,
             terminal_parser: vt100::Parser::new(24, 120, 1000),
             terminal_scroll: 0,
             terminal_height: 12,

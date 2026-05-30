@@ -533,6 +533,7 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
             active[active.len() - 1]
         };
         app.save_live_display_events();
+        app.save_current_terminal();
         app.browsing_main = false;
         app.selected_worktree = Some(new_idx);
         app.load_session_output();
@@ -560,6 +561,7 @@ fn switch_git_panel_worktree(app: &mut App, forward: bool) {
     let new_idx = active[new_pos];
 
     app.save_live_display_events();
+    app.save_current_terminal();
     app.selected_worktree = Some(new_idx);
     app.load_session_output();
     app.open_git_actions_panel();
@@ -685,6 +687,7 @@ fn switch_git_panel_page(app: &mut App, forward: bool) {
         .map(|p| p.focused_pane)
         .unwrap_or(0);
     app.save_live_display_events();
+    app.save_current_terminal();
     app.selected_worktree = Some(new_idx);
     app.load_session_output();
     app.open_git_actions_panel();

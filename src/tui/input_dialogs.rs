@@ -56,7 +56,11 @@ pub fn handle_branch_dialog_input(key: event::KeyEvent, app: &mut App) -> Result
                                     wt.branch_name == branch || wt.branch_name == local_name
                                 });
                                 if let Some(idx) = target_idx {
+                                    app.save_live_display_events();
+                                    app.save_current_terminal();
                                     app.selected_worktree = Some(idx);
+                                    app.load_session_output();
+                                    app.invalidate_sidebar();
                                     app.set_status(format!("Switched to {}", branch));
                                 }
                             } else if let Some(project) = app.current_project().cloned() {

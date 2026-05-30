@@ -91,6 +91,7 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
                 // Switch to the conflicted worktree and open Git panel with conflict overlay
                 if let Some(idx) = app.worktrees.iter().position(|w| w.branch_name == branch) {
                     app.save_live_display_events();
+                    app.save_current_terminal();
                     app.selected_worktree = Some(idx);
                     app.load_session_output();
                 }
