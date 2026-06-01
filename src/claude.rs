@@ -117,7 +117,7 @@ impl ClaudeProcess {
         // Read stdout
         let stdout = child.stdout.take().context("Failed to get stdout")?;
         let tx_stdout = tx.clone();
-        thread::spawn(move || {
+        let stdout_thread = thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line_result in reader.lines() {
                 let line = match line_result {
@@ -152,7 +152,7 @@ impl ClaudeProcess {
         // Read stderr - hooks might be here
         let stderr = child.stderr.take().context("Failed to get stderr")?;
         let tx_stderr = tx.clone();
-        thread::spawn(move || {
+        let stderr_thread = thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line_result in reader.lines() {
                 let line = match line_result {
@@ -178,6 +178,8 @@ impl ClaudeProcess {
         // Wait for process to exit
         thread::spawn(move || {
             let status = child.wait();
+            let _ = stdout_thread.join();
+            let _ = stderr_thread.join();
             let code = status.ok().and_then(|s| s.code());
             let _ = tx.send(AgentEvent::Exited { code });
         });

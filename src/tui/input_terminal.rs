@@ -335,12 +335,16 @@ pub fn handle_input_mode(
                                 return Ok(());
                             }
 
-                            // If there's a running process on this branch, store its
-                            // events now before we advance the offset for the new turn.
-                            // Prevents double-storing when the old process exits later.
+                            // If there's a running process on this branch, interrupt it
+                            // and send this prompt after exit storage has completed.
+                            // Building context immediately would only see whatever part
+                            // of the prior turn had reached SQLite so far.
                             if let Some(prev_slot) = app.active_slot.get(&branch_name).cloned() {
                                 if app.running_sessions.contains(&prev_slot) {
-                                    app.store_append_from_display(&prev_slot);
+                                    app.staged_prompt = Some(input);
+                                    app.cancel_current_claude();
+                                    app.set_status("Cancelling current run - prompt staged...");
+                                    return Ok(());
                                 }
                             }
 
@@ -488,6 +492,40 @@ fn build_ask_user_context(input: &serde_json::Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn enter_while_active_slot_running_stages_prompt_without_spawning() {
+        let mut app = App::new();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(std::path::PathBuf::from("/tmp")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(1);
+        app.prompt_mode = true;
+        app.input = "follow up".into();
+        app.input_cursor = app.input.len();
+        app.active_slot.insert("main".into(), "not-a-pid".into());
+        app.running_sessions.insert("not-a-pid".into());
+
+        let process = AgentProcess::new(crate::config::Config::default());
+        handle_input_mode(
+            event::KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut app,
+            &process,
+        )
+        .unwrap();
+
+        assert_eq!(app.staged_prompt.as_deref(), Some("follow up"));
+        assert!(app.display_events.is_empty());
+        assert!(app.input.is_empty());
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Cancelling current run - prompt staged...")
+        );
+    }
 
     /// Verifies build_ask_user_context produces correct system context from
     /// a real AskUserQuestion input with 2 options and single-select.
