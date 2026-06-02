@@ -315,6 +315,7 @@ pub fn handle_key_event(
                         all_indices.reverse();
                         // Gather paths for background removal.
                         let project_path = app.project.as_ref().map(|project| project.path.clone());
+                        let auto_rebase_was_enabled = app.auto_rebase_enabled.contains(&branch);
                         let mut wt_paths = Vec::new();
                         for &idx in &all_indices {
                             if let Some(wt) = app.worktrees.get(idx) {
@@ -332,24 +333,47 @@ pub fn handle_key_event(
                         std::thread::spawn(move || {
                             let outcome = if let Some(ref project_path) = project_path {
                                 let mut error = None;
+                                let mut removed_count = 0usize;
                                 for wt_path in &wt_paths {
-                                    crate::azufig::set_auto_rebase(wt_path, false);
+                                    if auto_rebase_was_enabled {
+                                        crate::azufig::set_auto_rebase(wt_path, false);
+                                    }
                                     if let Err(e) =
                                         crate::git::Git::remove_worktree(project_path, wt_path)
                                     {
+                                        if auto_rebase_was_enabled {
+                                            crate::azufig::set_auto_rebase(wt_path, true);
+                                        }
                                         error = Some(format!("remove worktree failed: {}", e));
                                         break;
                                     }
+                                    removed_count += 1;
                                 }
                                 if let Some(e) = error {
-                                    BackgroundOpOutcome::Failed(format!("Delete failed: {}", e))
+                                    let message = format!("Delete failed: {}", e);
+                                    if removed_count > 0 {
+                                        BackgroundOpOutcome::WorktreesChangedFailure {
+                                            message,
+                                            prev_idx,
+                                        }
+                                    } else {
+                                        BackgroundOpOutcome::Failed(message)
+                                    }
                                 } else if let Err(e) =
                                     crate::git::Git::delete_branch(project_path, &branch_clone)
                                 {
-                                    BackgroundOpOutcome::Failed(format!(
-                                        "Delete failed: delete branch failed: {}",
-                                        e
-                                    ))
+                                    let message =
+                                        format!("Delete failed: delete branch failed: {}", e);
+                                    if removed_count > 0 {
+                                        BackgroundOpOutcome::DeleteBranchFailedAfterWorktreeRemoval {
+                                            branch: branch_clone,
+                                            display_name: branch,
+                                            prev_idx,
+                                            message,
+                                        }
+                                    } else {
+                                        BackgroundOpOutcome::Failed(message)
+                                    }
                                 } else {
                                     BackgroundOpOutcome::Deleted {
                                         branch: branch_clone,
@@ -374,21 +398,32 @@ pub fn handle_key_event(
                         if let Some(project) = &app.project {
                             if let Some(wt) = app.current_worktree() {
                                 if let Some(ref wt_path) = wt.worktree_path {
+                                    let branch = wt.branch_name.clone();
+                                    let auto_rebase_was_enabled =
+                                        app.auto_rebase_enabled.contains(&branch);
                                     let wt_path = wt_path.clone();
                                     let project_path = project.path.clone();
                                     let (tx, rx) = mpsc::channel();
                                     app.loading_indicator = Some("Archiving worktree...".into());
                                     app.background_op_receiver = Some(rx);
                                     std::thread::spawn(move || {
+                                        if auto_rebase_was_enabled {
+                                            crate::azufig::set_auto_rebase(&wt_path, false);
+                                        }
                                         let outcome = match crate::git::Git::remove_worktree(
                                             &project_path,
                                             &wt_path,
                                         ) {
-                                            Ok(()) => BackgroundOpOutcome::Archived,
-                                            Err(e) => BackgroundOpOutcome::Failed(format!(
-                                                "Archive failed: {}",
-                                                e
-                                            )),
+                                            Ok(()) => BackgroundOpOutcome::Archived { branch },
+                                            Err(e) => {
+                                                if auto_rebase_was_enabled {
+                                                    crate::azufig::set_auto_rebase(&wt_path, true);
+                                                }
+                                                BackgroundOpOutcome::Failed(format!(
+                                                    "Archive failed: {}",
+                                                    e
+                                                ))
+                                            }
                                         };
                                         let _ = tx.send(BackgroundOpProgress {
                                             phase: String::new(),
@@ -442,22 +477,30 @@ pub fn handle_key_event(
                     1 => {
                         // Archive — remove worktree, keep branch
                         if let Some(project) = &app.project {
-                            app.auto_rebase_enabled.remove(&d.branch);
-                            crate::azufig::set_auto_rebase(&d.worktree_path, false);
+                            let branch = d.branch.clone();
+                            let auto_rebase_was_enabled = app.auto_rebase_enabled.contains(&branch);
                             let project_path = project.path.clone();
                             let wt_path = d.worktree_path.clone();
                             let (tx, rx) = mpsc::channel();
                             app.loading_indicator = Some("Archiving worktree...".into());
                             app.background_op_receiver = Some(rx);
                             std::thread::spawn(move || {
+                                if auto_rebase_was_enabled {
+                                    crate::azufig::set_auto_rebase(&wt_path, false);
+                                }
                                 let outcome =
                                     match crate::git::Git::remove_worktree(&project_path, &wt_path)
                                     {
-                                        Ok(()) => BackgroundOpOutcome::Archived,
-                                        Err(e) => BackgroundOpOutcome::Failed(format!(
-                                            "Archive failed: {}",
-                                            e
-                                        )),
+                                        Ok(()) => BackgroundOpOutcome::Archived { branch },
+                                        Err(e) => {
+                                            if auto_rebase_was_enabled {
+                                                crate::azufig::set_auto_rebase(&wt_path, true);
+                                            }
+                                            BackgroundOpOutcome::Failed(format!(
+                                                "Archive failed: {}",
+                                                e
+                                            ))
+                                        }
                                     };
                                 let _ = tx.send(BackgroundOpProgress {
                                     phase: String::new(),
@@ -472,24 +515,39 @@ pub fn handle_key_event(
                         let wt_path = d.worktree_path.clone();
                         let branch = d.branch.clone();
                         let display_name = d.display_name.clone();
+                        let auto_rebase_was_enabled = app.auto_rebase_enabled.contains(&branch);
                         let (tx, rx) = mpsc::channel();
                         app.loading_indicator = Some("Deleting worktree...".into());
                         app.background_op_receiver = Some(rx);
                         std::thread::spawn(move || {
                             let outcome = if let Some(ref project_path) = project_path {
-                                crate::azufig::set_auto_rebase(&wt_path, false);
+                                if auto_rebase_was_enabled {
+                                    crate::azufig::set_auto_rebase(&wt_path, false);
+                                }
                                 match crate::git::Git::remove_worktree(project_path, &wt_path) {
-                                    Err(e) => BackgroundOpOutcome::Failed(format!(
-                                        "Delete failed: remove worktree failed: {}",
-                                        e
-                                    )),
+                                    Err(e) => {
+                                        if auto_rebase_was_enabled {
+                                            crate::azufig::set_auto_rebase(&wt_path, true);
+                                        }
+                                        BackgroundOpOutcome::Failed(format!(
+                                            "Delete failed: remove worktree failed: {}",
+                                            e
+                                        ))
+                                    }
                                     Ok(()) => {
                                         match crate::git::Git::delete_branch(project_path, &branch)
                                         {
-                                            Err(e) => BackgroundOpOutcome::Failed(format!(
-                                                "Delete failed: delete branch failed: {}",
-                                                e
-                                            )),
+                                            Err(e) => {
+                                                BackgroundOpOutcome::DeleteBranchFailedAfterWorktreeRemoval {
+                                                    branch,
+                                                    display_name,
+                                                    prev_idx,
+                                                    message: format!(
+                                                        "Delete failed: delete branch failed: {}",
+                                                        e
+                                                    ),
+                                                }
+                                            }
                                             Ok(()) => BackgroundOpOutcome::Deleted {
                                                 branch,
                                                 display_name,

@@ -22,6 +22,13 @@ impl App {
         self.live_display_events_cache.remove(branch);
         self.agent_session_ids.retain(|key, _| key != branch);
         self.unread_sessions.remove(branch);
+        self.clear_removed_worktree_state(branch);
+    }
+
+    /// Remove live worktree state while preserving branch/session history.
+    /// Used when a worktree was archived, or when deleting the branch failed
+    /// after the worktree had already been removed.
+    pub(crate) fn clear_removed_worktree_state(&mut self, branch: &str) {
         self.auto_rebase_enabled.remove(branch);
         self.clear_branch_agent_tracking(branch, true);
         self.drop_branch_terminal(branch);
@@ -336,6 +343,8 @@ impl App {
             Some(p) => p,
             None => return Ok(()),
         };
+        let branch = session.branch_name.clone();
+        let auto_rebase_was_enabled = self.auto_rebase_enabled.contains(&branch);
         let project_path = match self.project.as_ref() {
             Some(p) => p.path.clone(),
             None => return Ok(()),
@@ -344,9 +353,17 @@ impl App {
         self.loading_indicator = Some("Archiving worktree...".into());
         self.background_op_receiver = Some(rx);
         std::thread::spawn(move || {
+            if auto_rebase_was_enabled {
+                crate::azufig::set_auto_rebase(&wt_path, false);
+            }
             let outcome = match Git::remove_worktree(&project_path, &wt_path) {
-                Ok(()) => BackgroundOpOutcome::Archived,
-                Err(e) => BackgroundOpOutcome::Failed(format!("Archive failed: {}", e)),
+                Ok(()) => BackgroundOpOutcome::Archived { branch },
+                Err(e) => {
+                    if auto_rebase_was_enabled {
+                        crate::azufig::set_auto_rebase(&wt_path, true);
+                    }
+                    BackgroundOpOutcome::Failed(format!("Archive failed: {}", e))
+                }
             };
             let _ = tx.send(BackgroundOpProgress {
                 phase: String::new(),
@@ -414,6 +431,7 @@ impl App {
         let wt_path = wt.worktree_path.clone();
         let project_path = project.path.clone();
         let prev_idx = self.selected_worktree.unwrap_or(0);
+        let auto_rebase_was_enabled = self.auto_rebase_enabled.contains(&branch);
 
         let (tx, rx) = mpsc::channel();
         self.loading_indicator = Some("Deleting worktree...".into());
@@ -421,17 +439,35 @@ impl App {
         let branch_clone = branch.clone();
         let name_clone = name.clone();
         std::thread::spawn(move || {
+            let mut worktree_removed = false;
             let outcome = if let Err(e) = (|| -> anyhow::Result<()> {
                 if let Some(ref path) = wt_path {
-                    crate::azufig::set_auto_rebase(path, false);
+                    if auto_rebase_was_enabled {
+                        crate::azufig::set_auto_rebase(path, false);
+                    }
                     Git::remove_worktree(&project_path, path)
                         .map_err(|e| anyhow::anyhow!("remove worktree failed: {}", e))?;
+                    worktree_removed = true;
                 }
                 Git::delete_branch(&project_path, &branch_clone)
                     .map_err(|e| anyhow::anyhow!("delete branch failed: {}", e))?;
                 Ok(())
             })() {
-                BackgroundOpOutcome::Failed(format!("Delete failed: {}", e))
+                if !worktree_removed {
+                    if let Some(ref path) = wt_path {
+                        if auto_rebase_was_enabled {
+                            crate::azufig::set_auto_rebase(path, true);
+                        }
+                    }
+                    BackgroundOpOutcome::Failed(format!("Delete failed: {}", e))
+                } else {
+                    BackgroundOpOutcome::DeleteBranchFailedAfterWorktreeRemoval {
+                        branch: branch_clone,
+                        display_name: name_clone,
+                        prev_idx,
+                        message: format!("Delete failed: {}", e),
+                    }
+                }
             } else {
                 BackgroundOpOutcome::Deleted {
                     branch: branch_clone,

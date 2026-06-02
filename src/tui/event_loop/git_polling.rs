@@ -146,7 +146,8 @@ pub fn poll_background_ops(app: &mut App) -> bool {
     if let Some(outcome) = op_outcome {
         app.loading_indicator = None;
         match outcome {
-            BackgroundOpOutcome::Archived => {
+            BackgroundOpOutcome::Archived { branch } => {
+                app.clear_removed_worktree_state(&branch);
                 app.set_status("Session archived");
                 app.save_live_display_events();
                 let _ = app.refresh_worktrees();
@@ -199,6 +200,39 @@ pub fn poll_background_ops(app: &mut App) -> bool {
             } => {
                 app.remove_deleted_branch_state(&branch);
                 app.set_status(format!("Deleted: {}", display_name));
+                app.save_live_display_events();
+                app.save_current_terminal();
+                let _ = app.refresh_worktrees();
+                app.selected_worktree = if app.worktrees.is_empty() {
+                    None
+                } else {
+                    Some(prev_idx.min(app.worktrees.len() - 1))
+                };
+                app.load_session_output();
+            }
+            BackgroundOpOutcome::DeleteBranchFailedAfterWorktreeRemoval {
+                branch,
+                display_name,
+                prev_idx,
+                message,
+            } => {
+                app.clear_removed_worktree_state(&branch);
+                app.set_status(format!(
+                    "Removed worktree for {}; {}",
+                    display_name, message
+                ));
+                app.save_live_display_events();
+                app.save_current_terminal();
+                let _ = app.refresh_worktrees();
+                app.selected_worktree = if app.worktrees.is_empty() {
+                    None
+                } else {
+                    Some(prev_idx.min(app.worktrees.len() - 1))
+                };
+                app.load_session_output();
+            }
+            BackgroundOpOutcome::WorktreesChangedFailure { message, prev_idx } => {
+                app.set_status(message);
                 app.save_live_display_events();
                 app.save_current_terminal();
                 let _ = app.refresh_worktrees();
@@ -404,6 +438,72 @@ mod tests {
         assert!(!app.running_sessions.contains(slot));
         assert!(!app.agent_session_ids.contains_key(slot));
         assert_eq!(app.status_message.as_deref(), Some("Deleted: delete-me"));
+    }
+
+    #[test]
+    fn archived_outcome_cleans_live_state_preserves_branch_sessions() {
+        let branch = "azureal/archive-me";
+        let slot = "slot-a";
+        let mut app = app_with_delete_state(branch, slot);
+        deliver_background_outcome(
+            &mut app,
+            BackgroundOpOutcome::Archived {
+                branch: branch.to_string(),
+            },
+        );
+
+        assert!(poll_background_ops(&mut app));
+
+        assert!(app.session_files.contains_key(branch));
+        assert!(app.session_selected_file_idx.contains_key(branch));
+        assert!(app.live_display_events_cache.contains_key(branch));
+        assert!(app.unread_sessions.contains(branch));
+        assert!(app.unread_session_ids.contains("session-1"));
+        assert!(app.session_msg_counts.contains_key("session-1"));
+        assert!(app.session_completion.contains_key("session-1"));
+        assert!(!app.auto_rebase_enabled.contains(branch));
+        assert!(!app.branch_slots.contains_key(branch));
+        assert!(!app.active_slot.contains_key(branch));
+        assert!(!app.running_sessions.contains(slot));
+        assert!(!app.agent_session_ids.contains_key(slot));
+        assert_eq!(app.status_message.as_deref(), Some("Session archived"));
+    }
+
+    #[test]
+    fn branch_delete_failure_after_worktree_removal_preserves_sessions_but_clears_live_state() {
+        let branch = "azureal/partial-delete";
+        let slot = "slot-a";
+        let mut app = app_with_delete_state(branch, slot);
+        deliver_background_outcome(
+            &mut app,
+            BackgroundOpOutcome::DeleteBranchFailedAfterWorktreeRemoval {
+                branch: branch.to_string(),
+                display_name: "partial-delete".to_string(),
+                prev_idx: 0,
+                message: "Delete failed: delete branch failed: locked".to_string(),
+            },
+        );
+
+        assert!(poll_background_ops(&mut app));
+
+        assert!(app.session_files.contains_key(branch));
+        assert!(app.session_selected_file_idx.contains_key(branch));
+        assert!(app.live_display_events_cache.contains_key(branch));
+        assert!(app.unread_sessions.contains(branch));
+        assert!(app.unread_session_ids.contains("session-1"));
+        assert!(app.session_msg_counts.contains_key("session-1"));
+        assert!(app.session_completion.contains_key("session-1"));
+        assert!(!app.auto_rebase_enabled.contains(branch));
+        assert!(!app.branch_slots.contains_key(branch));
+        assert!(!app.active_slot.contains_key(branch));
+        assert!(!app.running_sessions.contains(slot));
+        assert!(!app.agent_session_ids.contains_key(slot));
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some(
+                "Removed worktree for partial-delete; Delete failed: delete branch failed: locked"
+            )
+        );
     }
 
     #[test]

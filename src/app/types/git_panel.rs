@@ -262,8 +262,8 @@ pub struct RcrCompletion {
 /// (refresh worktrees, select branch, clean up state, etc.)
 #[derive(Debug)]
 pub enum BackgroundOpOutcome {
-    /// Worktree archived — refresh and maintain current selection
-    Archived,
+    /// Worktree archived — clear live worktree state, refresh, and maintain selection
+    Archived { branch: String },
     /// Worktree unarchived — refresh and select the named branch
     Unarchived {
         branch: String,
@@ -277,6 +277,15 @@ pub enum BackgroundOpOutcome {
         display_name: String,
         prev_idx: usize,
     },
+    /// Worktree removal succeeded but branch deletion failed — branch remains archived
+    DeleteBranchFailedAfterWorktreeRemoval {
+        branch: String,
+        display_name: String,
+        prev_idx: usize,
+        message: String,
+    },
+    /// Some worktree-side changes occurred, but the full operation failed
+    WorktreesChangedFailure { message: String, prev_idx: usize },
     /// Worktree renamed — migrate state, refresh, and re-select the branch
     Renamed {
         old_branch: String,
