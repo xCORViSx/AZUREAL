@@ -271,8 +271,9 @@ pub enum BackgroundOpOutcome {
     },
     /// Worktree created — refresh and select the named branch
     Created { branch: String },
-    /// Worktree deleted — refresh and clamp selection (state cleanup done before spawn)
+    /// Worktree deleted — clean branch state, refresh, and clamp selection.
     Deleted {
+        branch: String,
         display_name: String,
         prev_idx: usize,
     },

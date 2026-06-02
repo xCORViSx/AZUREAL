@@ -913,16 +913,24 @@ impl App {
     pub fn cancel_all_claude(&mut self) -> Vec<u32> {
         let mut killed_pids: Vec<u32> = Vec::new();
 
-        // Kill all agent processes (Claude + Codex)
-        let slots: Vec<String> = self.running_sessions.drain().collect();
+        // Kill all agent processes (Claude + Codex). Collect from every
+        // slot-owned map so stale ownership state cannot hide a PID.
+        let mut slots: std::collections::BTreeSet<String> =
+            self.running_sessions.iter().cloned().collect();
+        for branch_slots in self.branch_slots.values() {
+            slots.extend(branch_slots.iter().cloned());
+        }
+        slots.extend(self.active_slot.values().cloned());
+        slots.extend(self.agent_receivers.keys().cloned());
+        slots.extend(self.slot_to_project.keys().cloned());
+        slots.extend(self.pid_session_target.keys().cloned());
+
         for slot in &slots {
             if let Ok(pid) = slot.parse::<u32>() {
                 crate::backend::kill_process_tree(pid);
                 killed_pids.push(pid);
             }
-            self.agent_receivers.remove(slot);
-            self.codex_slot_started_at.remove(slot);
-            self.agent_slot_models.remove(slot);
+            self.clear_slot_tracking(slot);
         }
 
         // Kill background compaction agents
@@ -947,6 +955,16 @@ impl App {
 
         self.branch_slots.clear();
         self.active_slot.clear();
+        self.running_sessions.clear();
+        self.agent_receivers.clear();
+        self.agent_exit_codes.clear();
+        self.slot_to_project.clear();
+        self.codex_slot_started_at.clear();
+        self.agent_slot_models.clear();
+        self.pid_session_target.clear();
+        self.pending_session_names.clear();
+        self.agent_session_ids
+            .retain(|slot, _| slot.parse::<u32>().is_err());
         killed_pids
     }
 }
@@ -1006,6 +1024,7 @@ fn load_ordered_presets(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::path::PathBuf;
 
     // ── split_file_reference ──
 
@@ -1028,6 +1047,53 @@ mod tests {
         let (path, line) = split_file_reference("/tmp/example.rs:27:9");
         assert_eq!(path, "/tmp/example.rs");
         assert_eq!(line, Some(27));
+    }
+
+    #[test]
+    fn cancel_all_claude_clears_slot_owned_maps() {
+        let mut app = App::new();
+        let branch = "azureal/test".to_string();
+        let slot = "slot-a".to_string();
+        let (_tx, rx) = std::sync::mpsc::channel();
+
+        app.running_sessions.insert(slot.clone());
+        app.agent_receivers.insert(slot.clone(), rx);
+        app.agent_exit_codes.insert(slot.clone(), 1);
+        app.agent_session_ids
+            .insert(slot.clone(), "slot-session".to_string());
+        app.agent_session_ids
+            .insert(branch.clone(), "branch-session".to_string());
+        app.agent_slot_models
+            .insert(slot.clone(), "gpt-test".to_string());
+        app.branch_slots.insert(branch.clone(), vec![slot.clone()]);
+        app.active_slot.insert(branch.clone(), slot.clone());
+        app.slot_to_project
+            .insert(slot.clone(), PathBuf::from("/tmp/project"));
+        app.codex_slot_started_at
+            .insert(slot.clone(), std::time::Instant::now());
+        app.pid_session_target
+            .insert(slot.clone(), (1, PathBuf::from("/tmp/wt"), 0, 0));
+        app.pending_session_names
+            .push((slot.clone(), "pending".to_string()));
+
+        let killed = app.cancel_all_claude();
+
+        assert!(killed.is_empty());
+        assert!(app.running_sessions.is_empty());
+        assert!(app.agent_receivers.is_empty());
+        assert!(app.agent_exit_codes.is_empty());
+        assert!(app.agent_slot_models.is_empty());
+        assert!(app.branch_slots.is_empty());
+        assert!(app.active_slot.is_empty());
+        assert!(app.slot_to_project.is_empty());
+        assert!(app.codex_slot_started_at.is_empty());
+        assert!(app.pid_session_target.is_empty());
+        assert!(app.pending_session_names.is_empty());
+        assert!(!app.agent_session_ids.contains_key(&slot));
+        assert_eq!(
+            app.agent_session_ids.get(&branch),
+            Some(&"branch-session".to_string())
+        );
     }
 
     // ── focus_next ──

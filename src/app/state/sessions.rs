@@ -415,29 +415,33 @@ impl App {
         let project_path = project.path.clone();
         let prev_idx = self.selected_worktree.unwrap_or(0);
 
-        if let Some(ref p) = wt_path {
-            crate::azufig::set_auto_rebase(p, false);
-        }
-        self.remove_deleted_branch_state(&branch);
-
         let (tx, rx) = mpsc::channel();
         self.loading_indicator = Some("Deleting worktree...".into());
         self.background_op_receiver = Some(rx);
         let branch_clone = branch.clone();
         let name_clone = name.clone();
         std::thread::spawn(move || {
-            // Remove worktree directory
-            if let Some(ref path) = wt_path {
-                let _ = Git::remove_worktree(&project_path, path);
-            }
-            // Delete git branch (local + remote + tracking ref)
-            let _ = Git::delete_branch(&project_path, &branch_clone);
-            let _ = tx.send(BackgroundOpProgress {
-                phase: String::new(),
-                outcome: Some(BackgroundOpOutcome::Deleted {
+            let outcome = if let Err(e) = (|| -> anyhow::Result<()> {
+                if let Some(ref path) = wt_path {
+                    crate::azufig::set_auto_rebase(path, false);
+                    Git::remove_worktree(&project_path, path)
+                        .map_err(|e| anyhow::anyhow!("remove worktree failed: {}", e))?;
+                }
+                Git::delete_branch(&project_path, &branch_clone)
+                    .map_err(|e| anyhow::anyhow!("delete branch failed: {}", e))?;
+                Ok(())
+            })() {
+                BackgroundOpOutcome::Failed(format!("Delete failed: {}", e))
+            } else {
+                BackgroundOpOutcome::Deleted {
+                    branch: branch_clone,
                     display_name: name_clone,
                     prev_idx,
-                }),
+                }
+            };
+            let _ = tx.send(BackgroundOpProgress {
+                phase: String::new(),
+                outcome: Some(outcome),
             });
         });
         Ok(())

@@ -313,19 +313,16 @@ pub fn handle_key_event(
                         all_indices.sort_unstable();
                         all_indices.dedup();
                         all_indices.reverse();
-                        // Gather paths for background removal
-                        let project = app.project.clone();
+                        // Gather paths for background removal.
+                        let project_path = app.project.as_ref().map(|project| project.path.clone());
                         let mut wt_paths = Vec::new();
                         for &idx in &all_indices {
                             if let Some(wt) = app.worktrees.get(idx) {
                                 if let Some(ref wt_path) = wt.worktree_path {
                                     wt_paths.push(wt_path.clone());
-                                    crate::azufig::set_auto_rebase(wt_path, false);
                                 }
-                                app.auto_rebase_enabled.remove(&wt.branch_name);
                             }
                         }
-                        app.remove_deleted_branch_state(&branch);
                         let prev_idx = app.selected_worktree.unwrap_or(0);
                         // Spawn background thread for git I/O
                         let (tx, rx) = mpsc::channel();
@@ -333,20 +330,41 @@ pub fn handle_key_event(
                         app.background_op_receiver = Some(rx);
                         let branch_clone = branch.clone();
                         std::thread::spawn(move || {
-                            if let Some(ref project) = project {
+                            let outcome = if let Some(ref project_path) = project_path {
+                                let mut error = None;
                                 for wt_path in &wt_paths {
-                                    let _ =
-                                        crate::git::Git::remove_worktree(&project.path, wt_path);
+                                    crate::azufig::set_auto_rebase(wt_path, false);
+                                    if let Err(e) =
+                                        crate::git::Git::remove_worktree(project_path, wt_path)
+                                    {
+                                        error = Some(format!("remove worktree failed: {}", e));
+                                        break;
+                                    }
                                 }
-                                let _ =
-                                    crate::git::Git::delete_branch(&project.path, &branch_clone);
-                            }
+                                if let Some(e) = error {
+                                    BackgroundOpOutcome::Failed(format!("Delete failed: {}", e))
+                                } else if let Err(e) =
+                                    crate::git::Git::delete_branch(project_path, &branch_clone)
+                                {
+                                    BackgroundOpOutcome::Failed(format!(
+                                        "Delete failed: delete branch failed: {}",
+                                        e
+                                    ))
+                                } else {
+                                    BackgroundOpOutcome::Deleted {
+                                        branch: branch_clone,
+                                        display_name: branch,
+                                        prev_idx,
+                                    }
+                                }
+                            } else {
+                                BackgroundOpOutcome::Failed(
+                                    "Delete failed: No project loaded".to_string(),
+                                )
+                            };
                             let _ = tx.send(BackgroundOpProgress {
                                 phase: String::new(),
-                                outcome: Some(BackgroundOpOutcome::Deleted {
-                                    display_name: branch,
-                                    prev_idx,
-                                }),
+                                outcome: Some(outcome),
                             });
                         });
                     }
@@ -450,8 +468,6 @@ pub fn handle_key_event(
                     }
                     2 => {
                         // Delete — remove worktree + delete branch
-                        crate::azufig::set_auto_rebase(&d.worktree_path, false);
-                        app.remove_deleted_branch_state(&d.branch);
                         let project_path = app.project.as_ref().map(|p| p.path.clone());
                         let wt_path = d.worktree_path.clone();
                         let branch = d.branch.clone();
@@ -460,16 +476,36 @@ pub fn handle_key_event(
                         app.loading_indicator = Some("Deleting worktree...".into());
                         app.background_op_receiver = Some(rx);
                         std::thread::spawn(move || {
-                            if let Some(ref project_path) = project_path {
-                                let _ = crate::git::Git::remove_worktree(project_path, &wt_path);
-                                let _ = crate::git::Git::delete_branch(project_path, &branch);
-                            }
+                            let outcome = if let Some(ref project_path) = project_path {
+                                crate::azufig::set_auto_rebase(&wt_path, false);
+                                match crate::git::Git::remove_worktree(project_path, &wt_path) {
+                                    Err(e) => BackgroundOpOutcome::Failed(format!(
+                                        "Delete failed: remove worktree failed: {}",
+                                        e
+                                    )),
+                                    Ok(()) => {
+                                        match crate::git::Git::delete_branch(project_path, &branch)
+                                        {
+                                            Err(e) => BackgroundOpOutcome::Failed(format!(
+                                                "Delete failed: delete branch failed: {}",
+                                                e
+                                            )),
+                                            Ok(()) => BackgroundOpOutcome::Deleted {
+                                                branch,
+                                                display_name,
+                                                prev_idx,
+                                            },
+                                        }
+                                    }
+                                }
+                            } else {
+                                BackgroundOpOutcome::Failed(
+                                    "Delete failed: No project loaded".to_string(),
+                                )
+                            };
                             let _ = tx.send(BackgroundOpProgress {
                                 phase: String::new(),
-                                outcome: Some(BackgroundOpOutcome::Deleted {
-                                    display_name,
-                                    prev_idx,
-                                }),
+                                outcome: Some(outcome),
                             });
                         });
                     }

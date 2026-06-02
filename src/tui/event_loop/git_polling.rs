@@ -192,10 +192,12 @@ pub fn poll_background_ops(app: &mut App) -> bool {
                 }
             }
             BackgroundOpOutcome::Deleted {
+                branch,
                 display_name,
                 prev_idx,
                 ..
             } => {
+                app.remove_deleted_branch_state(&branch);
                 app.set_status(format!("Deleted: {}", display_name));
                 app.save_live_display_events();
                 app.save_current_terminal();
@@ -318,4 +320,116 @@ pub fn poll_rebase_ops(app: &mut App) -> bool {
         }
     }
     redraw
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::types::{BackgroundOpOutcome, BackgroundOpProgress};
+    use crate::models::Worktree;
+    use std::path::PathBuf;
+
+    fn app_with_delete_state(branch: &str, slot: &str) -> App {
+        let mut app = App::new();
+        app.worktrees.push(Worktree {
+            branch_name: branch.to_string(),
+            worktree_path: None,
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.session_files.insert(
+            branch.to_string(),
+            vec![(
+                "session-1".to_string(),
+                PathBuf::from("/tmp/session-1"),
+                "now".to_string(),
+            )],
+        );
+        app.session_selected_file_idx.insert(branch.to_string(), 0);
+        app.live_display_events_cache
+            .insert(branch.to_string(), Vec::new());
+        app.unread_sessions.insert(branch.to_string());
+        app.unread_session_ids.insert("session-1".to_string());
+        app.session_msg_counts
+            .insert("session-1".to_string(), (1, 0));
+        app.session_completion
+            .insert("session-1".to_string(), (true, 100, 0.0));
+        app.auto_rebase_enabled.insert(branch.to_string());
+        app.branch_slots
+            .insert(branch.to_string(), vec![slot.to_string()]);
+        app.active_slot.insert(branch.to_string(), slot.to_string());
+        app.running_sessions.insert(slot.to_string());
+        app.agent_session_ids
+            .insert(slot.to_string(), "slot-session".to_string());
+        app
+    }
+
+    fn deliver_background_outcome(app: &mut App, outcome: BackgroundOpOutcome) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(BackgroundOpProgress {
+            phase: String::new(),
+            outcome: Some(outcome),
+        })
+        .unwrap();
+        app.background_op_receiver = Some(rx);
+    }
+
+    #[test]
+    fn deleted_outcome_cleans_branch_state() {
+        let branch = "azureal/delete-me";
+        let slot = "slot-a";
+        let mut app = app_with_delete_state(branch, slot);
+        deliver_background_outcome(
+            &mut app,
+            BackgroundOpOutcome::Deleted {
+                branch: branch.to_string(),
+                display_name: "delete-me".to_string(),
+                prev_idx: 0,
+            },
+        );
+
+        assert!(poll_background_ops(&mut app));
+
+        assert!(!app.session_files.contains_key(branch));
+        assert!(!app.session_selected_file_idx.contains_key(branch));
+        assert!(!app.live_display_events_cache.contains_key(branch));
+        assert!(!app.unread_sessions.contains(branch));
+        assert!(!app.unread_session_ids.contains("session-1"));
+        assert!(!app.session_msg_counts.contains_key("session-1"));
+        assert!(!app.session_completion.contains_key("session-1"));
+        assert!(!app.auto_rebase_enabled.contains(branch));
+        assert!(!app.branch_slots.contains_key(branch));
+        assert!(!app.active_slot.contains_key(branch));
+        assert!(!app.running_sessions.contains(slot));
+        assert!(!app.agent_session_ids.contains_key(slot));
+        assert_eq!(app.status_message.as_deref(), Some("Deleted: delete-me"));
+    }
+
+    #[test]
+    fn failed_outcome_preserves_branch_state() {
+        let branch = "azureal/keep-me";
+        let slot = "slot-a";
+        let mut app = app_with_delete_state(branch, slot);
+        deliver_background_outcome(
+            &mut app,
+            BackgroundOpOutcome::Failed("Delete failed: boom".to_string()),
+        );
+
+        assert!(poll_background_ops(&mut app));
+
+        assert!(app.session_files.contains_key(branch));
+        assert!(app.session_selected_file_idx.contains_key(branch));
+        assert!(app.live_display_events_cache.contains_key(branch));
+        assert!(app.unread_sessions.contains(branch));
+        assert!(app.unread_session_ids.contains("session-1"));
+        assert!(app.session_msg_counts.contains_key("session-1"));
+        assert!(app.session_completion.contains_key("session-1"));
+        assert!(app.auto_rebase_enabled.contains(branch));
+        assert!(app.branch_slots.contains_key(branch));
+        assert!(app.active_slot.contains_key(branch));
+        assert!(app.running_sessions.contains(slot));
+        assert!(app.agent_session_ids.contains_key(slot));
+        assert_eq!(app.status_message.as_deref(), Some("Delete failed: boom"));
+    }
 }
