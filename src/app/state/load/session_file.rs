@@ -114,6 +114,21 @@ impl App {
         if was_full_reparse && parse_backend == Backend::Codex {
             parsed.events = self.merge_store_prefix_for_current_session(parsed.events);
         }
+        let pending_confirmed_by_parse =
+            self.pending_user_message.as_ref().is_some_and(|pending| {
+                let start_idx = self.active_turn_events_offset().unwrap_or(0);
+                parsed
+                .events
+                .iter()
+                .enumerate()
+                .skip(start_idx)
+                .any(|(_, event)| {
+                    matches!(event, DisplayEvent::UserMessage { content, .. } if content == pending)
+                })
+            });
+        if was_full_reparse && parse_backend == Backend::Codex {
+            parsed.events = self.preserve_pending_user_message(parsed.events);
+        }
         // Guard: if the parse returned empty events but we already had content,
         // the file was likely temporarily unavailable (locked, atomic rewrite,
         // or deleted during Claude Code compaction). Preserve existing display
@@ -147,13 +162,17 @@ impl App {
         // Clear pending message once it appears in the parsed events.
         // Scan all events from the end — Claude may have emitted many
         // events (hooks, tool calls, text) after the user message.
-        if let Some(ref pending) = self.pending_user_message {
-            for event in self.display_events.iter().rev() {
-                if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
-                    if content == pending {
-                        self.pending_user_message = None;
+        if pending_confirmed_by_parse {
+            self.pending_user_message = None;
+        } else if !was_full_reparse || parse_backend != Backend::Codex {
+            if let Some(ref pending) = self.pending_user_message {
+                for event in self.display_events.iter().rev() {
+                    if let crate::events::DisplayEvent::UserMessage { content, .. } = event {
+                        if content == pending {
+                            self.pending_user_message = None;
+                        }
+                        break; // stop at first UserMessage either way
                     }
-                    break; // stop at first UserMessage either way
                 }
             }
         }
@@ -191,6 +210,50 @@ impl App {
         let mut merged = store_events;
         merged.extend(parsed_events.into_iter().skip(overlap));
         merged
+    }
+
+    fn preserve_pending_user_message(
+        &self,
+        mut parsed_events: Vec<DisplayEvent>,
+    ) -> Vec<DisplayEvent> {
+        let Some(pending) = self.pending_user_message.as_ref() else {
+            return parsed_events;
+        };
+
+        let insert_idx = self
+            .active_turn_events_offset()
+            .or_else(|| {
+                self.display_events.iter().rposition(|event| {
+                    matches!(event, DisplayEvent::UserMessage { content, .. } if content == pending)
+                })
+            })
+            .unwrap_or(parsed_events.len())
+            .min(parsed_events.len());
+
+        if parsed_events
+            .iter()
+            .skip(insert_idx)
+            .any(|event| matches!(event, DisplayEvent::UserMessage { content, .. } if content == pending))
+        {
+            return parsed_events;
+        }
+
+        parsed_events.insert(
+            insert_idx,
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: pending.clone(),
+            },
+        );
+        parsed_events
+    }
+
+    fn active_turn_events_offset(&self) -> Option<usize> {
+        let branch = self.current_worktree()?.branch_name.clone();
+        let slot = self.active_slot.get(&branch)?;
+        self.pid_session_target
+            .get(slot)
+            .map(|(_, _, events_offset, _)| *events_offset)
     }
 }
 
@@ -467,6 +530,137 @@ mod tests {
                 if content.contains("azureal-internal-auto-continue")
                     || content == "Continue."
         )));
+
+        let _ = std::fs::remove_file(&session_path);
+    }
+
+    #[test]
+    fn poll_session_file_active_codex_preserves_pending_user_prompt_after_full_reparse() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_dir = tempfile::tempdir().unwrap();
+        let wt_path = wt_dir.path().to_path_buf();
+        let branch = "codex".to_string();
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let sid = store.create_session(&branch).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "next request".into(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "prior assistant work".into(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!(
+            "rollout-live-codex-pending-{}-{}.jsonl",
+            std::process::id(),
+            unique
+        ));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": format!("live-codex-pending-{}", unique),
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type":"output_text","text":"working on current prompt"}],
+                }
+            })
+        )
+        .unwrap();
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: branch.clone(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert(branch, "55".into());
+        app.running_sessions.insert("55".into());
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 2, 0));
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path);
+        app.current_session_id = Some(sid);
+        app.session_file_path = Some(session_path.clone());
+        app.session_file_dirty = true;
+        app.session_file_parse_offset = 999;
+        app.pending_user_message = Some("next request".into());
+        app.display_events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "next request".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "prior assistant work".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "next request".into(),
+            },
+        ];
+
+        assert!(app.poll_session_file());
+
+        assert_eq!(app.display_events.len(), 4);
+        assert!(matches!(
+            &app.display_events[0],
+            DisplayEvent::UserMessage { content, .. } if content == "next request"
+        ));
+        assert!(matches!(
+            &app.display_events[1],
+            DisplayEvent::AssistantText { text, .. } if text == "prior assistant work"
+        ));
+        assert!(matches!(
+            &app.display_events[2],
+            DisplayEvent::UserMessage { content, .. } if content == "next request"
+        ));
+        assert!(matches!(
+            &app.display_events[3],
+            DisplayEvent::AssistantText { text, .. } if text == "working on current prompt"
+        ));
+        assert_eq!(app.pending_user_message, Some("next request".into()));
 
         let _ = std::fs::remove_file(&session_path);
     }
