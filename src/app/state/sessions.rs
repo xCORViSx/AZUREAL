@@ -8,6 +8,115 @@ use std::sync::mpsc;
 use super::App;
 
 impl App {
+    /// Remove all state owned by a branch that is being permanently deleted.
+    /// Agent slots are terminated before their tracking entries are dropped.
+    pub(crate) fn remove_deleted_branch_state(&mut self, branch: &str) {
+        if let Some(files) = self.session_files.remove(branch) {
+            for (session_id, _, _) in files {
+                self.unread_session_ids.remove(&session_id);
+                self.session_msg_counts.remove(&session_id);
+                self.session_completion.remove(&session_id);
+            }
+        }
+        self.session_selected_file_idx.remove(branch);
+        self.live_display_events_cache.remove(branch);
+        self.agent_session_ids.retain(|key, _| key != branch);
+        self.unread_sessions.remove(branch);
+        self.auto_rebase_enabled.remove(branch);
+        self.clear_branch_agent_tracking(branch, true);
+        self.drop_branch_terminal(branch);
+    }
+
+    /// Move branch-keyed UI/session state after git has successfully renamed
+    /// the branch. This intentionally runs on success, not before background I/O.
+    pub(crate) fn migrate_renamed_branch_state(&mut self, old_branch: &str, new_branch: &str) {
+        fn migrate<V>(map: &mut std::collections::HashMap<String, V>, old: &str, new: &str) {
+            if let Some(v) = map.remove(old) {
+                map.insert(new.to_string(), v);
+            }
+        }
+
+        let old_wt_path = self
+            .worktrees
+            .iter()
+            .chain(self.main_worktree.iter())
+            .find(|wt| wt.branch_name == old_branch)
+            .and_then(|wt| wt.worktree_path.clone());
+
+        migrate(&mut self.session_files, old_branch, new_branch);
+        migrate(&mut self.session_selected_file_idx, old_branch, new_branch);
+        migrate(&mut self.live_display_events_cache, old_branch, new_branch);
+        migrate(&mut self.branch_slots, old_branch, new_branch);
+        migrate(&mut self.active_slot, old_branch, new_branch);
+        migrate(&mut self.agent_session_ids, old_branch, new_branch);
+        migrate(&mut self.worktree_terminals, old_branch, new_branch);
+
+        if self.terminal_branch_name.as_deref() == Some(old_branch) {
+            self.terminal_branch_name = Some(new_branch.to_string());
+        }
+        if self.unread_sessions.remove(old_branch) {
+            self.unread_sessions.insert(new_branch.to_string());
+        }
+        if self.auto_rebase_enabled.remove(old_branch) {
+            self.auto_rebase_enabled.insert(new_branch.to_string());
+        }
+
+        let mut store_updated = false;
+        if let (Some(store), Some(store_path)) = (&self.session_store, &self.session_store_path) {
+            if old_wt_path
+                .as_ref()
+                .map(|path| path == store_path)
+                .unwrap_or(true)
+            {
+                let _ = store.rename_worktree(old_branch, new_branch);
+                store_updated = true;
+            }
+        }
+        if !store_updated {
+            if let Some(ref wt_path) = old_wt_path {
+                let db_path = crate::app::session_store::SessionStore::db_path(wt_path);
+                if db_path.exists() {
+                    if let Ok(store) = crate::app::session_store::SessionStore::open(wt_path) {
+                        let _ = store.rename_worktree(old_branch, new_branch);
+                    }
+                }
+            }
+        }
+
+        for wt in &mut self.worktrees {
+            if wt.branch_name == old_branch {
+                wt.branch_name = new_branch.to_string();
+            }
+        }
+        if let Some(wt) = self.main_worktree.as_mut() {
+            if wt.branch_name == old_branch {
+                wt.branch_name = new_branch.to_string();
+            }
+        }
+
+        self.invalidate_sidebar();
+    }
+
+    fn drop_branch_terminal(&mut self, branch: &str) {
+        if self.terminal_branch_name.as_deref() == Some(branch) {
+            if let Some(mut child) = self.terminal_child.take() {
+                let _ = child.kill();
+            }
+            self.terminal_pty = None;
+            self.terminal_writer = None;
+            self.terminal_rx = None;
+            self.terminal_branch_name = None;
+            self.terminal_parser =
+                vt100::Parser::new(self.terminal_rows.max(1), self.terminal_cols.max(1), 1000);
+            self.terminal_scroll = 0;
+            self.terminal_mode = false;
+        }
+
+        if let Some(mut terminal) = self.worktree_terminals.remove(branch) {
+            let _ = terminal.child.kill();
+        }
+    }
+
     /// Save display_events to the per-branch cache if there's a live session
     /// on the current branch. Must be called BEFORE `selected_worktree` changes
     /// (same pattern as `save_current_terminal()`).
@@ -306,28 +415,10 @@ impl App {
         let project_path = project.path.clone();
         let prev_idx = self.selected_worktree.unwrap_or(0);
 
-        // Clean up auto-rebase config (fast, can stay on main thread)
-        self.auto_rebase_enabled.remove(&branch);
         if let Some(ref p) = wt_path {
             crate::azufig::set_auto_rebase(p, false);
         }
-        // Clean up stale session state immediately
-        self.session_files.remove(&branch);
-        self.session_selected_file_idx.remove(&branch);
-        self.live_display_events_cache.remove(&branch);
-        self.agent_session_ids.retain(|k, _| k != &branch);
-        self.unread_sessions.remove(&branch);
-        if let Some(slots) = self.branch_slots.remove(&branch) {
-            for slot in &slots {
-                self.running_sessions.remove(slot);
-                self.agent_receivers.remove(slot);
-                self.agent_exit_codes.remove(slot);
-                self.agent_session_ids.remove(slot);
-                self.codex_slot_started_at.remove(slot);
-                self.agent_slot_models.remove(slot);
-            }
-        }
-        self.active_slot.remove(&branch);
+        self.remove_deleted_branch_state(&branch);
 
         let (tx, rx) = mpsc::channel();
         self.loading_indicator = Some("Deleting worktree...".into());
@@ -374,32 +465,6 @@ impl App {
         let new_branch_owned = new_branch.to_string();
         let old_branch_clone = old_branch.clone();
 
-        // Migrate branch-keyed state immediately (fast, main thread)
-        fn migrate<V>(map: &mut std::collections::HashMap<String, V>, old: &str, new: &str) {
-            if let Some(v) = map.remove(old) {
-                map.insert(new.to_string(), v);
-            }
-        }
-        migrate(&mut self.session_files, &old_branch, new_branch);
-        migrate(&mut self.session_selected_file_idx, &old_branch, new_branch);
-        migrate(&mut self.live_display_events_cache, &old_branch, new_branch);
-        migrate(&mut self.branch_slots, &old_branch, new_branch);
-        migrate(&mut self.active_slot, &old_branch, new_branch);
-        if self.unread_sessions.remove(&old_branch) {
-            self.unread_sessions.insert(new_branch.to_string());
-        }
-        if self.auto_rebase_enabled.remove(&old_branch) {
-            self.auto_rebase_enabled.insert(new_branch.to_string());
-            // Worktree path unchanged on rename — setting persists in same azufig
-        }
-
-        // Update the worktree entry in-place
-        if let Some(idx) = self.selected_worktree {
-            if let Some(wt) = self.worktrees.get_mut(idx) {
-                wt.branch_name = new_branch.to_string();
-            }
-        }
-
         // Background git rename (I/O heavy)
         let (tx, rx) = mpsc::channel();
         self.loading_indicator = Some("Renaming branch...".into());
@@ -410,6 +475,7 @@ impl App {
                 crate::git::Git::rename_branch(&project_path, &old_branch_clone, &new_branch_owned);
             let outcome = match result {
                 Ok(()) => BackgroundOpOutcome::Renamed {
+                    old_branch: old_branch_clone,
                     new_branch: new_branch_owned,
                 },
                 Err(e) => BackgroundOpOutcome::Failed(format!("Rename failed: {}", e)),
@@ -597,6 +663,7 @@ impl App {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::mpsc;
 
     /// Create a Worktree with a given branch name
     fn wt(name: &str) -> Worktree {
@@ -618,6 +685,163 @@ mod tests {
             app.selected_worktree = Some(0);
         }
         app
+    }
+
+    #[test]
+    fn remove_deleted_branch_state_clears_slot_owned_maps() {
+        let mut app = app_with_worktrees(1);
+        let branch = "azureal/wt-0".to_string();
+        let slot = "slot-1".to_string();
+        let (_tx, rx) = mpsc::channel();
+
+        app.session_files.insert(
+            branch.clone(),
+            vec![(
+                "S1".to_string(),
+                PathBuf::from("/tmp/s1"),
+                "now".to_string(),
+            )],
+        );
+        app.session_selected_file_idx.insert(branch.clone(), 0);
+        app.live_display_events_cache
+            .insert(branch.clone(), Vec::new());
+        app.agent_session_ids
+            .insert(branch.clone(), "branch-session".to_string());
+        app.agent_session_ids
+            .insert(slot.clone(), "slot-session".to_string());
+        app.unread_sessions.insert(branch.clone());
+        app.unread_session_ids.insert("S1".to_string());
+        app.session_msg_counts.insert("S1".to_string(), (1, 0));
+        app.session_completion
+            .insert("S1".to_string(), (true, 100, 0.0));
+        app.auto_rebase_enabled.insert(branch.clone());
+        app.branch_slots.insert(branch.clone(), vec![slot.clone()]);
+        app.active_slot.insert(branch.clone(), slot.clone());
+        app.running_sessions.insert(slot.clone());
+        app.agent_receivers.insert(slot.clone(), rx);
+        app.agent_exit_codes.insert(slot.clone(), 1);
+        app.codex_slot_started_at
+            .insert(slot.clone(), std::time::Instant::now());
+        app.agent_slot_models
+            .insert(slot.clone(), "gpt-test".to_string());
+        app.slot_to_project
+            .insert(slot.clone(), PathBuf::from("/tmp/project"));
+        app.pid_session_target
+            .insert(slot.clone(), (1, PathBuf::from("/tmp/wt"), 0, 0));
+        app.pending_session_names
+            .push((slot.clone(), "pending".to_string()));
+
+        app.remove_deleted_branch_state(&branch);
+
+        assert!(!app.session_files.contains_key(&branch));
+        assert!(!app.session_selected_file_idx.contains_key(&branch));
+        assert!(!app.live_display_events_cache.contains_key(&branch));
+        assert!(!app.agent_session_ids.contains_key(&branch));
+        assert!(!app.agent_session_ids.contains_key(&slot));
+        assert!(!app.unread_sessions.contains(&branch));
+        assert!(!app.unread_session_ids.contains("S1"));
+        assert!(!app.session_msg_counts.contains_key("S1"));
+        assert!(!app.session_completion.contains_key("S1"));
+        assert!(!app.auto_rebase_enabled.contains(&branch));
+        assert!(!app.branch_slots.contains_key(&branch));
+        assert!(!app.active_slot.contains_key(&branch));
+        assert!(!app.running_sessions.contains(&slot));
+        assert!(!app.agent_receivers.contains_key(&slot));
+        assert!(!app.agent_exit_codes.contains_key(&slot));
+        assert!(!app.codex_slot_started_at.contains_key(&slot));
+        assert!(!app.agent_slot_models.contains_key(&slot));
+        assert!(!app.slot_to_project.contains_key(&slot));
+        assert!(!app.pid_session_target.contains_key(&slot));
+        assert!(app.pending_session_names.is_empty());
+    }
+
+    #[test]
+    fn migrate_renamed_branch_state_moves_branch_keys_and_store_rows() {
+        let mut app = App::new();
+        let dir = tempfile::tempdir().unwrap();
+        let wt_path = dir.path().join("wt");
+        std::fs::create_dir_all(&wt_path).unwrap();
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let old_branch = "azureal/old".to_string();
+        let new_branch = "azureal/new".to_string();
+        let session_id = store.create_session(&old_branch).unwrap();
+
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+        app.worktrees.push(Worktree {
+            branch_name: old_branch.clone(),
+            worktree_path: Some(wt_path),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.session_files.insert(
+            old_branch.clone(),
+            vec![(
+                "S1".to_string(),
+                PathBuf::from("/tmp/s1"),
+                "now".to_string(),
+            )],
+        );
+        app.session_selected_file_idx.insert(old_branch.clone(), 0);
+        app.live_display_events_cache
+            .insert(old_branch.clone(), Vec::new());
+        app.branch_slots
+            .insert(old_branch.clone(), vec!["slot-1".to_string()]);
+        app.active_slot
+            .insert(old_branch.clone(), "slot-1".to_string());
+        app.agent_session_ids
+            .insert(old_branch.clone(), "resume-id".to_string());
+        app.unread_sessions.insert(old_branch.clone());
+        app.auto_rebase_enabled.insert(old_branch.clone());
+        app.terminal_branch_name = Some(old_branch.clone());
+
+        app.migrate_renamed_branch_state(&old_branch, &new_branch);
+
+        assert_eq!(app.worktrees[0].branch_name, new_branch);
+        assert!(!app.session_files.contains_key(&old_branch));
+        assert!(app.session_files.contains_key(&new_branch));
+        assert!(!app.session_selected_file_idx.contains_key(&old_branch));
+        assert!(app.session_selected_file_idx.contains_key(&new_branch));
+        assert!(!app.live_display_events_cache.contains_key(&old_branch));
+        assert!(app.live_display_events_cache.contains_key(&new_branch));
+        assert!(!app.branch_slots.contains_key(&old_branch));
+        assert_eq!(
+            app.branch_slots.get(&new_branch).unwrap(),
+            &vec!["slot-1".to_string()]
+        );
+        assert_eq!(
+            app.active_slot.get(&new_branch),
+            Some(&"slot-1".to_string())
+        );
+        assert_eq!(
+            app.agent_session_ids.get(&new_branch),
+            Some(&"resume-id".to_string())
+        );
+        assert!(!app.unread_sessions.contains(&old_branch));
+        assert!(app.unread_sessions.contains(&new_branch));
+        assert!(!app.auto_rebase_enabled.contains(&old_branch));
+        assert!(app.auto_rebase_enabled.contains(&new_branch));
+        assert_eq!(
+            app.terminal_branch_name.as_deref(),
+            Some(new_branch.as_str())
+        );
+
+        let sessions = app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .list_sessions(Some(&new_branch))
+            .unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, session_id);
+        assert!(app
+            .session_store
+            .as_ref()
+            .unwrap()
+            .list_sessions(Some(&old_branch))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

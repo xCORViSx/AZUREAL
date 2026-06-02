@@ -12,6 +12,47 @@ use crate::claude::AgentEvent;
 use crate::app::state::App;
 
 impl App {
+    /// Remove one slot from all PID/slot-keyed tracking maps. Does not mutate
+    /// branch slot lists; callers that know the branch should update those too.
+    pub(crate) fn clear_slot_tracking(&mut self, slot_id: &str) {
+        self.running_sessions.remove(slot_id);
+        self.agent_receivers.remove(slot_id);
+        self.agent_exit_codes.remove(slot_id);
+        self.agent_session_ids.remove(slot_id);
+        self.slot_to_project.remove(slot_id);
+        self.codex_slot_started_at.remove(slot_id);
+        self.agent_slot_models.remove(slot_id);
+        self.pid_session_target.remove(slot_id);
+        self.pending_session_names
+            .retain(|(pending_slot, _)| pending_slot != slot_id);
+    }
+
+    /// Remove all slots owned by a branch. When `terminate` is true, PID-like
+    /// slot IDs receive SIGTERM/taskkill plus a Unix SIGKILL follow-up.
+    pub(crate) fn clear_branch_agent_tracking(&mut self, branch: &str, terminate: bool) -> usize {
+        let mut slots = self.branch_slots.remove(branch).unwrap_or_default();
+        if let Some(active_slot) = self.active_slot.remove(branch) {
+            if !slots.iter().any(|slot| slot == &active_slot) {
+                slots.push(active_slot);
+            }
+        }
+
+        let removed = slots.len();
+        for slot in slots {
+            if terminate {
+                if let Ok(pid) = slot.parse::<u32>() {
+                    crate::backend::kill_process_tree_with_force_followup(pid);
+                }
+            }
+            self.clear_slot_tracking(&slot);
+        }
+
+        if removed > 0 {
+            self.invalidate_sidebar();
+        }
+        removed
+    }
+
     /// Called when a Claude process emits Started { pid }. The slot_id IS the
     /// PID string, already registered in register_claude() — this just confirms
     /// the process is alive and clears stale exit codes.
@@ -434,7 +475,7 @@ impl App {
         // The active slot's key IS the PID string — parse it back to u32
         if let Some(slot) = self.active_slot.get(&branch_name).cloned() {
             if let Ok(pid) = slot.parse::<u32>() {
-                crate::backend::kill_process_tree(pid);
+                crate::backend::kill_process_tree_with_force_followup(pid);
                 self.set_status("Cancelled Claude");
             }
         }

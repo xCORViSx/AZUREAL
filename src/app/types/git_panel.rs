@@ -276,8 +276,11 @@ pub enum BackgroundOpOutcome {
         display_name: String,
         prev_idx: usize,
     },
-    /// Worktree renamed — refresh and re-select the branch
-    Renamed { new_branch: String },
+    /// Worktree renamed — migrate state, refresh, and re-select the branch
+    Renamed {
+        old_branch: String,
+        new_branch: String,
+    },
     /// Git panel operation result (pull, push) — set result_message + refresh
     GitResult { message: String, is_error: bool },
     /// RCR accept/abort finished — restore the normal session pane

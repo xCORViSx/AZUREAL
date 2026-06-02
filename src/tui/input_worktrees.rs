@@ -16,8 +16,7 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
         if let Some(session) = app.current_worktree() {
             let branch_name = session.branch_name.clone();
             let session_name = session.name().to_string();
-            if app.running_sessions.remove(&branch_name) {
-                app.agent_receivers.remove(&branch_name);
+            if app.clear_branch_agent_tracking(&branch_name, true) > 0 {
                 app.invalidate_sidebar();
                 app.set_status(format!("Stopped tracking: {}", session_name));
             }
@@ -30,7 +29,10 @@ pub fn handle_worktrees_input(key: event::KeyEvent, app: &mut App) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::Worktree;
     use crossterm::event::{KeyEventKind, KeyEventState};
+    use std::path::PathBuf;
+    use std::sync::mpsc;
 
     /// Build a KeyEvent with no modifiers.
     fn key(code: KeyCode) -> event::KeyEvent {
@@ -121,6 +123,40 @@ mod tests {
     fn enter_does_not_match_s() {
         let k = key(KeyCode::Enter);
         assert!(!(k.modifiers == KeyModifiers::NONE && k.code == KeyCode::Char('s')));
+    }
+
+    #[test]
+    fn s_key_clears_slots_for_current_worktree() {
+        let mut app = App::new();
+        let branch = "azureal/test".to_string();
+        let slot = "slot-1".to_string();
+        let (_tx, rx) = mpsc::channel();
+        app.worktrees.push(Worktree {
+            branch_name: branch.clone(),
+            worktree_path: Some(PathBuf::from("/tmp/test")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.branch_slots.insert(branch.clone(), vec![slot.clone()]);
+        app.active_slot.insert(branch.clone(), slot.clone());
+        app.running_sessions.insert(slot.clone());
+        app.agent_receivers.insert(slot.clone(), rx);
+        app.pid_session_target
+            .insert(slot.clone(), (1, PathBuf::from("/tmp/test"), 0, 0));
+
+        handle_worktrees_input(key(KeyCode::Char('s')), &mut app).unwrap();
+
+        assert!(!app.branch_slots.contains_key(&branch));
+        assert!(!app.active_slot.contains_key(&branch));
+        assert!(!app.running_sessions.contains(&slot));
+        assert!(!app.agent_receivers.contains_key(&slot));
+        assert!(!app.pid_session_target.contains_key(&slot));
+        assert!(app
+            .status_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Stopped tracking: test"));
     }
 
     #[test]

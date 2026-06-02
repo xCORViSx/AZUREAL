@@ -325,22 +325,7 @@ pub fn handle_key_event(
                                 app.auto_rebase_enabled.remove(&wt.branch_name);
                             }
                         }
-                        // Clean up state immediately (fast)
-                        app.session_files.remove(&branch);
-                        app.session_selected_file_idx.remove(&branch);
-                        app.agent_session_ids.retain(|k, _| k != &branch);
-                        app.unread_sessions.remove(&branch);
-                        if let Some(slots) = app.branch_slots.remove(&branch) {
-                            for slot in &slots {
-                                app.running_sessions.remove(slot);
-                                app.agent_receivers.remove(slot);
-                                app.agent_exit_codes.remove(slot);
-                                app.agent_session_ids.remove(slot);
-                                app.codex_slot_started_at.remove(slot);
-                                app.agent_slot_models.remove(slot);
-                            }
-                        }
-                        app.active_slot.remove(&branch);
+                        app.remove_deleted_branch_state(&branch);
                         let prev_idx = app.selected_worktree.unwrap_or(0);
                         // Spawn background thread for git I/O
                         let (tx, rx) = mpsc::channel();
@@ -465,24 +450,8 @@ pub fn handle_key_event(
                     }
                     2 => {
                         // Delete — remove worktree + delete branch
-                        app.auto_rebase_enabled.remove(&d.branch);
                         crate::azufig::set_auto_rebase(&d.worktree_path, false);
-                        // Clean up stale session state immediately
-                        app.session_files.remove(&d.branch);
-                        app.session_selected_file_idx.remove(&d.branch);
-                        app.agent_session_ids.retain(|k, _| k != &d.branch);
-                        app.unread_sessions.remove(&d.branch);
-                        if let Some(slots) = app.branch_slots.remove(&d.branch) {
-                            for slot in &slots {
-                                app.running_sessions.remove(slot);
-                                app.agent_receivers.remove(slot);
-                                app.agent_exit_codes.remove(slot);
-                                app.agent_session_ids.remove(slot);
-                                app.codex_slot_started_at.remove(slot);
-                                app.agent_slot_models.remove(slot);
-                            }
-                        }
-                        app.active_slot.remove(&d.branch);
+                        app.remove_deleted_branch_state(&d.branch);
                         let project_path = app.project.as_ref().map(|p| p.path.clone());
                         let wt_path = d.worktree_path.clone();
                         let branch = d.branch.clone();

@@ -133,6 +133,20 @@ pub fn kill_process_tree(pid: u32) {
     }
 }
 
+/// Send SIGTERM / taskkill to a process tree, then force-kill Unix process
+/// groups after the same grace period used by the quit path.
+pub fn kill_process_tree_with_force_followup(pid: u32) {
+    kill_process_tree(pid);
+
+    #[cfg(unix)]
+    {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            kill_process_tree_force(pid);
+        });
+    }
+}
+
 /// Forcefully kill a process group with SIGKILL (cannot be ignored).
 /// Used during app shutdown after SIGTERM has been given time to take effect.
 #[cfg(unix)]

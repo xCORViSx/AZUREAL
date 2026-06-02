@@ -244,6 +244,15 @@ impl SessionStore {
         Ok(())
     }
 
+    /// Move all sessions from one worktree branch key to another.
+    pub fn rename_worktree(&self, old_worktree: &str, new_worktree: &str) -> anyhow::Result<usize> {
+        let changed = self.conn.execute(
+            "UPDATE sessions SET worktree = ?1 WHERE worktree = ?2",
+            params![new_worktree, old_worktree],
+        )?;
+        Ok(changed)
+    }
+
     /// Mark a session as completed with duration and cost (display-only metadata).
     #[allow(dead_code)]
     pub fn mark_completed(
@@ -1205,6 +1214,23 @@ mod tests {
         let list = store.list_sessions(Some("main")).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].worktree, "main");
+    }
+
+    #[test]
+    fn rename_worktree_updates_matching_sessions_only() {
+        let store = SessionStore::open_memory().unwrap();
+        let first = store.create_session("feature/old").unwrap();
+        let other = store.create_session("main").unwrap();
+        let second = store.create_session("feature/old").unwrap();
+
+        let changed = store.rename_worktree("feature/old", "feature/new").unwrap();
+
+        assert_eq!(changed, 2);
+        let renamed = store.list_sessions(Some("feature/new")).unwrap();
+        let renamed_ids: Vec<_> = renamed.iter().map(|session| session.id).collect();
+        assert_eq!(renamed_ids, vec![second, first]);
+        assert!(store.list_sessions(Some("feature/old")).unwrap().is_empty());
+        assert_eq!(store.list_sessions(Some("main")).unwrap()[0].id, other);
     }
 
     #[test]

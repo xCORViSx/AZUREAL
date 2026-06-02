@@ -273,7 +273,7 @@ mod tests {
         // Empty path string creates a relative path "." effectively
         let result = Git::is_rebase_in_progress(Path::new(""));
         // Should not panic, just return false
-        assert!(!result || result); // always true — just verify no panic
+        assert!(!result);
     }
 
     #[test]

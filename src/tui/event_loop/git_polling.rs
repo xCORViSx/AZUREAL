@@ -235,7 +235,11 @@ pub fn poll_background_ops(app: &mut App) -> bool {
                         std::time::Instant::now() - std::time::Duration::from_secs(10);
                 }
             }
-            BackgroundOpOutcome::Renamed { new_branch } => {
+            BackgroundOpOutcome::Renamed {
+                old_branch,
+                new_branch,
+            } => {
+                app.migrate_renamed_branch_state(&old_branch, &new_branch);
                 let _ = app.refresh_worktrees();
                 // Re-select the renamed branch
                 if let Some(idx) = app
