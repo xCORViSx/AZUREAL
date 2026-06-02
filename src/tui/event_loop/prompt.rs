@@ -130,6 +130,65 @@ fn spawn_with_retry_and_fallback(
     }
 }
 
+pub(crate) fn send_prompt_to_current_worktree(
+    app: &mut App,
+    claude_process: &AgentProcess,
+    display_prompt: Option<&str>,
+    actual_prompt: &str,
+    action: &str,
+    default_status: &str,
+) -> bool {
+    let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) else {
+        app.set_status("Session has no worktree (archived?)");
+        return false;
+    };
+    let branch = app
+        .current_worktree()
+        .map(|s| s.branch_name.clone())
+        .unwrap_or_default();
+    let events_offset = app.display_events.len();
+    let send_prompt = app.build_context_prompt_for_current_session(actual_prompt);
+
+    if let Some(prompt) = display_prompt {
+        app.add_user_message(prompt.to_string());
+        app.process_session_chunk(&format!("You: {}\n", prompt));
+        app.current_todos.clear();
+    }
+
+    let selected_model = app.selected_model.clone();
+    match spawn_with_retry_and_fallback(
+        claude_process,
+        &wt_path,
+        &send_prompt,
+        None,
+        selected_model.as_deref(),
+        action,
+    ) {
+        Ok(outcome) => {
+            if let Some(sid) = app.current_session_id {
+                app.pid_session_target.insert(
+                    outcome.pid.to_string(),
+                    (sid, wt_path.clone(), events_offset, app.session_file_size),
+                );
+            }
+            app.register_claude(
+                branch,
+                outcome.pid,
+                outcome.rx,
+                outcome.registration_model.as_deref(),
+            );
+            app.update_title_session_name();
+            app.set_status(
+                outcome
+                    .success_notice
+                    .unwrap_or_else(|| default_status.to_string()),
+            );
+        }
+        Err(e) => app.set_status(e),
+    }
+    true
+}
+
 use super::agent_events;
 
 /// Send staged prompt when no agent is running and no dialog is blocking.
@@ -156,56 +215,14 @@ pub fn send_staged_prompt(app: &mut App, claude_process: &AgentProcess) -> bool 
     }
 
     if let Some(prompt) = app.staged_prompt.take() {
-        if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
-            let branch = app
-                .current_worktree()
-                .map(|s| s.branch_name.clone())
-                .unwrap_or_default();
-            let events_offset = app.display_events.len();
-            app.add_user_message(prompt.clone());
-            app.process_session_chunk(&format!("You: {}\n", prompt));
-            app.current_todos.clear();
-            let send_prompt = app
-                .current_session_id
-                .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
-                .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                .map(|payload| {
-                    crate::app::context_injection::build_context_prompt(&payload, &prompt)
-                })
-                .unwrap_or_else(|| prompt.clone());
-            let selected_model = app.selected_model.clone();
-            match spawn_with_retry_and_fallback(
-                claude_process,
-                &wt_path,
-                &send_prompt,
-                None,
-                selected_model.as_deref(),
-                "prompt start",
-            ) {
-                Ok(outcome) => {
-                    if let Some(sid) = app.current_session_id {
-                        app.pid_session_target.insert(
-                            outcome.pid.to_string(),
-                            (sid, wt_path.clone(), events_offset, app.session_file_size),
-                        );
-                    }
-                    app.register_claude(
-                        branch,
-                        outcome.pid,
-                        outcome.rx,
-                        outcome.registration_model.as_deref(),
-                    );
-                    app.update_title_session_name();
-                    app.set_status(
-                        outcome
-                            .success_notice
-                            .unwrap_or_else(|| "Running...".to_string()),
-                    );
-                }
-                Err(e) => app.set_status(e),
-            }
-            return true;
-        }
+        return send_prompt_to_current_worktree(
+            app,
+            claude_process,
+            Some(&prompt),
+            &prompt,
+            "prompt start",
+            "Running...",
+        );
     }
     false
 }
@@ -264,54 +281,14 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
             return true;
         }
         app.auto_continue_after_compaction = false;
-        if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
-            let branch = app
-                .current_worktree()
-                .map(|s| s.branch_name.clone())
-                .unwrap_or_default();
-            let events_offset = app.display_events.len();
-            let prompt = "Continue.".to_string();
-            // Build context with compaction summary — no add_user_message (no bubble)
-            let send_prompt = app
-                .current_session_id
-                .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
-                .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                .map(|payload| {
-                    crate::app::context_injection::build_context_prompt(&payload, &prompt)
-                })
-                .unwrap_or_else(|| prompt.clone());
-            let selected_model = app.selected_model.clone();
-            match spawn_with_retry_and_fallback(
-                claude_process,
-                &wt_path,
-                &send_prompt,
-                None,
-                selected_model.as_deref(),
-                "auto-continue after compaction",
-            ) {
-                Ok(outcome) => {
-                    if let Some(sid) = app.current_session_id {
-                        app.pid_session_target.insert(
-                            outcome.pid.to_string(),
-                            (sid, wt_path.clone(), events_offset, app.session_file_size),
-                        );
-                    }
-                    app.register_claude(
-                        branch,
-                        outcome.pid,
-                        outcome.rx,
-                        outcome.registration_model.as_deref(),
-                    );
-                    app.set_status(
-                        outcome
-                            .success_notice
-                            .unwrap_or_else(|| "Auto-continuing after compaction...".to_string()),
-                    );
-                    redraw = true;
-                }
-                Err(e) => app.set_status(e),
-            }
-        }
+        redraw |= send_prompt_to_current_worktree(
+            app,
+            claude_process,
+            None,
+            "Continue.",
+            "auto-continue after compaction",
+            "Auto-continuing after compaction...",
+        );
     }
 
     redraw

@@ -24,6 +24,7 @@ pub(crate) mod issues;
 pub(crate) mod load;
 mod output;
 pub(crate) mod project_snapshot;
+mod prompt_context;
 mod scroll;
 mod session_names;
 mod sessions;

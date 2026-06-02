@@ -37,50 +37,7 @@ pub fn handle_claude_event(
         if app.staged_prompt.is_some() {
             app.check_session_file();
             app.poll_session_file();
-        }
-        if let Some(prompt) = app.staged_prompt.take() {
-            if let Some(wt_path) = app.current_worktree().and_then(|s| s.worktree_path.clone()) {
-                let branch = app
-                    .current_worktree()
-                    .map(|s| s.branch_name.clone())
-                    .unwrap_or_default();
-                let events_offset = app.display_events.len();
-                app.add_user_message(prompt.clone());
-                app.process_session_chunk(&format!("You: {}\n", prompt));
-                app.current_todos.clear();
-                // Context injection for staged prompts
-                let send_prompt = app
-                    .current_session_id
-                    .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
-                    .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                    .map(|payload| {
-                        crate::app::context_injection::build_context_prompt(&payload, &prompt)
-                    })
-                    .unwrap_or_else(|| prompt.clone());
-                let resume_id: Option<String> = None;
-                let selected_model = app
-                    .selected_model
-                    .clone()
-                    .unwrap_or_else(|| crate::app::state::default_model().to_string());
-                match claude_process.spawn(
-                    &wt_path,
-                    &send_prompt,
-                    resume_id.as_deref(),
-                    Some(selected_model.as_str()),
-                ) {
-                    Ok((rx, pid)) => {
-                        if let Some(sid) = app.current_session_id {
-                            app.pid_session_target.insert(
-                                pid.to_string(),
-                                (sid, wt_path.clone(), events_offset, app.session_file_size),
-                            );
-                        }
-                        app.register_claude(branch, pid, rx, Some(selected_model.as_str()));
-                        app.set_status("Running...");
-                    }
-                    Err(e) => app.set_status(format!("Failed to start: {}", e)),
-                }
-            }
+            super::prompt::send_staged_prompt(app, claude_process);
         }
     }
 

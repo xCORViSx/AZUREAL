@@ -228,7 +228,7 @@ fn extract_key_param(tool_name: &str, input: &serde_json::Value) -> String {
 }
 
 /// Compact a tool result to a reasonable length for context injection.
-/// Keeps first 3 lines + count for long results.
+/// Keeps short results intact and preserves both head and tail for long results.
 fn compact_result(content: &str) -> String {
     let content = content
         .split("<system-reminder>")
@@ -236,13 +236,14 @@ fn compact_result(content: &str) -> String {
         .unwrap_or(content)
         .trim_end();
     let lines: Vec<&str> = content.lines().collect();
-    if lines.len() <= 3 {
+    if lines.len() <= 6 {
         content.to_string()
     } else {
         format!(
-            "{}\n(+{} more lines)",
+            "{}\n(+{} more lines)\n{}",
             lines[..3].join("\n"),
-            lines.len() - 3
+            lines.len() - 6,
+            lines[lines.len() - 3..].join("\n")
         )
     }
 }
@@ -696,10 +697,12 @@ mod tests {
 
     #[test]
     fn compact_result_long() {
-        let long = "a\nb\nc\nd\ne\nf";
+        let long = "a\nb\nc\nd\ne\nf\ng\nh";
         let result = compact_result(long);
         assert!(result.contains("a\nb\nc"));
-        assert!(result.contains("(+3 more lines)"));
+        assert!(result.contains("(+2 more lines)"));
+        assert!(result.contains("f\ng\nh"));
+        assert!(!result.contains("\nd\ne\n"));
     }
 
     #[test]

@@ -326,7 +326,7 @@ pub fn handle_input_mode(
                         .map(|s| (s.branch_name.clone(), s.worktree_path.clone()));
 
                     if let Some((branch_name, worktree_opt)) = session_data {
-                        if let Some(wt_path) = worktree_opt {
+                        if let Some(_wt_path) = worktree_opt {
                             // Auto-create session if none exists — show name dialog
                             // with the prompt stashed for sending after confirmation
                             if app.current_session_id.is_none() {
@@ -347,14 +347,6 @@ pub fn handle_input_mode(
                                     return Ok(());
                                 }
                             }
-
-                            // Capture offset before adding user message so the
-                            // store append captures the UserMessage too
-                            let events_offset = app.display_events.len();
-                            let prompt_text = format!("You: {}\n", input.clone());
-                            app.add_user_message(input.clone());
-                            app.process_session_chunk(&prompt_text);
-                            app.current_todos.clear();
 
                             // If awaiting plan approval, prepend hidden context explaining the options
                             let actual_prompt = if app.awaiting_plan_approval {
@@ -387,53 +379,14 @@ pub fn handle_input_mode(
                                 input.clone()
                             };
 
-                            // Context injection: build conversation context from
-                            // the store and inject it into the prompt. No --resume.
-                            let send_prompt = app
-                                .current_session_id
-                                .and_then(|sid| app.session_store.as_ref().map(|s| (sid, s)))
-                                .and_then(|(sid, store)| store.build_context(sid).ok().flatten())
-                                .map(|payload| {
-                                    crate::app::context_injection::build_context_prompt(
-                                        &payload,
-                                        &actual_prompt,
-                                    )
-                                })
-                                .unwrap_or_else(|| actual_prompt.clone());
-                            let resume_id: Option<String> = None;
-                            let selected_model = app
-                                .selected_model
-                                .clone()
-                                .unwrap_or_else(|| crate::app::state::default_model().to_string());
-                            match claude_process.spawn(
-                                &wt_path,
-                                &send_prompt,
-                                resume_id.as_deref(),
-                                Some(selected_model.as_str()),
-                            ) {
-                                Ok((rx, pid)) => {
-                                    // Set pid → session target so post-exit flow writes to correct session
-                                    if let Some(sid) = app.current_session_id {
-                                        app.pid_session_target.insert(
-                                            pid.to_string(),
-                                            (
-                                                sid,
-                                                wt_path.clone(),
-                                                events_offset,
-                                                app.session_file_size,
-                                            ),
-                                        );
-                                    }
-                                    app.register_claude(
-                                        branch_name,
-                                        pid,
-                                        rx,
-                                        Some(selected_model.as_str()),
-                                    );
-                                    app.set_status("Running...");
-                                }
-                                Err(e) => app.set_status(format!("Failed to start: {}", e)),
-                            }
+                            crate::tui::event_loop::prompt::send_prompt_to_current_worktree(
+                                app,
+                                claude_process,
+                                Some(&input),
+                                &actual_prompt,
+                                "prompt start",
+                                "Running...",
+                            );
                         } else {
                             app.set_status("Session has no worktree (archived?)");
                             app.input = input;

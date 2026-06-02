@@ -26,7 +26,7 @@ mod housekeeping;
 mod input_thread;
 mod mouse;
 mod process_input;
-mod prompt;
+pub(crate) mod prompt;
 
 pub(super) use mouse::copy_viewer_selection;
 
@@ -51,6 +51,36 @@ use agent_events::handle_claude_event;
 use fast_draw::fast_draw_input;
 use mouse::apply_scroll_cached;
 use process_input::process_input_event;
+
+fn drain_parsed_agent_results(
+    app: &mut App,
+    claude_proc: &agent_processor::AgentProcessor,
+    max_results: usize,
+) -> bool {
+    let mut needs_redraw = false;
+    let mut parsed_count = 0;
+    while parsed_count < max_results {
+        match claude_proc.try_recv() {
+            Some(result) => {
+                if app.is_viewing_slot(&result.slot_id) {
+                    app.apply_parsed_output(
+                        &result.slot_id,
+                        result.events,
+                        result.parsed_json,
+                        result.output_type,
+                        &result.data,
+                    );
+                    needs_redraw = true;
+                } else {
+                    app.apply_background_parsed_output(&result.slot_id, result.events);
+                }
+                parsed_count += 1;
+            }
+            None => break,
+        }
+    }
+    needs_redraw
+}
 
 /// Main TUI event loop
 pub async fn run_app(
@@ -349,6 +379,7 @@ pub async fn run_app(
                     }
                 }
             }
+            let mut lifecycle_events = Vec::new();
             for (session_id, event) in claude_events {
                 match event {
                     crate::claude::AgentEvent::Output(output) => {
@@ -362,12 +393,16 @@ pub async fn run_app(
                             output.data,
                         );
                     }
-                    other => {
-                        handle_claude_event(&session_id, other, app, &claude_process)?;
-                        app.update_token_badge_live();
-                        needs_redraw = true;
-                    }
+                    other => lifecycle_events.push((session_id, other)),
                 }
+            }
+            if drain_parsed_agent_results(app, &claude_proc, MAX_CLAUDE_EVENTS_PER_TICK) {
+                needs_redraw = true;
+            }
+            for (session_id, event) in lifecycle_events {
+                handle_claude_event(&session_id, event, app, &claude_process)?;
+                app.update_token_badge_live();
+                needs_redraw = true;
             }
         }
 
@@ -385,28 +420,8 @@ pub async fn run_app(
         // contains pre-parsed DisplayEvents + JSON value — applying them is cheap
         // (HashMap lookups, Vec pushes, flag sets). No JSON parsing on main thread.
         // Capped to prevent unbounded drain when parser batches many results.
-        {
-            let mut parsed_count = 0;
-            while parsed_count < MAX_CLAUDE_EVENTS_PER_TICK {
-                match claude_proc.try_recv() {
-                    Some(result) => {
-                        if app.is_viewing_slot(&result.slot_id) {
-                            app.apply_parsed_output(
-                                &result.slot_id,
-                                result.events,
-                                result.parsed_json,
-                                result.output_type,
-                                &result.data,
-                            );
-                            needs_redraw = true;
-                        } else {
-                            app.apply_background_parsed_output(&result.slot_id, result.events);
-                        }
-                        parsed_count += 1;
-                    }
-                    None => break,
-                }
-            }
+        if drain_parsed_agent_results(app, &claude_proc, MAX_CLAUDE_EVENTS_PER_TICK) {
+            needs_redraw = true;
         }
 
         // Poll git background operations (commit gen, squash merge, ops, rebase)

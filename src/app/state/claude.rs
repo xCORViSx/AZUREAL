@@ -956,6 +956,100 @@ mod tests {
     }
 
     #[test]
+    fn store_append_from_display_keeps_pid_target_on_append_failure() {
+        use crate::events::DisplayEvent;
+
+        let mut app = super::super::App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let wt_path = std::path::PathBuf::from("/tmp/store-display-failure");
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+        app.pid_session_target
+            .insert("55".into(), (999, wt_path, 0, 0));
+        app.display_events = vec![DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: "not stored".into(),
+        }];
+
+        assert!(!app.store_append_from_display("55"));
+        assert!(app.pid_session_target.contains_key("55"));
+    }
+
+    #[test]
+    fn store_append_from_jsonl_keeps_jsonl_and_pid_target_on_append_failure() {
+        use crate::backend::Backend;
+        use crate::events::DisplayEvent;
+        use std::io::Write;
+
+        fn encode_project_path(path: &std::path::Path) -> String {
+            path.to_string_lossy()
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                .collect()
+        }
+
+        let mut app = super::super::App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::path::PathBuf::from(format!(
+            "/tmp/azureal-jsonl-append-failure-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let claude_session_id = format!("87654321-4321-4321-4321-{:012x}", unique & 0xffffffffffff);
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".claude")
+            .join("projects")
+            .join(encode_project_path(&wt_path));
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("{}.jsonl", claude_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "user",
+                "message": { "content": "Prompt" },
+                "timestamp": "2026-01-01T00:00:00Z",
+                "uuid": "user-1",
+            })
+        )
+        .unwrap();
+        drop(file);
+
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(999);
+        app.active_slot.insert("main".into(), "55".into());
+        app.pid_session_target
+            .insert("55".into(), (999, wt_path, 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), claude_session_id.clone());
+        app.display_events = vec![DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: "Prompt".into(),
+        }];
+
+        assert!(!app.store_append_from_jsonl("55", Backend::Claude));
+        assert!(app.pid_session_target.contains_key("55"));
+        assert!(session_path.exists());
+
+        let _ = std::fs::remove_file(&session_path);
+        let _ = std::fs::remove_dir(&session_dir);
+    }
+
+    #[test]
     fn store_append_from_jsonl_reparses_viewed_claude_turn_from_session_file() {
         use crate::backend::Backend;
         use crate::events::DisplayEvent;

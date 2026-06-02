@@ -121,25 +121,28 @@ impl App {
                         .current_worktree()
                         .and_then(|s| s.worktree_path.clone())
                     {
-                        self.compaction_needed = Some((sid, wt_path));
-                        self.store_append_from_display(slot_id);
-                        // Only auto-continue if the agent hasn't already completed.
-                        // If the batch that crossed the threshold contains a Complete
-                        // event, the agent finished — compaction still runs but there's
-                        // nothing to continue.
-                        let session_completed = self
-                            .display_events
-                            .iter()
-                            .rev()
-                            .take(20)
-                            .any(|e| matches!(e, crate::events::DisplayEvent::Complete { .. }));
-                        if !session_completed {
-                            self.auto_continue_after_compaction = true;
-                            self.cancel_current_claude();
-                            self.set_status("Compacting context — will auto-continue...");
+                        if self.store_append_from_display(slot_id) {
+                            self.compaction_needed = Some((sid, wt_path));
+                            // Only auto-continue if the agent hasn't already completed.
+                            // If the batch that crossed the threshold contains a Complete
+                            // event, the agent finished — compaction still runs but there's
+                            // nothing to continue.
+                            let session_completed =
+                                self.display_events.iter().rev().take(20).any(|e| {
+                                    matches!(e, crate::events::DisplayEvent::Complete { .. })
+                                });
+                            if !session_completed {
+                                self.auto_continue_after_compaction = true;
+                                self.cancel_current_claude();
+                                self.set_status("Compacting context — will auto-continue...");
+                            } else {
+                                self.set_status(
+                                    "Context full — compacting (session already complete)...",
+                                );
+                            }
                         } else {
                             self.set_status(
-                                "Context full — compacting (session already complete)...",
+                                "Context compaction deferred: failed to store current turn.",
                             );
                         }
                     }
@@ -337,24 +340,29 @@ impl App {
                             .current_worktree()
                             .and_then(|s| s.worktree_path.clone())
                         {
-                            self.compaction_needed = Some((sid, wt_path));
                             // Store partial turn events before killing so compaction
                             // has the latest data. Uses store_append_from_display
-                            // which removes the slot from pid_session_target (the
-                            // exit handler won't double-store).
-                            self.store_append_from_display(slot_id);
-                            // Only auto-continue if the agent hasn't already completed.
-                            let session_completed =
-                                self.display_events.iter().rev().take(20).any(|e| {
-                                    matches!(e, crate::events::DisplayEvent::Complete { .. })
-                                });
-                            if !session_completed {
-                                self.auto_continue_after_compaction = true;
-                                self.cancel_current_claude();
-                                self.set_status("Compacting context — will auto-continue...");
+                            // which removes the slot from pid_session_target only
+                            // after a successful write.
+                            if self.store_append_from_display(slot_id) {
+                                self.compaction_needed = Some((sid, wt_path));
+                                // Only auto-continue if the agent hasn't already completed.
+                                let session_completed =
+                                    self.display_events.iter().rev().take(20).any(|e| {
+                                        matches!(e, crate::events::DisplayEvent::Complete { .. })
+                                    });
+                                if !session_completed {
+                                    self.auto_continue_after_compaction = true;
+                                    self.cancel_current_claude();
+                                    self.set_status("Compacting context — will auto-continue...");
+                                } else {
+                                    self.set_status(
+                                        "Context full — compacting (session already complete)...",
+                                    );
+                                }
                             } else {
                                 self.set_status(
-                                    "Context full — compacting (session already complete)...",
+                                    "Context compaction deferred: failed to store current turn.",
                                 );
                             }
                         }

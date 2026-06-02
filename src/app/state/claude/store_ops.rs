@@ -122,36 +122,39 @@ impl App {
 
     /// Store a running slot's display events early (before exit), e.g. when
     /// a new prompt supersedes a still-running process. Removes the slot from
-    /// pid_session_target so the exit handler doesn't double-store.
-    pub fn store_append_from_display(&mut self, slot_id: &str) {
-        let (session_id, wt_path, events_offset, _) = match self.pid_session_target.remove(slot_id)
-        {
-            Some(triple) => triple,
-            None => return,
+    /// pid_session_target only after a successful write so exit can retry.
+    pub fn store_append_from_display(&mut self, slot_id: &str) -> bool {
+        let (session_id, wt_path, events_offset, _) = match self.pid_session_target.get(slot_id) {
+            Some(triple) => triple.clone(),
+            None => return false,
         };
         let end = self.display_events.len();
         if events_offset >= end {
-            return;
+            return false;
         }
         let events = self.display_events[events_offset..end].to_vec();
 
-        let store = if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path) {
-            self.session_store.as_ref()
-        } else {
-            None
-        };
-        let temp_store;
-        let store = match store {
-            Some(s) => s,
-            None => {
-                temp_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
-                match temp_store.as_ref() {
-                    Some(s) => s,
-                    None => return,
+        let append_result =
+            if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path) {
+                match self.session_store.as_ref() {
+                    Some(store) => store.append_events(session_id, &events),
+                    None => Err(anyhow::anyhow!("session store is not open")),
                 }
+            } else {
+                crate::app::session_store::SessionStore::open(&wt_path)
+                    .and_then(|store| store.append_events(session_id, &events))
+            };
+
+        match append_result {
+            Ok(_) => {
+                self.pid_session_target.remove(slot_id);
+                true
             }
-        };
-        let _ = store.append_events(session_id, &events);
+            Err(err) => {
+                self.set_status(format!("Failed to store current turn: {}", err));
+                false
+            }
+        }
     }
 
     /// Store the current turn's display events into the SQLite session store.
@@ -159,12 +162,12 @@ impl App {
     /// When the user switched to a different worktree, falls back to parsing
     /// the JSONL file from disk (display_events belongs to the other worktree).
     /// Deletes the source JSONL after successful ingestion.
-    pub(crate) fn store_append_from_jsonl(&mut self, slot_id: &str, turn_backend: Backend) {
+    pub(crate) fn store_append_from_jsonl(&mut self, slot_id: &str, turn_backend: Backend) -> bool {
         // Only process if this slot was targeting a store session
         let (session_id, wt_path, events_offset, session_file_offset) =
             match self.pid_session_target.remove(slot_id) {
                 Some(triple) => triple,
-                None => return,
+                None => return false,
             };
 
         // Resolve JSONL file path for deletion
@@ -184,6 +187,11 @@ impl App {
             .as_ref()
             .and_then(|branch| self.live_display_events_cache.get(branch).cloned())
             .map(crate::app::context_injection::strip_injected_context_from_events);
+        let has_recovery_source = jsonl_path.as_ref().map(|p| p.exists()).unwrap_or(false)
+            || cached_live_events
+                .as_ref()
+                .map(|events| events_offset < events.len())
+                .unwrap_or(false);
 
         // When the slot isn't being viewed, display_events belongs to a
         // different worktree — reading display_events[events_offset..] would
@@ -280,66 +288,83 @@ impl App {
         }
 
         if events.is_empty() {
-            // Still delete the JSONL (and companion dir) even if no events to store
-            if let Some(p) = jsonl_path.filter(|p| p.exists()) {
-                crate::config::remove_session_file(&p);
+            if has_recovery_source {
+                self.pid_session_target.insert(
+                    slot_id.to_string(),
+                    (session_id, wt_path, events_offset, session_file_offset),
+                );
+                self.set_status(
+                    "No storable events found for completed turn; keeping JSONL for recovery.",
+                );
             }
-            return;
+            return false;
         }
 
-        // Open store at the target worktree path (may differ from current worktree
-        // if the user switched away while the process was running)
-        let store = if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path) {
-            self.session_store.as_ref()
-        } else {
-            None
-        };
-        // Use current store if it matches, otherwise open a temporary one
-        let temp_store;
-        let store = match store {
-            Some(s) => s,
-            None => {
-                temp_store = crate::app::session_store::SessionStore::open(&wt_path).ok();
-                match temp_store.as_ref() {
-                    Some(s) => s,
-                    None => return,
+        let append_result: anyhow::Result<Option<usize>> = (|| {
+            if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(wt_path.as_path()) {
+                match self.session_store.as_ref() {
+                    Some(store) => {
+                        store.append_events(session_id, &events)?;
+                        // Clear the persisted UUID — ingestion complete, no recovery needed
+                        let _ = store.clear_session_uuid(session_id);
+                        Ok(store.total_chars_since_compaction(session_id).ok())
+                    }
+                    None => Err(anyhow::anyhow!("session store is not open")),
                 }
+            } else {
+                let store = crate::app::session_store::SessionStore::open(&wt_path)?;
+                store.append_events(session_id, &events)?;
+                // Clear the persisted UUID — ingestion complete, no recovery needed
+                let _ = store.clear_session_uuid(session_id);
+                Ok(store.total_chars_since_compaction(session_id).ok())
             }
-        };
+        })();
 
-        if store.append_events(session_id, &events).is_ok() {
-            // Clear the persisted UUID — ingestion complete, no recovery needed
-            let _ = store.clear_session_uuid(session_id);
-
-            // Source JSONL ingested — delete the original file and companion dir
-            if let Some(ref p) = jsonl_path {
-                if p.exists() {
-                    crate::config::remove_session_file(p);
+        match append_result {
+            Ok(chars_since_compaction) => {
+                // Source JSONL ingested — delete the original file and companion dir
+                if let Some(ref p) = jsonl_path {
+                    if p.exists() {
+                        crate::config::remove_session_file(p);
+                    }
+                    // Clear JSONL tracking so poll_session_file doesn't try to read the deleted file
+                    if self.session_file_path.as_ref() == Some(p) {
+                        self.session_file_path = None;
+                        self.session_file_dirty = false;
+                    }
                 }
-                // Clear JSONL tracking so poll_session_file doesn't try to read the deleted file
-                if self.session_file_path.as_ref() == Some(p) {
-                    self.session_file_path = None;
-                    self.session_file_dirty = false;
-                }
-            }
 
-            // New events stored (may include user messages) — retry deferred
-            // compaction spawns since a valid boundary may now exist.
-            self.compaction_spawn_deferred = false;
-            // Check if compaction is needed (only if not already pending or in-flight)
-            if self.compaction_needed.is_none() && self.compaction_receivers.is_empty() {
-                if let Ok(chars) = store.total_chars_since_compaction(session_id) {
-                    if chars >= crate::app::session_store::COMPACTION_THRESHOLD {
+                // New events stored (may include user messages) — retry deferred
+                // compaction spawns since a valid boundary may now exist.
+                self.compaction_spawn_deferred = false;
+                // Check if compaction is needed (only if not already pending or in-flight)
+                if self.compaction_needed.is_none() && self.compaction_receivers.is_empty() {
+                    if chars_since_compaction
+                        .map(|chars| chars >= crate::app::session_store::COMPACTION_THRESHOLD)
+                        .unwrap_or(false)
+                    {
                         self.compaction_needed = Some((session_id, wt_path));
                     }
                 }
+                if self.current_session_id == Some(session_id) {
+                    // Update context percentage badge from store character count
+                    self.update_token_badge();
+                }
+                if let Some(branch) = cached_live_branch {
+                    self.live_display_events_cache.remove(&branch);
+                }
+                true
             }
-            if self.current_session_id == Some(session_id) {
-                // Update context percentage badge from store character count
-                self.update_token_badge();
-            }
-            if let Some(branch) = cached_live_branch {
-                self.live_display_events_cache.remove(&branch);
+            Err(err) => {
+                self.pid_session_target.insert(
+                    slot_id.to_string(),
+                    (session_id, wt_path, events_offset, session_file_offset),
+                );
+                self.set_status(format!(
+                    "Failed to store completed turn; keeping JSONL for recovery: {}",
+                    err
+                ));
+                false
             }
         }
     }
@@ -407,6 +432,7 @@ impl App {
                 return;
             }
             if store.append_events(session_id, &events).is_ok() {
+                let _ = store.clear_session_uuid(session_id);
                 // Source JSONL ingested — delete the original file and companion dir
                 crate::config::remove_session_file(&jsonl_path);
                 if let Some(branch) = cache_branch {

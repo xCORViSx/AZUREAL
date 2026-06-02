@@ -176,35 +176,10 @@ impl App {
             self.load_run_commands();
         }
 
-        // Post-exit store flow: parse JSONL → strip injected context → append to SQLite
+        // Post-exit store flow: parse JSONL → strip injected context → append to SQLite.
+        // The append path deletes JSONL only after successful ingestion. If it
+        // fails, leave the file and persisted UUID for orphan recovery.
         self.store_append_from_jsonl(slot_id, turn_backend);
-
-        // Fallback JSONL cleanup: if store_append_from_display already consumed
-        // the pid_session_target entry (e.g. compaction, superseded prompt), the
-        // JSONL was never deleted. Resolve it independently and remove it.
-        if let Some(uuid) = self.agent_session_ids.get(slot_id) {
-            let wt_path = branch
-                .as_ref()
-                .and_then(|b| {
-                    self.worktrees
-                        .iter()
-                        .find(|wt| wt.branch_name == *b)
-                        .and_then(|wt| wt.worktree_path.clone())
-                })
-                .or_else(|| {
-                    self.current_worktree()
-                        .and_then(|wt| wt.worktree_path.clone())
-                });
-            if let Some(wt) = wt_path {
-                if let Some(p) = crate::config::session_file(&wt, uuid) {
-                    crate::config::remove_session_file(&p);
-                    if self.session_file_path.as_ref() == Some(&p) {
-                        self.session_file_path = None;
-                        self.session_file_dirty = false;
-                    }
-                }
-            }
-        }
 
         // If compaction is active, preserve the "Compacting context" status
         if self.auto_continue_after_compaction || self.compaction_needed.is_some() {
