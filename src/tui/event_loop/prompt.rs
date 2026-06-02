@@ -285,7 +285,7 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
             app,
             claude_process,
             None,
-            "Continue.",
+            crate::app::context_injection::AUTO_CONTINUE_PROMPT,
             "auto-continue after compaction",
             "Auto-continuing after compaction...",
         );

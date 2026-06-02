@@ -1045,6 +1045,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_response_item_internal_auto_continue_ignored() {
+        let mut p = CodexEventParser::new("gpt-5.4".to_string());
+        let line = serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": crate::app::context_injection::AUTO_CONTINUE_PROMPT,
+            }
+        })
+        .to_string();
+        let (events, _) = p.parse(&format!("{}\n", line));
+        assert!(events.is_empty());
+    }
+
+    #[test]
     fn parse_response_item_developer_message_ignored() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r##"{"type":"response_item","payload":{"type":"message","role":"developer","content":"# AGENTS.md instructions for /tmp/project\n<INSTRUCTIONS>\nhidden\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/tmp/project</cwd>\n</environment_context>"}}"##;

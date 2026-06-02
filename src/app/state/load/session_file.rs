@@ -1,6 +1,8 @@
 //! Session file monitoring and incremental parsing
 
 use super::super::App;
+use crate::backend::Backend;
+use crate::events::DisplayEvent;
 
 impl App {
     /// Tell the file watcher thread to watch the current session file and
@@ -88,29 +90,30 @@ impl App {
 
         // Incremental parse: only read new bytes since last offset
         let was_full_reparse = self.session_file_parse_offset == 0;
-        let mut parsed =
-            match crate::config::backend_from_session_path(&path).unwrap_or(self.backend) {
-                crate::backend::Backend::Claude => {
-                    crate::app::session_parser::parse_session_file_incremental(
-                        &path,
-                        self.session_file_parse_offset,
-                        &self.display_events,
-                        &self.pending_tool_calls,
-                        &self.failed_tool_calls,
-                    )
-                }
-                crate::backend::Backend::Codex => {
-                    crate::app::codex_session_parser::parse_codex_session_file_incremental(
-                        &path,
-                        self.session_file_parse_offset,
-                        &self.display_events,
-                        &self.pending_tool_calls,
-                        &self.failed_tool_calls,
-                    )
-                }
-            };
+        let parse_backend = crate::config::backend_from_session_path(&path).unwrap_or(self.backend);
+        let mut parsed = match parse_backend {
+            Backend::Claude => crate::app::session_parser::parse_session_file_incremental(
+                &path,
+                self.session_file_parse_offset,
+                &self.display_events,
+                &self.pending_tool_calls,
+                &self.failed_tool_calls,
+            ),
+            Backend::Codex => {
+                crate::app::codex_session_parser::parse_codex_session_file_incremental(
+                    &path,
+                    self.session_file_parse_offset,
+                    &self.display_events,
+                    &self.pending_tool_calls,
+                    &self.failed_tool_calls,
+                )
+            }
+        };
         parsed.events =
             crate::app::context_injection::strip_injected_context_from_events(parsed.events);
+        if was_full_reparse && parse_backend == Backend::Codex {
+            parsed.events = self.merge_store_prefix_for_current_session(parsed.events);
+        }
         // Guard: if the parse returned empty events but we already had content,
         // the file was likely temporarily unavailable (locked, atomic rewrite,
         // or deleted during Claude Code compaction). Preserve existing display
@@ -165,6 +168,29 @@ impl App {
         if was_at_bottom {
             self.session_scroll = usize::MAX;
         }
+    }
+
+    fn merge_store_prefix_for_current_session(
+        &self,
+        parsed_events: Vec<DisplayEvent>,
+    ) -> Vec<DisplayEvent> {
+        let Some(session_id) = self.current_session_id else {
+            return parsed_events;
+        };
+        let Some(store) = self.session_store.as_ref() else {
+            return parsed_events;
+        };
+        let Ok(store_events) = store.load_events(session_id) else {
+            return parsed_events;
+        };
+        if store_events.is_empty() {
+            return parsed_events;
+        }
+
+        let overlap = crate::app::session_store::overlap_prefix_len(&store_events, &parsed_events);
+        let mut merged = store_events;
+        merged.extend(parsed_events.into_iter().skip(overlap));
+        merged
     }
 }
 
@@ -302,6 +328,145 @@ mod tests {
             }
             other => panic!("expected ToolCall, got {:?}", other),
         }
+
+        let _ = std::fs::remove_file(&session_path);
+    }
+
+    #[test]
+    fn poll_session_file_active_codex_preserves_store_prefix_after_full_reparse() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_dir = tempfile::tempdir().unwrap();
+        let wt_path = wt_dir.path().to_path_buf();
+        let branch = "codex".to_string();
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let sid = store.create_session(&branch).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "original request".into(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "prior assistant work".into(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!(
+            "rollout-live-codex-prefix-{}-{}.jsonl",
+            std::process::id(),
+            unique
+        ));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": format!("live-codex-prefix-{}", unique),
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": crate::app::context_injection::AUTO_CONTINUE_PROMPT,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type":"output_text","text":"continued after compaction"}],
+                }
+            })
+        )
+        .unwrap();
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: branch.clone(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert(branch, "55".into());
+        app.running_sessions.insert("55".into());
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path);
+        app.current_session_id = Some(sid);
+        app.session_file_path = Some(session_path.clone());
+        app.session_file_dirty = true;
+        app.session_file_parse_offset = 999;
+        app.display_events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "original request".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "prior assistant work".into(),
+            },
+        ];
+
+        assert!(app.poll_session_file());
+
+        assert_eq!(app.display_events.len(), 3);
+        assert!(matches!(
+            &app.display_events[0],
+            DisplayEvent::UserMessage { content, .. } if content == "original request"
+        ));
+        assert!(matches!(
+            &app.display_events[1],
+            DisplayEvent::AssistantText { text, .. } if text == "prior assistant work"
+        ));
+        assert!(matches!(
+            &app.display_events[2],
+            DisplayEvent::AssistantText { text, .. } if text == "continued after compaction"
+        ));
+        assert!(!app.display_events.iter().any(|event| matches!(
+            event,
+            DisplayEvent::UserMessage { content, .. }
+                if content.contains("azureal-internal-auto-continue")
+                    || content == "Continue."
+        )));
 
         let _ = std::fs::remove_file(&session_path);
     }

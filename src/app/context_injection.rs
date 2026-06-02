@@ -10,6 +10,10 @@ use crate::events::DisplayEvent;
 
 pub const CONTEXT_OPEN: &str = "<azureal-session-context>";
 pub const CONTEXT_CLOSE: &str = "</azureal-session-context>";
+pub const AUTO_CONTINUE_OPEN: &str = "<azureal-internal-auto-continue>";
+pub const AUTO_CONTINUE_CLOSE: &str = "</azureal-internal-auto-continue>";
+pub const AUTO_CONTINUE_PROMPT: &str =
+    "<azureal-internal-auto-continue>\nContinue the in-progress work from the supplied Azureal session context. Do not treat this as a new user request, do not change objectives, and keep following the user's latest instructions.\n</azureal-internal-auto-continue>";
 const AGENTS_INSTRUCTIONS_PREFIX: &str = "# AGENTS.md instructions for ";
 
 /// Build a context-injected prompt. If the payload has no content, returns
@@ -50,6 +54,9 @@ pub fn sanitize_user_message_content(content: &str) -> Option<String> {
         return None;
     }
     let stripped = strip_injected_context(content);
+    if is_internal_auto_continue_prompt(stripped) {
+        return None;
+    }
     if stripped.is_empty() && contains_injected_context(content) {
         None
     } else {
@@ -64,6 +71,11 @@ pub fn sanitize_user_message_content(content: &str) -> Option<String> {
 pub fn is_hidden_codex_context(content: &str) -> bool {
     let trimmed = content.trim_start();
     trimmed.starts_with(AGENTS_INSTRUCTIONS_PREFIX) && trimmed.contains("<INSTRUCTIONS>")
+}
+
+pub fn is_internal_auto_continue_prompt(content: &str) -> bool {
+    let trimmed = content.trim();
+    trimmed.starts_with(AUTO_CONTINUE_OPEN) && trimmed.ends_with(AUTO_CONTINUE_CLOSE)
 }
 
 fn push_stripped_user_message(out: &mut Vec<DisplayEvent>, _uuid: String, content: &str) {
@@ -401,6 +413,20 @@ mod tests {
 
         assert!(is_hidden_codex_context(hidden));
         assert!(sanitize_user_message_content(hidden).is_none());
+    }
+
+    #[test]
+    fn sanitize_drops_internal_auto_continue_prompt() {
+        assert!(is_internal_auto_continue_prompt(AUTO_CONTINUE_PROMPT));
+        assert!(sanitize_user_message_content(AUTO_CONTINUE_PROMPT).is_none());
+    }
+
+    #[test]
+    fn sanitize_drops_context_wrapped_internal_auto_continue_prompt() {
+        let injected =
+            format!("{CONTEXT_OPEN}\nprior context\n{CONTEXT_CLOSE}\n\n{AUTO_CONTINUE_PROMPT}");
+        assert_eq!(strip_injected_context(&injected), AUTO_CONTINUE_PROMPT);
+        assert!(sanitize_user_message_content(&injected).is_none());
     }
 
     #[test]

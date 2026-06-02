@@ -1088,6 +1088,22 @@ mod tests {
     }
 
     #[test]
+    fn test_internal_auto_continue_user_message_is_hidden() {
+        let result = parse_lines(&[&serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-01-01T00:00:01Z",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": crate::app::context_injection::AUTO_CONTINUE_PROMPT,
+            }
+        })
+        .to_string()]);
+
+        assert!(result.events.is_empty());
+    }
+
+    #[test]
     fn test_user_message_array_content() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix the bug"},{"type":"input_text","text":"in main.rs"}]}}"#,
