@@ -32,6 +32,7 @@ pub(super) use mouse::copy_viewer_selection;
 
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind};
+use std::collections::HashMap;
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -52,6 +53,22 @@ use fast_draw::fast_draw_input;
 use mouse::apply_scroll_cached;
 use process_input::process_input_event;
 
+fn apply_processed_agent_result(app: &mut App, result: agent_processor::ProcessedOutput) -> bool {
+    if app.is_viewing_slot(&result.slot_id) {
+        app.apply_parsed_output(
+            &result.slot_id,
+            result.events,
+            result.parsed_json,
+            result.output_type,
+            &result.data,
+        );
+        true
+    } else {
+        app.apply_background_parsed_output(&result.slot_id, result.events);
+        false
+    }
+}
+
 fn drain_parsed_agent_results(
     app: &mut App,
     claude_proc: &agent_processor::AgentProcessor,
@@ -62,23 +79,51 @@ fn drain_parsed_agent_results(
     while parsed_count < max_results {
         match claude_proc.try_recv() {
             Some(result) => {
-                if app.is_viewing_slot(&result.slot_id) {
-                    app.apply_parsed_output(
-                        &result.slot_id,
-                        result.events,
-                        result.parsed_json,
-                        result.output_type,
-                        &result.data,
-                    );
-                    needs_redraw = true;
-                } else {
-                    app.apply_background_parsed_output(&result.slot_id, result.events);
-                }
+                needs_redraw |= apply_processed_agent_result(app, result);
                 parsed_count += 1;
             }
             None => break,
         }
     }
+    needs_redraw
+}
+
+fn drain_parsed_agent_results_until_quiet(
+    app: &mut App,
+    claude_proc: &agent_processor::AgentProcessor,
+    mut expected_by_slot: HashMap<String, usize>,
+    max_wait: Duration,
+    quiet_wait: Duration,
+) -> bool {
+    let deadline = Instant::now() + max_wait;
+    let mut needs_redraw = false;
+
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+
+        let remaining = deadline.saturating_duration_since(now);
+        let timeout = remaining.min(quiet_wait);
+        match claude_proc.recv_timeout(timeout) {
+            Some(result) => {
+                if let Some(expected) = expected_by_slot.get_mut(&result.slot_id) {
+                    *expected = expected.saturating_sub(1);
+                    if *expected == 0 {
+                        expected_by_slot.remove(&result.slot_id);
+                    }
+                }
+                needs_redraw |= apply_processed_agent_result(app, result);
+            }
+            None => {
+                if expected_by_slot.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+
     needs_redraw
 }
 
@@ -380,11 +425,16 @@ pub async fn run_app(
                 }
             }
             let mut lifecycle_events = Vec::new();
+            let mut submitted_outputs_by_slot: HashMap<String, usize> = HashMap::new();
+            let mut has_exit_event = false;
             for (session_id, event) in claude_events {
                 match event {
                     crate::claude::AgentEvent::Output(output) => {
                         let backend = app.backend_for_slot(&session_id);
                         let model = app.model_for_slot(&session_id);
+                        *submitted_outputs_by_slot
+                            .entry(session_id.clone())
+                            .or_default() += 1;
                         claude_proc.submit(
                             session_id,
                             backend,
@@ -393,10 +443,28 @@ pub async fn run_app(
                             output.data,
                         );
                     }
-                    other => lifecycle_events.push((session_id, other)),
+                    other => {
+                        if matches!(other, crate::claude::AgentEvent::Exited { .. }) {
+                            has_exit_event = true;
+                        }
+                        lifecycle_events.push((session_id, other));
+                    }
                 }
             }
-            if drain_parsed_agent_results(app, &claude_proc, MAX_CLAUDE_EVENTS_PER_TICK) {
+            if has_exit_event {
+                // Output and Exited can arrive in the same drain cycle. Give
+                // the parser thread a bounded chance to return the just-submitted
+                // output before lifecycle cleanup removes slot routing state.
+                if drain_parsed_agent_results_until_quiet(
+                    app,
+                    &claude_proc,
+                    submitted_outputs_by_slot,
+                    Duration::from_millis(200),
+                    Duration::from_millis(15),
+                ) {
+                    needs_redraw = true;
+                }
+            } else if drain_parsed_agent_results(app, &claude_proc, MAX_CLAUDE_EVENTS_PER_TICK) {
                 needs_redraw = true;
             }
             for (session_id, event) in lifecycle_events {

@@ -12,6 +12,40 @@ use crate::models::OutputType;
 use super::parse_todos_from_input;
 use crate::app::state::App;
 
+fn drop_confirmed_optimistic_user_messages(
+    mut events: Vec<DisplayEvent>,
+    existing_events: &[DisplayEvent],
+    turn_events_offset: Option<usize>,
+) -> Vec<DisplayEvent> {
+    let Some(turn_events_offset) = turn_events_offset else {
+        return events;
+    };
+    if !events
+        .iter()
+        .any(|event| matches!(event, DisplayEvent::UserMessage { .. }))
+    {
+        return events;
+    }
+
+    let optimistic_user_messages: std::collections::HashSet<String> = existing_events
+        .iter()
+        .skip(turn_events_offset.min(existing_events.len()))
+        .filter_map(|event| match event {
+            DisplayEvent::UserMessage { content, .. } => Some(content.clone()),
+            _ => None,
+        })
+        .collect();
+    if optimistic_user_messages.is_empty() {
+        return events;
+    }
+
+    events.retain(|event| match event {
+        DisplayEvent::UserMessage { content, .. } => !optimistic_user_messages.contains(content),
+        _ => true,
+    });
+    events
+}
+
 impl App {
     /// Check if a slot's output should be displayed (active slot of viewed branch)
     pub fn is_viewing_slot(&self, slot_id: &str) -> bool {
@@ -43,7 +77,15 @@ impl App {
         output_type: OutputType,
         data: &str,
     ) {
-        let mut events = events;
+        let turn_events_offset = self
+            .pid_session_target
+            .get(slot_id)
+            .map(|(_, _, events_offset, _)| *events_offset);
+        let mut events = drop_confirmed_optimistic_user_messages(
+            events,
+            &self.display_events,
+            turn_events_offset,
+        );
         self.apply_slot_turn_duration(slot_id, &mut events);
         for event in &events {
             match event {
@@ -167,6 +209,10 @@ impl App {
     /// recovery.
     pub fn apply_background_parsed_output(&mut self, slot_id: &str, events: Vec<DisplayEvent>) {
         let mut events = crate::app::context_injection::strip_injected_context_from_events(events);
+        let turn_events_offset = self
+            .pid_session_target
+            .get(slot_id)
+            .map(|(_, _, events_offset, _)| *events_offset);
         self.apply_slot_turn_duration(slot_id, &mut events);
         if events.is_empty() {
             return;
@@ -179,6 +225,19 @@ impl App {
                 .map(|active| active == slot_id)
                 .unwrap_or(false);
             if is_active_for_branch {
+                let existing_events = self
+                    .live_display_events_cache
+                    .get(&branch)
+                    .map(|events| events.as_slice())
+                    .unwrap_or(&[]);
+                let events = drop_confirmed_optimistic_user_messages(
+                    events,
+                    existing_events,
+                    turn_events_offset,
+                );
+                if events.is_empty() {
+                    return;
+                }
                 self.live_display_events_cache
                     .entry(branch)
                     .or_default()
@@ -207,6 +266,20 @@ impl App {
             .map(|active| active == slot_id)
             .unwrap_or(false);
         if is_active_for_branch {
+            let existing_events = snapshot
+                .live_display_events_cache
+                .get(&branch)
+                .filter(|events| !events.is_empty())
+                .map(|events| events.as_slice())
+                .unwrap_or(snapshot.display_events.as_slice());
+            let events = drop_confirmed_optimistic_user_messages(
+                events,
+                existing_events,
+                turn_events_offset,
+            );
+            if events.is_empty() {
+                return;
+            }
             snapshot
                 .live_display_events_cache
                 .entry(branch)
@@ -244,6 +317,15 @@ impl App {
             // JSON value. We reuse that value for token/model extraction below instead
             // of calling serde_json::from_str again (was the #1 remaining CPU cost).
             let (mut events, parsed_json) = self.event_parser.parse(&data);
+            let turn_events_offset = self
+                .pid_session_target
+                .get(slot_id)
+                .map(|(_, _, events_offset, _)| *events_offset);
+            events = drop_confirmed_optimistic_user_messages(
+                events,
+                &self.display_events,
+                turn_events_offset,
+            );
             self.apply_slot_turn_duration(slot_id, &mut events);
 
             for event in &events {
@@ -401,5 +483,119 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn user(content: &str) -> DisplayEvent {
+        DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: content.into(),
+        }
+    }
+
+    fn assistant(text: &str) -> DisplayEvent {
+        DisplayEvent::AssistantText {
+            _uuid: String::new(),
+            _message_id: String::new(),
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn apply_parsed_output_drops_confirmed_optimistic_user_message() {
+        let mut app = App::new();
+        let slot = "slot-1";
+        app.pid_session_target
+            .insert(slot.into(), (1, PathBuf::from("/tmp/wt"), 0, 0));
+        app.display_events.push(user("fix the failing test"));
+
+        app.apply_parsed_output(
+            slot,
+            vec![
+                assistant("looking"),
+                user("fix the failing test"),
+                assistant("done"),
+            ],
+            None,
+            OutputType::Stdout,
+            "",
+        );
+
+        let users: Vec<&str> = app
+            .display_events
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::UserMessage { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(users, vec!["fix the failing test"]);
+
+        let assistant_texts: Vec<&str> = app
+            .display_events
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::AssistantText { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(assistant_texts, vec!["looking", "done"]);
+    }
+
+    #[test]
+    fn apply_parsed_output_keeps_same_text_from_prior_turn_before_offset() {
+        let mut app = App::new();
+        let slot = "slot-1";
+        app.display_events.push(user("repeat"));
+        app.pid_session_target
+            .insert(slot.into(), (1, PathBuf::from("/tmp/wt"), 1, 0));
+
+        app.apply_parsed_output(slot, vec![user("repeat")], None, OutputType::Stdout, "");
+
+        let user_count = app
+            .display_events
+            .iter()
+            .filter(|event| matches!(event, DisplayEvent::UserMessage { content, .. } if content == "repeat"))
+            .count();
+        assert_eq!(user_count, 2);
+    }
+
+    #[test]
+    fn apply_background_parsed_output_drops_confirmation_from_live_cache() {
+        let mut app = App::new();
+        let branch = "main".to_string();
+        let slot = "slot-1";
+        app.branch_slots.insert(branch.clone(), vec![slot.into()]);
+        app.active_slot.insert(branch.clone(), slot.into());
+        app.pid_session_target
+            .insert(slot.into(), (1, PathBuf::from("/tmp/wt"), 0, 0));
+        app.live_display_events_cache
+            .insert(branch.clone(), vec![user("ship it")]);
+
+        app.apply_background_parsed_output(
+            slot,
+            vec![assistant("working"), user("ship it"), assistant("complete")],
+        );
+
+        let cached = app.live_display_events_cache.get(&branch).unwrap();
+        let user_count = cached
+            .iter()
+            .filter(|event| matches!(event, DisplayEvent::UserMessage { content, .. } if content == "ship it"))
+            .count();
+        assert_eq!(user_count, 1);
+
+        let assistant_texts: Vec<&str> = cached
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::AssistantText { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(assistant_texts, vec!["working", "complete"]);
     }
 }

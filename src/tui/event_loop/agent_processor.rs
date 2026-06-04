@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 use crate::backend::Backend;
 use crate::events::{CodexEventParser, DisplayEvent, EventParser};
@@ -149,6 +150,12 @@ impl AgentProcessor {
     /// Poll for a parsed result (non-blocking)
     pub fn try_recv(&self) -> Option<ProcessedOutput> {
         self.rx.try_recv().ok()
+    }
+
+    /// Wait briefly for a parsed result. Used at process exit to flush output
+    /// submitted immediately before the lifecycle event is handled.
+    pub fn recv_timeout(&self, timeout: Duration) -> Option<ProcessedOutput> {
+        self.rx.recv_timeout(timeout).ok()
     }
 }
 

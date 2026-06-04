@@ -140,7 +140,17 @@ pub fn display_text_from_json(json: &serde_json::Value) -> Option<String> {
             }
         }
         "user" => {
-            let content = json.get("message")?.get("content")?.as_str()?;
+            let raw_content = json.get("message")?.get("content")?.as_str()?;
+            let content =
+                crate::app::context_injection::sanitize_user_message_content(raw_content)?;
+            if content.starts_with("This session is being continued from a previous conversation") {
+                return Some("[Context compacted]\n".to_string());
+            }
+            if content.contains("<local-command-stdout>")
+                || content.contains("<local-command-caveat>")
+            {
+                return None;
+            }
             Some(format!("You: {}\n", content))
         }
         "assistant" => {
@@ -399,6 +409,38 @@ mod tests {
         });
         let result = display_text_from_json(&json).unwrap();
         assert_eq!(result, "You: Hello Claude\n");
+    }
+
+    #[test]
+    fn test_display_user_message_strips_injected_context() {
+        let json = json!({
+            "type": "user",
+            "message": {
+                "content": format!(
+                    "{}\nprior hidden context\n{}\n\nactual prompt",
+                    crate::app::context_injection::CONTEXT_OPEN,
+                    crate::app::context_injection::CONTEXT_CLOSE,
+                )
+            }
+        });
+        let result = display_text_from_json(&json).unwrap();
+        assert_eq!(result, "You: actual prompt\n");
+    }
+
+    #[test]
+    fn test_display_user_message_hides_hidden_codex_context() {
+        let json = json!({
+            "type": "user",
+            "message": {
+                "content": concat!(
+                    "# AGENTS.md instructions for /tmp/project\n",
+                    "<INSTRUCTIONS>\n",
+                    "hidden\n",
+                    "</INSTRUCTIONS>"
+                )
+            }
+        });
+        assert!(display_text_from_json(&json).is_none());
     }
 
     #[test]

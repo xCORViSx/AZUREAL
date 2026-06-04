@@ -1,6 +1,7 @@
 //! Session content loading, switching, and display event extraction
 
 use super::super::App;
+use crate::events::DisplayEvent;
 
 /// Format a UUID-like session ID as "xxxxxxxx-…" (first group + dash + ellipsis)
 pub(crate) fn format_uuid_short(id: &str) -> String {
@@ -167,6 +168,11 @@ impl App {
                 // The live_display_events_cache only snapshots at switch-away time
                 // and misses everything produced after that.
                 let slot = self.active_slot.get(&branch_name).cloned();
+                let original_turn_events_offset = slot.as_ref().and_then(|slot| {
+                    self.pid_session_target
+                        .get(slot)
+                        .map(|(_, _, events_offset, _)| *events_offset)
+                });
 
                 // Set current_session_id from the slot's session target
                 if let Some(ref slot) = slot {
@@ -279,6 +285,10 @@ impl App {
                         || (prior_live_from_previous_display
                             && previous_session_id == self.current_session_id);
                     if prior_live_matches_current {
+                        jsonl_chars += self.preserve_prior_turn_user_message(
+                            &previous_live,
+                            original_turn_events_offset,
+                        );
                         let overlap = crate::app::session_store::overlap_prefix_len(
                             &self.display_events,
                             &previous_live,
@@ -406,6 +416,38 @@ impl App {
                 .unwrap_or_else(|| format_uuid_short(&id)),
             None => String::new(),
         };
+    }
+
+    fn preserve_prior_turn_user_message(
+        &mut self,
+        prior_live_events: &[DisplayEvent],
+        turn_events_offset: Option<usize>,
+    ) -> usize {
+        let Some(turn_events_offset) = turn_events_offset else {
+            return 0;
+        };
+        let Some(DisplayEvent::UserMessage { content, .. }) =
+            prior_live_events.get(turn_events_offset)
+        else {
+            return 0;
+        };
+        let insert_idx = turn_events_offset.min(self.display_events.len());
+        if self
+            .display_events
+            .iter()
+            .skip(insert_idx)
+            .any(|event| matches!(event, DisplayEvent::UserMessage { content: existing, .. } if existing == content))
+        {
+            return 0;
+        }
+
+        let event = DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: content.clone(),
+        };
+        let added_chars = crate::app::session_store::event_char_len(&event);
+        self.display_events.insert(insert_idx, event);
+        added_chars
     }
 
     /// Scan display_events backwards for the latest TodoWrite and AskUserQuestion.
@@ -1240,6 +1282,117 @@ mod tests {
         assert_eq!(texts, vec!["prefix", "live-only tail"]);
 
         let _ = std::fs::remove_file(&session_path);
+    }
+
+    #[test]
+    fn load_session_output_preserves_optimistic_prompt_when_jsonl_lacks_user_event() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let codex_session_id = format!("load-preserve-prompt-{}", unique);
+        let session_path = session_dir.join(format!("{}.jsonl", codex_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": codex_session_id,
+                    "cwd": "/tmp/live-preserve-prompt",
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "agent output"}],
+                }
+            })
+        )
+        .unwrap();
+
+        let worktree_path =
+            std::env::temp_dir().join(format!("azureal-preserve-prompt-{}", unique));
+        std::fs::create_dir_all(&worktree_path).unwrap();
+        let store = crate::app::session_store::SessionStore::open(&worktree_path).unwrap();
+        let sid = store.create_session("main").unwrap();
+        drop(store);
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(worktree_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(sid);
+        app.display_events = vec![
+            DisplayEvent::Init {
+                _session_id: codex_session_id.clone(),
+                cwd: "/tmp/live-preserve-prompt".into(),
+                model: "gpt-5.4".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "please finish".into(),
+            },
+        ];
+        app.active_slot.insert("main".into(), "55".into());
+        app.running_sessions.insert("55".into());
+        app.agent_session_ids
+            .insert("55".into(), codex_session_id.clone());
+        app.pid_session_target
+            .insert("55".into(), (sid, worktree_path.clone(), 1, 0));
+
+        app.load_session_output();
+
+        let users: Vec<&str> = app
+            .display_events
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::UserMessage { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(users, vec!["please finish"]);
+
+        let user_idx = app
+            .display_events
+            .iter()
+            .position(|event| matches!(event, DisplayEvent::UserMessage { .. }))
+            .unwrap();
+        let assistant_idx = app
+            .display_events
+            .iter()
+            .position(|event| {
+                matches!(event, DisplayEvent::AssistantText { text, .. } if text == "agent output")
+            })
+            .unwrap();
+        assert!(user_idx < assistant_idx);
+
+        let _ = std::fs::remove_file(&session_path);
+        let _ = std::fs::remove_dir_all(&worktree_path);
     }
 
     #[test]
