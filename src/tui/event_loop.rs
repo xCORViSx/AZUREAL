@@ -47,6 +47,9 @@ use crate::config::Config;
 use super::draw_output::{poll_render_result, submit_render_request};
 use super::run::ui;
 
+const BUSY_INPUT_WAIT: Duration = Duration::from_millis(16);
+const IDLE_INPUT_WAIT: Duration = Duration::from_millis(250);
+
 use agent_events::handle_claude_event;
 #[cfg(target_os = "macos")]
 use fast_draw::fast_draw_input;
@@ -233,11 +236,12 @@ pub async fn run_app(
             || app.terminal_mode
             || app.paste_deferred_enter.is_some();
 
-        // First event: block briefly when idle so we don't spin the CPU
+        // First event: block briefly in both busy and idle states so we don't
+        // spin the CPU while still waking quickly for streaming/render work.
         let first_event = if is_busy {
-            input_rx.try_recv().ok()
+            input_rx.recv_timeout(BUSY_INPUT_WAIT).ok()
         } else {
-            input_rx.recv_timeout(Duration::from_millis(100)).ok()
+            input_rx.recv_timeout(IDLE_INPUT_WAIT).ok()
         };
 
         // Snapshot fast-draw eligibility BEFORE processing key events.
@@ -800,9 +804,9 @@ pub async fn run_app(
 ///
 /// Heuristic: characters appear AFTER an Enter in the same drain batch AND the
 /// batch has ≥3 key presses. Human typing at normal speed (≤200 WPM, ~60ms
-/// between keys) never produces Enter + character within the 16-100ms drain
+/// between keys) never produces Enter + character within the 16-250ms drain
 /// window. The ≥3 threshold prevents false positives from fast typing patterns
-/// like (Enter, j) at idle poll intervals (100ms). Even a short paste like
+/// like (Enter, j) at idle poll intervals (250ms). Even a short paste like
 /// "a\nb" produces 3 presses (a, Enter, b), safely above the threshold.
 fn coalesce_paste_events(events: Vec<Event>) -> Vec<Event> {
     let mut press_count = 0usize;
@@ -903,8 +907,12 @@ mod tests {
     #[test]
     fn test_poll_ms_busy() {
         let draw_pending = true;
-        let poll_ms = if draw_pending { 16 } else { 100 };
-        assert_eq!(poll_ms, 16);
+        let poll_wait = if draw_pending {
+            BUSY_INPUT_WAIT
+        } else {
+            IDLE_INPUT_WAIT
+        };
+        assert_eq!(poll_wait, Duration::from_millis(16));
     }
 
     #[test]
@@ -912,12 +920,12 @@ mod tests {
         let draw_pending = false;
         let render_in_flight = false;
         let has_receivers = false;
-        let poll_ms = if draw_pending || render_in_flight || has_receivers {
-            16
+        let poll_wait = if draw_pending || render_in_flight || has_receivers {
+            BUSY_INPUT_WAIT
         } else {
-            100
+            IDLE_INPUT_WAIT
         };
-        assert_eq!(poll_ms, 100);
+        assert_eq!(poll_wait, Duration::from_millis(250));
     }
 
     // -- KeyEvent construction --
