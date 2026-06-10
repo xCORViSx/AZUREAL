@@ -168,14 +168,13 @@ To use the built-in speech-to-text feature, download a Whisper model to the
 expected path:
 
 ```
-~/.azureal/speech/ggml-small.en.bin
+~/.azureal/speech/ggml-large-v3.bin
 ```
 
 Models are available from
-[HuggingFace](https://huggingface.co/ggerganov/whisper.cpp/tree/main). The
-`ggml-small.en.bin` model offers a good balance of accuracy and speed. Larger
-models (medium, large) improve accuracy at the cost of higher latency and memory
-usage.
+[HuggingFace](https://huggingface.co/ggerganov/whisper.cpp/tree/main). AZUREAL
+expects `ggml-large-v3.bin` by default, which prioritizes accuracy at the cost
+of higher latency and memory usage.
 
 On macOS, Whisper runs on the Metal GPU for faster inference. On Windows, Whisper
 uses CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit). Linux uses CPU

@@ -165,7 +165,7 @@ Your agent will handle downloading, installing dependencies, and setting up your
 - **Nerd Font** (recommended) — Any [Nerd Font](https://www.nerdfonts.com/) with at least regular, bold, and italic variants installed, so AZUREAL can show file tree icons and the full range of text styling differences; emoji fallback when not detected
 - **LLVM/Clang + CMake** (build dependency) — Required by whisper-rs. macOS: included with Xcode CLT · Linux: `sudo apt install libclang-dev cmake` · Windows: `winget install LLVM.LLVM Kitware.CMake` then `[Environment]::SetEnvironmentVariable("LIBCLANG_PATH", "C:\Program Files\LLVM\bin", "User")` in PowerShell (restart terminal after)
 - **Vulkan SDK** (Linux/Windows build dependency, for GPU-accelerated Whisper) — Linux: `sudo apt install libvulkan-dev` · Windows: install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) or `winget install KhronosGroup.VulkanSDK`
-- **Whisper model** (optional, for speech) — Downloaded automatically on first use. Press `⌃s` and confirm the download prompt (~466MB)
+- **Whisper model** (optional, for speech) — Downloaded automatically on first use. Press `⌃s` and confirm the download prompt (~2.9 GiB)
 
 ### Platform Support
 

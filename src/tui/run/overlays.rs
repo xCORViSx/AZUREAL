@@ -185,7 +185,7 @@ pub fn draw_stt_download_dialog(f: &mut Frame) {
     let white = Style::default().fg(Color::White);
     let dim = Style::default().fg(Color::DarkGray);
 
-    let size_hint = "~466 MB";
+    let size_hint = "~2.9 GiB";
     let lines = vec![
         Line::from(""),
         Line::from(Span::styled("  Whisper speech model not found.  ", white)),

@@ -14,8 +14,8 @@ equivalent, and CUDA/Vulkan GPU backends are not currently integrated.
 Transcription is slower than on macOS with Metal but remains usable for typical
 prompt dictation.
 
-For best results, use the `ggml-small.en.bin` model. Larger models (medium,
-large) produce better transcriptions but increase latency on CPU inference.
+AZUREAL uses the `ggml-large-v3.bin` model by default. It produces better
+transcriptions than smaller models but increases latency on CPU inference.
 
 ---
 

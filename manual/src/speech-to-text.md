@@ -72,23 +72,23 @@ session to avoid repeated model load times.
 
 ## Whisper Model
 
-AZUREAL uses the `ggml-small.en` Whisper model, stored at:
+AZUREAL uses the `ggml-large-v3` Whisper model, stored at:
 
 ```text
-~/.azureal/speech/ggml-small.en.bin
+~/.azureal/speech/ggml-large-v3.bin
 ```
 
-This file is approximately **466 MB**. If the model file is missing, AZUREAL
+This file is approximately **2.9 GiB**. If the model file is missing, AZUREAL
 shows an error with download instructions. You must download the model manually
 before first use:
 
 ```bash
-mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-small.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+mkdir -p ~/.azureal/speech && curl -L -o ~/.azureal/speech/ggml-large-v3.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin
 ```
 
-The `small.en` model provides a good balance between transcription accuracy and
-speed for English-language input.
+The `large-v3` model prioritizes transcription accuracy. It uses more disk,
+memory, and inference time than the smaller English-only models.
 
 ---
 
@@ -106,5 +106,5 @@ Ctrl+S    Stop recording from ANY focus/mode (always resolves)
 | Transcription engine | whisper.cpp (Metal GPU on macOS, CUDA GPU on Windows) |
 | Sample pipeline | f32 -> mono mixdown -> 16kHz resample |
 | Decoding strategy | Greedy { best_of: 1 } |
-| Model file | `~/.azureal/speech/ggml-small.en.bin` (~466 MB) |
+| Model file | `~/.azureal/speech/ggml-large-v3.bin` (~2.9 GiB) |
 | Idle CPU usage | Zero (thread blocks on mpsc::recv) |

@@ -6,7 +6,7 @@
 //!
 //! Audio flow: cpal callback → Arc<Mutex<Vec<f32>>> → resample to 16kHz → whisper.
 //! WhisperContext is lazy-loaded on first transcription and cached for reuse.
-//! Model lives at ~/.azureal/speech/ggml-small.en.bin (~466MB).
+//! Model lives at ~/.azureal/speech/ggml-large-v3.bin (~2.9 GiB).
 
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -79,10 +79,10 @@ impl SttHandle {
     }
 }
 
-/// Model file path: ~/.azureal/speech/ggml-small.en.bin
-const MODEL_FILENAME: &str = "ggml-small.en.bin";
+/// Model file path: ~/.azureal/speech/ggml-large-v3.bin
+const MODEL_FILENAME: &str = "ggml-large-v3.bin";
 const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin";
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin";
 
 /// Check whether the Whisper model file exists on disk.
 /// Cheap Path::exists() check — safe to call from the main thread.
@@ -356,7 +356,7 @@ fn start_recording() -> Result<(cpal::Stream, Arc<Mutex<Vec<f32>>>, u32), String
     Ok((stream, samples, sample_rate))
 }
 
-/// Load the Whisper model from ~/.azureal/speech/ggml-small.en.bin.
+/// Load the Whisper model from ~/.azureal/speech/ggml-large-v3.bin.
 /// `use_gpu` controls whether GPU acceleration is attempted — determined by
 /// the subprocess probe to avoid C++ exception crashes from failed Vulkan init.
 fn load_whisper_model(use_gpu: bool) -> Result<whisper_rs::WhisperContext, String> {
