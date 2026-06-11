@@ -1,5 +1,6 @@
 //! Worktree Health panel types — god files, documentation coverage, module style selection
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 
 /// A source file detected as a "god file" (>1k LOC) — candidate for modularization
@@ -13,6 +14,28 @@ pub struct GodFileEntry {
     pub line_count: usize,
     /// Whether the user checked this file for modularization
     pub checked: bool,
+}
+
+/// One file waiting to be modularized by the serial GFM queue.
+#[derive(Debug, Clone)]
+pub struct GodFileModularizeItem {
+    pub rel_path: String,
+    pub line_count: usize,
+}
+
+/// Active serial God File Modularization queue.
+#[derive(Debug)]
+pub struct GodFileModularizeQueue {
+    pub branch: String,
+    pub worktree_path: PathBuf,
+    pub rust_style: Option<RustModuleStyle>,
+    pub python_style: Option<PythonModuleStyle>,
+    pub selected_model: String,
+    pub pending: VecDeque<GodFileModularizeItem>,
+    pub total: usize,
+    pub completed: usize,
+    pub failed: usize,
+    pub active_slot: Option<String>,
 }
 
 /// Rust module organization: file-based root (modern) vs mod.rs (legacy)

@@ -31,10 +31,10 @@ use super::AgentEvent;
 use super::DisplayEvent;
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{
-    BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, HealthPanel, HealthTab,
-    IssueSession, IssuesPanel, PostMergeDialog, PresetPrompt, PresetPromptDialog,
-    PresetPromptPicker, ProjectsPanel, RcrSession, RunCommand, RunCommandDialog, RunCommandPicker,
-    ViewMode, ViewerMode,
+    BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, GodFileModularizeQueue,
+    HealthPanel, HealthTab, IssueSession, IssuesPanel, PostMergeDialog, PresetPrompt,
+    PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RcrSession, RunCommand,
+    RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode,
 };
 use crate::backend::Backend;
 use crate::events::EventParser;
@@ -544,6 +544,8 @@ pub struct App {
     /// Worktree Health panel — tabbed modal overlay with god file scanner,
     /// documentation coverage, and future health checks. None when closed.
     pub health_panel: Option<HealthPanel>,
+    /// Serial God File Modularization queue. Only one [GFM] agent runs at a time.
+    pub god_file_modularize_queue: Option<GodFileModularizeQueue>,
     /// Remembers which tab was last active so the panel reopens on the same tab
     pub last_health_tab: HealthTab,
     /// When true, the FileTree is in "god file filter mode" — directories included
@@ -892,6 +894,7 @@ impl App {
             file_tree_options_mode: false,
             file_tree_options_selected: 0,
             health_panel: None,
+            god_file_modularize_queue: None,
             last_health_tab: HealthTab::GodFiles,
             god_file_filter_mode: false,
             god_file_filter_dirs: std::collections::HashSet::new(),

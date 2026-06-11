@@ -19,7 +19,11 @@ pub fn handle_claude_event(
     app: &mut App,
     claude_process: &AgentProcess,
 ) -> Result<()> {
-    let is_exit = matches!(event, AgentEvent::Exited { .. });
+    let exit_code = match &event {
+        AgentEvent::Exited { code } => Some(*code),
+        _ => None,
+    };
+    let is_exit = exit_code.is_some();
 
     match event {
         AgentEvent::Output(output) => {
@@ -38,6 +42,8 @@ pub fn handle_claude_event(
             app.check_session_file();
             app.poll_session_file();
             super::prompt::send_staged_prompt(app, claude_process);
+        } else if let Some(code) = exit_code {
+            app.continue_god_file_modularization_after_exit(slot_id, code, claude_process);
         }
     }
 

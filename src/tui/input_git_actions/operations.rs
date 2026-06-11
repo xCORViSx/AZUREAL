@@ -11,6 +11,9 @@ use crate::app::types::{
 use crate::app::App;
 use crate::backend::Backend;
 use crate::git::{Git, SquashMergeResult};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static UNION_MERGE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Rebase outcome for the UI to display
 pub(crate) enum RebaseOutcome {
@@ -160,25 +163,7 @@ fn generate_commit_message_with_codex(
 
 /// Parse conflict and auto-merge file lists from git rebase/merge output.
 fn parse_conflict_files(text: &str, worktree_path: &std::path::Path) -> (Vec<String>, Vec<String>) {
-    let mut conflicted = Vec::new();
-    let mut auto_merged = Vec::new();
-    for line in text.lines() {
-        if line.starts_with("CONFLICT") {
-            if let Some(path) = line.rsplit("Merge conflict in ").next() {
-                conflicted.push(path.trim().to_string());
-            } else {
-                conflicted.push(line.to_string());
-            }
-        } else if let Some(path) = line.strip_prefix("Auto-merging ") {
-            auto_merged.push(path.trim().to_string());
-        }
-    }
-    if conflicted.is_empty() {
-        if let Ok(diff) = Git::get_conflicted_files(worktree_path) {
-            conflicted = diff;
-        }
-    }
-    (conflicted, auto_merged)
+    Git::parse_conflict_files_from_output(text, worktree_path)
 }
 
 /// Resolve a single conflicted file using `git merge-file --union`.
@@ -186,9 +171,11 @@ fn parse_conflict_files(text: &str, worktree_path: &std::path::Path) -> (Vec<Str
 /// keeps BOTH sides' changes with no conflict markers, then stages the result.
 fn union_merge_file(worktree_path: &std::path::Path, file: &str) -> bool {
     let tmp = std::env::temp_dir();
-    let base_p = tmp.join("azureal_base");
-    let ours_p = tmp.join("azureal_ours");
-    let theirs_p = tmp.join("azureal_theirs");
+    let nonce = UNION_MERGE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let prefix = format!("azureal-union-{}-{}", std::process::id(), nonce);
+    let base_p = tmp.join(format!("{}-base", prefix));
+    let ours_p = tmp.join(format!("{}-ours", prefix));
+    let theirs_p = tmp.join(format!("{}-theirs", prefix));
 
     // Extract the 3 stages: :1 = base, :2 = ours (onto target), :3 = theirs (replayed commit)
     let base = std::process::Command::new("git")
@@ -401,25 +388,15 @@ pub(crate) fn exec_rebase_inner(
                 return RebaseOutcome::UpToDate;
             }
         }
-        let stashed = std::process::Command::new("git")
-            .args(["stash", "--include-untracked"])
-            .current_dir(worktree_path)
-            .output()
-            .ok()
-            .map(|o| {
-                let msg = String::from_utf8_lossy(&o.stdout);
-                o.status.success() && !msg.contains("No local changes")
-            })
-            .unwrap_or(false);
+        let stashed =
+            Git::stash_push_named_include_untracked(worktree_path, Git::PRE_REBASE_STASH_MESSAGE)
+                .unwrap_or(false);
         let ff = std::process::Command::new("git")
             .args(["merge", "--ff-only", main_branch])
             .current_dir(worktree_path)
             .output();
         if stashed {
-            let _ = std::process::Command::new("git")
-                .args(["stash", "pop"])
-                .current_dir(worktree_path)
-                .output();
+            let _ = Git::stash_pop_by_message(worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
         }
         return match ff {
             Ok(o) if o.status.success() => RebaseOutcome::Rebased,
@@ -438,16 +415,9 @@ pub(crate) fn exec_rebase_inner(
 
     // Stash any dirty working tree (.DS_Store, swap files, etc.) so rebase
     // doesn't fail with "You have unstaged changes".
-    let stashed = std::process::Command::new("git")
-        .args(["stash", "--include-untracked"])
-        .current_dir(worktree_path)
-        .output()
-        .ok()
-        .map(|o| {
-            let msg = String::from_utf8_lossy(&o.stdout);
-            o.status.success() && !msg.contains("No local changes")
-        })
-        .unwrap_or(false);
+    let stashed =
+        Git::stash_push_named_include_untracked(worktree_path, Git::PRE_REBASE_STASH_MESSAGE)
+            .unwrap_or(false);
 
     // --onto with explicit fork point replays ONLY branch-specific commits.
     // Plain `git rebase main` can replay squash merge commits from other
@@ -466,10 +436,7 @@ pub(crate) fn exec_rebase_inner(
             Ok(o) => o,
             Err(e) => {
                 if stashed {
-                    let _ = std::process::Command::new("git")
-                        .args(["stash", "pop"])
-                        .current_dir(worktree_path)
-                        .output();
+                    let _ = Git::stash_pop_by_message(worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
                 }
                 return RebaseOutcome::Failed(e.to_string());
             }
@@ -483,10 +450,7 @@ pub(crate) fn exec_rebase_inner(
             Ok(o) => o,
             Err(e) => {
                 if stashed {
-                    let _ = std::process::Command::new("git")
-                        .args(["stash", "pop"])
-                        .current_dir(worktree_path)
-                        .output();
+                    let _ = Git::stash_pop_by_message(worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
                 }
                 return RebaseOutcome::Failed(e.to_string());
             }
@@ -495,10 +459,7 @@ pub(crate) fn exec_rebase_inner(
 
     if output.status.success() {
         if stashed {
-            let _ = std::process::Command::new("git")
-                .args(["stash", "pop"])
-                .current_dir(worktree_path)
-                .output();
+            let _ = Git::stash_pop_by_message(worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
         }
         return RebaseOutcome::Rebased;
     }
@@ -517,10 +478,7 @@ pub(crate) fn exec_rebase_inner(
             try_auto_resolve_conflicts(worktree_path, &conflicted, auto_resolve_files)
         {
             if stashed {
-                let _ = std::process::Command::new("git")
-                    .args(["stash", "pop"])
-                    .current_dir(worktree_path)
-                    .output();
+                let _ = Git::stash_pop_by_message(worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
             }
             return outcome;
         }
@@ -535,10 +493,7 @@ pub(crate) fn exec_rebase_inner(
     }
 
     if stashed {
-        let _ = std::process::Command::new("git")
-            .args(["stash", "pop"])
-            .current_dir(worktree_path)
-            .output();
+        let _ = Git::stash_pop_by_message(worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
     }
     RebaseOutcome::Failed(text.to_string())
 }
@@ -641,7 +596,7 @@ pub(super) fn exec_squash_merge(app: &mut App) {
             } => {
                 let _ = tx.send(SquashMergeProgress {
                     phase: String::new(),
-                    outcome: Some(SquashMergeOutcome::Conflict {
+                    outcome: Some(SquashMergeOutcome::RebaseConflict {
                         conflicted,
                         auto_merged,
                     }),
@@ -709,7 +664,7 @@ pub(super) fn exec_squash_merge(app: &mut App) {
             }) => {
                 let _ = tx.send(SquashMergeProgress {
                     phase: String::new(),
-                    outcome: Some(SquashMergeOutcome::Conflict {
+                    outcome: Some(SquashMergeOutcome::MergeConflict {
                         conflicted,
                         auto_merged,
                     }),

@@ -59,19 +59,13 @@ impl Git {
 
         // Step 0: stash any dirty working tree on main (e.g. .DS_Store, editor
         // swap files) so `git merge --squash` doesn't fail with "your local
-        // changes would be overwritten". Pop unconditionally after merge/commit.
-        let stash_out = Command::new("git")
-            .args(["stash", "--include-untracked"])
-            .current_dir(repo_root)
-            .output();
-        let did_stash = stash_out
-            .as_ref()
-            .ok()
-            .map(|o| {
-                o.status.success()
-                    && !String::from_utf8_lossy(&o.stdout).contains("No local changes")
-            })
-            .unwrap_or(false);
+        // changes would be overwritten". Pop only this named stash after
+        // merge/commit, so user-created stashes are never consumed.
+        let did_stash = Self::stash_push_named_include_untracked(
+            repo_root,
+            Self::PRE_SQUASH_MERGE_STASH_MESSAGE,
+        )
+        .unwrap_or(false);
 
         // Step 1: pull main so we're merging onto the latest upstream.
         // --ff-only prevents accidental merge commits on main itself.
@@ -119,22 +113,7 @@ impl Git {
 
         // Conflict detected — return structured info instead of bailing
         if !merge_out.status.success() {
-            let mut conflicted = Vec::new();
-            let mut auto_merged = Vec::new();
-            for line in text.lines() {
-                if line.starts_with("CONFLICT") {
-                    // Extract file path from various CONFLICT formats:
-                    // "CONFLICT (content): Merge conflict in <path>"
-                    // "CONFLICT (add/add): Merge conflict in <path>"
-                    if let Some(path) = line.rsplit("Merge conflict in ").next() {
-                        conflicted.push(path.trim().to_string());
-                    } else {
-                        conflicted.push(line.to_string());
-                    }
-                } else if let Some(path) = line.strip_prefix("Auto-merging ") {
-                    auto_merged.push(path.trim().to_string());
-                }
-            }
+            let (conflicted, auto_merged) = Self::parse_conflict_files_from_output(text, repo_root);
             // If we parsed CONFLICT lines, return structured result.
             // Don't pop stash here — merge state is dirty; stash pop would
             // conflict. The stash survives merge_abort() and gets popped by
@@ -148,10 +127,7 @@ impl Git {
             }
             // Non-conflict failure — restore stash before bailing
             if did_stash {
-                let _ = Command::new("git")
-                    .args(["stash", "pop"])
-                    .current_dir(repo_root)
-                    .output();
+                let _ = Self::stash_pop_by_message(repo_root, Self::PRE_SQUASH_MERGE_STASH_MESSAGE);
             }
             anyhow::bail!("{}", text);
         }
@@ -174,10 +150,7 @@ impl Git {
             let out = String::from_utf8_lossy(&commit_out.stdout);
             let err = String::from_utf8_lossy(&commit_out.stderr);
             if did_stash {
-                let _ = Command::new("git")
-                    .args(["stash", "pop"])
-                    .current_dir(repo_root)
-                    .output();
+                let _ = Self::stash_pop_by_message(repo_root, Self::PRE_SQUASH_MERGE_STASH_MESSAGE);
             }
             if out.contains("nothing to commit") || err.contains("nothing to commit") {
                 // Clean up the SQUASH_MSG that git leaves behind
@@ -191,10 +164,7 @@ impl Git {
 
         // Restore any stashed changes now that merge+commit is complete
         if did_stash {
-            let _ = Command::new("git")
-                .args(["stash", "pop"])
-                .current_dir(repo_root)
-                .output();
+            let _ = Self::stash_pop_by_message(repo_root, Self::PRE_SQUASH_MERGE_STASH_MESSAGE);
         }
 
         let out = String::from_utf8_lossy(&commit_out.stdout)
@@ -242,10 +212,7 @@ impl Git {
                 .current_dir(repo_root)
                 .output();
             // Pop stash that was pushed at the start of squash_merge_into_main()
-            let _ = Command::new("git")
-                .args(["stash", "pop"])
-                .current_dir(repo_root)
-                .output();
+            let _ = Self::stash_pop_by_message(repo_root, Self::PRE_SQUASH_MERGE_STASH_MESSAGE);
         }
         // Clean up SQUASH_MSG file that git leaves behind
         let _ = std::fs::remove_file(repo_root.join(".git/SQUASH_MSG"));

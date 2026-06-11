@@ -476,6 +476,14 @@ impl App {
         if let Some(slot) = self.active_slot.get(&branch_name).cloned() {
             if let Ok(pid) = slot.parse::<u32>() {
                 crate::backend::kill_process_tree_with_force_followup(pid);
+                if self
+                    .god_file_modularize_queue
+                    .as_ref()
+                    .and_then(|queue| queue.active_slot.as_deref())
+                    == Some(slot.as_str())
+                {
+                    self.god_file_modularize_queue = None;
+                }
                 self.set_status("Cancelled Claude");
             }
         }

@@ -20,6 +20,17 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
     if app.viewer_edit_mode {
         return false;
     }
+    if app.rebase_op_receiver.is_some() || app.background_op_receiver.is_some() {
+        return false;
+    }
+    if app
+        .git_actions_panel
+        .as_ref()
+        .map(|panel| panel.squash_merge_receiver.is_some())
+        .unwrap_or(false)
+    {
+        return false;
+    }
 
     let project = match &app.project {
         Some(p) => p.clone(),

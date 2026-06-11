@@ -9,6 +9,9 @@ use std::process::Command;
 use super::Git;
 
 impl Git {
+    pub const PRE_REBASE_STASH_MESSAGE: &'static str = "azureal-pre-rebase";
+    pub const PRE_SQUASH_MERGE_STASH_MESSAGE: &'static str = "azureal-pre-squash-merge";
+
     /// Stage all changes (tracked + untracked) via `git add -A`, then
     /// untrack any files that match `.gitignore` patterns. `git add -A`
     /// stages modifications to already-tracked files even if they're in
@@ -137,6 +140,55 @@ impl Git {
             anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Stash tracked and untracked changes with a message. Returns true when
+    /// Git actually created a stash entry.
+    pub fn stash_push_named_include_untracked(worktree_path: &Path, message: &str) -> Result<bool> {
+        let output = Command::new("git")
+            .args(["stash", "push", "--include-untracked", "-m", message])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to run git stash")?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(!stdout.contains("No local changes"))
+    }
+
+    /// Pop the newest stash whose subject contains `message`.
+    /// Returns false when no matching stash entry exists.
+    pub fn stash_pop_by_message(worktree_path: &Path, message: &str) -> Result<bool> {
+        let list = Command::new("git")
+            .args(["stash", "list", "--format=%gd%x00%gs"])
+            .current_dir(worktree_path)
+            .output()
+            .context("Failed to list git stashes")?;
+        if !list.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&list.stderr).trim());
+        }
+
+        for line in String::from_utf8_lossy(&list.stdout).lines() {
+            let mut parts = line.splitn(2, '\0');
+            let Some(stash_ref) = parts.next() else {
+                continue;
+            };
+            let subject = parts.next().unwrap_or("");
+            if subject.contains(message) {
+                let output = Command::new("git")
+                    .args(["stash", "pop", stash_ref])
+                    .current_dir(worktree_path)
+                    .output()
+                    .context("Failed to run git stash pop")?;
+                if !output.status.success() {
+                    anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+                }
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// Pop the most recent stash entry via `git stash pop`

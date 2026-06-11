@@ -1,13 +1,14 @@
 //! God File System — scans project for oversized source files (>1000 LOC)
-//! and spawns concurrent Claude sessions to modularize them. Includes scope
+//! and spawns serial Claude sessions to modularize them. Includes scope
 //! mode for user-customizable directory filtering with persistence.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::app::types::{
-    GodFileEntry, HealthPanel, ModuleStyleDialog, PythonModuleStyle, RustModuleStyle,
+    GodFileEntry, GodFileModularizeItem, GodFileModularizeQueue, HealthPanel, ModuleStyleDialog,
+    PythonModuleStyle, RustModuleStyle,
 };
 use crate::backend::AgentProcess;
 
@@ -323,8 +324,8 @@ impl App {
         }
     }
 
-    /// Spawn modularization sessions for ALL checked god files simultaneously.
-    /// Each file gets its own concurrent Claude process on the main worktree.
+    /// Queue modularization sessions for all checked god files.
+    /// Only one GFM agent runs at a time; the next starts after the previous exits.
     pub fn god_file_modularize(
         &mut self,
         claude_process: &AgentProcess,
@@ -363,90 +364,171 @@ impl App {
             .selected_model
             .clone()
             .unwrap_or_else(|| crate::app::state::default_model().to_string());
-        let mut spawned = 0usize;
-        let mut failed = 0usize;
-        let mut last_session_id: Option<i64> = None;
-        for (rel_path, lines) in &checked {
-            let prompt = build_modularize_prompt(rel_path, *lines, rust_style, python_style);
-            let filename = Path::new(rel_path)
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_else(|| rel_path.clone());
-            let session_name = format!("[GFM] {}", filename);
 
-            // Create a dedicated store session for this GFM file
-            let store_id = self.session_store.as_ref().and_then(|store| {
-                store.create_session(&branch).ok().map(|id| {
-                    let _ = store.rename_session(id, &session_name);
-                    id
+        let total = checked.len();
+        self.god_file_modularize_queue = Some(GodFileModularizeQueue {
+            branch,
+            worktree_path: wt_path,
+            rust_style,
+            python_style,
+            selected_model,
+            pending: checked
+                .into_iter()
+                .map(|(rel_path, line_count)| GodFileModularizeItem {
+                    rel_path,
+                    line_count,
                 })
-            });
+                .collect::<VecDeque<_>>(),
+            total,
+            completed: 0,
+            failed: 0,
+            active_slot: None,
+        });
+        self.spawn_next_god_file_modularization(claude_process);
+    }
 
-            match claude_process.spawn(&wt_path, &prompt, None, Some(selected_model.as_str())) {
-                Ok((rx, pid)) => {
-                    let slot = pid.to_string();
-                    // Map PID to the store session so post-exit flow persists events correctly
-                    if let Some(sid) = store_id {
-                        self.pid_session_target
-                            .insert(slot.clone(), (sid, wt_path.clone(), 0, 0));
-                        last_session_id = Some(sid);
-                    }
-                    self.pending_session_names.push((slot, session_name));
-                    self.register_claude(branch.clone(), pid, rx, Some(selected_model.as_str()));
-                    spawned += 1;
-                }
-                Err(_) => {
-                    failed += 1;
-                }
-            }
+    fn clear_session_pane_for_gfm(&mut self, session_id: Option<i64>) {
+        if let Some(sid) = session_id {
+            self.current_session_id = Some(sid);
         }
+        self.display_events.clear();
+        self.session_lines.clear();
+        self.session_buffer.clear();
+        self.session_scroll = usize::MAX;
+        self.rendered_lines_cache.clear();
+        self.session_viewport_cache.clear();
+        self.animation_line_indices.clear();
+        self.message_bubble_positions.clear();
+        self.clickable_paths.clear();
+        self.clickable_tables.clear();
+        self.rendered_events_count = 0;
+        self.rendered_content_line_count = 0;
+        self.rendered_events_start = 0;
+        self.render_seq_applied = self.render_thread.current_seq();
+        self.render_in_flight = false;
+        self.invalidate_render_cache();
+        self.event_parser = crate::events::EventParser::new();
+        self.agent_processor_needs_reset = true;
+        self.session_file_path = None;
+        self.session_file_modified = None;
+        self.session_file_size = 0;
+        self.session_file_parse_offset = 0;
+        self.session_file_dirty = false;
+        self.current_todos.clear();
+        self.subagent_todos.clear();
+        self.active_task_tool_ids.clear();
+        self.chars_since_compaction = 0;
+        self.token_badge_cache = None;
+        self.update_title_session_name();
+    }
 
-        // Clear session pane so GFM output starts fresh (otherwise old session
-        // content stays visible and new output appends below it)
-        if spawned > 0 {
-            // Point current_session_id to the last (active slot's) session
-            if let Some(sid) = last_session_id {
-                self.current_session_id = Some(sid);
-            }
-            self.display_events.clear();
-            self.session_lines.clear();
-            self.session_buffer.clear();
-            self.session_scroll = usize::MAX;
-            self.rendered_lines_cache.clear();
-            self.session_viewport_cache.clear();
-            self.animation_line_indices.clear();
-            self.message_bubble_positions.clear();
-            self.clickable_paths.clear();
-            self.clickable_tables.clear();
-            self.rendered_events_count = 0;
-            self.rendered_content_line_count = 0;
-            self.rendered_events_start = 0;
-            self.render_seq_applied = self.render_thread.current_seq();
-            self.render_in_flight = false;
-            self.invalidate_render_cache();
-            self.event_parser = crate::events::EventParser::new();
-            self.agent_processor_needs_reset = true;
-            self.session_file_path = None;
-            self.session_file_modified = None;
-            self.session_file_size = 0;
-            self.session_file_parse_offset = 0;
-            self.session_file_dirty = false;
-            self.current_todos.clear();
-            self.subagent_todos.clear();
-            self.active_task_tool_ids.clear();
-            self.chars_since_compaction = 0;
-            self.token_badge_cache = None;
-            self.update_title_session_name();
-        }
-
-        if failed == 0 {
-            self.set_status(format!("Modularizing {} files simultaneously", spawned));
+    fn finish_god_file_modularization_queue(&mut self) {
+        let Some(queue) = self.god_file_modularize_queue.take() else {
+            return;
+        };
+        let succeeded = queue.completed.saturating_sub(queue.failed);
+        if queue.failed == 0 {
+            self.set_status(format!(
+                "Modularized {}/{} files serially",
+                succeeded, queue.total
+            ));
         } else {
             self.set_status(format!(
-                "Modularizing {} files ({} failed to start)",
-                spawned, failed
+                "Modularized {}/{} files serially ({} failed)",
+                succeeded, queue.total, queue.failed
             ));
         }
+    }
+
+    pub(crate) fn spawn_next_god_file_modularization(&mut self, claude_process: &AgentProcess) {
+        let Some(queue) = self.god_file_modularize_queue.as_mut() else {
+            return;
+        };
+        if queue.active_slot.is_some() {
+            return;
+        }
+        let Some(item) = queue.pending.pop_front() else {
+            self.finish_god_file_modularization_queue();
+            return;
+        };
+
+        let branch = queue.branch.clone();
+        let wt_path = queue.worktree_path.clone();
+        let rust_style = queue.rust_style;
+        let python_style = queue.python_style;
+        let selected_model = queue.selected_model.clone();
+        let total = queue.total;
+        let next_index = queue.completed + 1;
+
+        let prompt =
+            build_modularize_prompt(&item.rel_path, item.line_count, rust_style, python_style);
+        let filename = Path::new(&item.rel_path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| item.rel_path.clone());
+        let session_name = format!("[GFM] {}", filename);
+
+        // Create a dedicated store session for this GFM file.
+        let store_id = self.session_store.as_ref().and_then(|store| {
+            store.create_session(&branch).ok().map(|id| {
+                let _ = store.rename_session(id, &session_name);
+                id
+            })
+        });
+
+        match claude_process.spawn(&wt_path, &prompt, None, Some(selected_model.as_str())) {
+            Ok((rx, pid)) => {
+                let slot = pid.to_string();
+                if let Some(ref mut queue) = self.god_file_modularize_queue {
+                    queue.active_slot = Some(slot.clone());
+                }
+                if let Some(sid) = store_id {
+                    self.pid_session_target
+                        .insert(slot.clone(), (sid, wt_path.clone(), 0, 0));
+                }
+                self.pending_session_names.push((slot, session_name));
+                self.register_claude(branch, pid, rx, Some(selected_model.as_str()));
+                self.clear_session_pane_for_gfm(store_id);
+                self.set_status(format!(
+                    "Modularizing {}/{}: {}",
+                    next_index, total, item.rel_path
+                ));
+            }
+            Err(e) => {
+                if let Some(ref mut queue) = self.god_file_modularize_queue {
+                    queue.failed += queue.pending.len() + 1;
+                    queue.completed = queue.total;
+                    queue.pending.clear();
+                    queue.active_slot = None;
+                }
+                self.set_status(format!("Failed to start GFM: {}", e));
+                self.god_file_modularize_queue = None;
+            }
+        }
+    }
+
+    pub(crate) fn continue_god_file_modularization_after_exit(
+        &mut self,
+        slot_id: &str,
+        code: Option<i32>,
+        claude_process: &AgentProcess,
+    ) -> bool {
+        let Some(queue) = self.god_file_modularize_queue.as_ref() else {
+            return false;
+        };
+        if queue.active_slot.as_deref() != Some(slot_id) {
+            return false;
+        }
+
+        if let Some(ref mut queue) = self.god_file_modularize_queue {
+            queue.active_slot = None;
+            queue.completed += 1;
+            if code != Some(0) {
+                queue.failed += 1;
+            }
+        }
+        self.spawn_next_god_file_modularization(claude_process);
+        true
     }
 
     /// Scan the project for source files exceeding the LOC threshold.

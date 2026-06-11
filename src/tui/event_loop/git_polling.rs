@@ -90,7 +90,7 @@ pub fn poll_squash_merge(app: &mut App) -> bool {
                 app.last_auto_rebase_check =
                     std::time::Instant::now() - std::time::Duration::from_secs(10);
             }
-            SquashMergeOutcome::Conflict {
+            SquashMergeOutcome::RebaseConflict {
                 conflicted,
                 auto_merged,
             } => {
@@ -102,6 +102,33 @@ pub fn poll_squash_merge(app: &mut App) -> bool {
                         selected: 0,
                         continue_with_merge: true,
                     });
+                    crate::tui::input_git_actions::refresh_changed_files(p);
+                    crate::tui::input_git_actions::refresh_commit_log(p);
+                }
+            }
+            SquashMergeOutcome::MergeConflict {
+                conflicted,
+                auto_merged,
+            } => {
+                if let Some(ref mut p) = app.git_actions_panel {
+                    crate::git::Git::cleanup_squash_merge_state(&p.repo_root);
+                    let files = if conflicted.is_empty() {
+                        "unknown files".to_string()
+                    } else {
+                        conflicted.join(", ")
+                    };
+                    let auto_note = if auto_merged.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" Auto-merged: {}.", auto_merged.join(", "))
+                    };
+                    p.result_message = Some((
+                        format!(
+                            "Squash merge conflicted on main; aborted merge state. Resolve manually on main or rebase first. Conflicts: {}.{}",
+                            files, auto_note
+                        ),
+                        true,
+                    ));
                     crate::tui::input_git_actions::refresh_changed_files(p);
                     crate::tui::input_git_actions::refresh_commit_log(p);
                 }

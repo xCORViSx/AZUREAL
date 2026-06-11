@@ -7,6 +7,39 @@ use std::process::Command;
 use super::Git;
 use crate::models::RebaseResult;
 
+fn push_unique(values: &mut Vec<String>, value: String) {
+    if !value.is_empty() && !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn parse_conflict_path_from_line(line: &str) -> Option<String> {
+    if !line.starts_with("CONFLICT") {
+        return None;
+    }
+
+    if let Some((_, path)) = line.rsplit_once("Merge conflict in ") {
+        return Some(path.trim().to_string());
+    }
+
+    let detail = line
+        .split_once("): ")
+        .map(|(_, detail)| detail)
+        .or_else(|| line.split_once(": ").map(|(_, detail)| detail))?;
+
+    // Git reports modify/delete as:
+    // CONFLICT (modify/delete): path deleted in HEAD and modified in <commit>.
+    if let Some((path, _)) = detail.split_once(" deleted in ") {
+        return Some(path.trim().to_string());
+    }
+
+    if let Some(path) = detail.strip_prefix("both added: ") {
+        return Some(path.trim().to_string());
+    }
+
+    None
+}
+
 impl Git {
     /// Check if a rebase is currently in progress
     pub fn is_rebase_in_progress(worktree_path: &Path) -> bool {
@@ -37,6 +70,38 @@ impl Git {
             .collect();
 
         Ok(files)
+    }
+
+    /// Parse conflicted and auto-merged file lists from git merge/rebase output.
+    /// When the worktree index has unmerged entries, prefer that index state over
+    /// text parsing because Git emits many conflict formats.
+    pub(crate) fn parse_conflict_files_from_output(
+        text: &str,
+        worktree_path: &Path,
+    ) -> (Vec<String>, Vec<String>) {
+        let mut conflicted = Vec::new();
+        let mut auto_merged = Vec::new();
+
+        for line in text.lines() {
+            if let Some(path) = line.strip_prefix("Auto-merging ") {
+                push_unique(&mut auto_merged, path.trim().to_string());
+            } else if let Some(path) = parse_conflict_path_from_line(line) {
+                push_unique(&mut conflicted, path);
+            } else if line.starts_with("CONFLICT") {
+                push_unique(&mut conflicted, line.trim().to_string());
+            }
+        }
+
+        if let Ok(index_conflicts) = Self::get_conflicted_files(worktree_path) {
+            if !index_conflicts.is_empty() {
+                conflicted.clear();
+                for path in index_conflicts {
+                    push_unique(&mut conflicted, path);
+                }
+            }
+        }
+
+        (conflicted, auto_merged)
     }
 
     /// Abort a rebase in progress
@@ -178,6 +243,28 @@ mod tests {
         // Should either return empty or error — either way shouldn't panic
         // The command spawns but git fails; anyhow wraps the error
         let _ = result;
+    }
+
+    #[test]
+    fn test_parse_conflict_files_content_conflict() {
+        let text = "Auto-merging src/lib.rs\nCONFLICT (content): Merge conflict in src/lib.rs\n";
+        let (conflicted, auto_merged) = Git::parse_conflict_files_from_output(
+            text,
+            Path::new("/tmp/no_such_dir_for_rebase_test"),
+        );
+        assert_eq!(conflicted, vec!["src/lib.rs"]);
+        assert_eq!(auto_merged, vec!["src/lib.rs"]);
+    }
+
+    #[test]
+    fn test_parse_conflict_files_modify_delete_conflict() {
+        let text =
+            "CONFLICT (modify/delete): src/old.rs deleted in HEAD and modified in feature.\n";
+        let (conflicted, _) = Git::parse_conflict_files_from_output(
+            text,
+            Path::new("/tmp/no_such_dir_for_rebase_test"),
+        );
+        assert_eq!(conflicted, vec!["src/old.rs"]);
     }
 
     // ── Rebase abort on non-rebase repo ──

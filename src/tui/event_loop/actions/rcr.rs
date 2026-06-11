@@ -76,21 +76,9 @@ fn send_rcr_completion(tx: mpsc::Sender<BackgroundOpProgress>, completion: RcrCo
 fn run_accept_rcr(rcr: RcrSession, main_branch: String, tx: mpsc::Sender<BackgroundOpProgress>) {
     send_phase(&tx, "Restoring rebased worktree...");
     // Pop any stash left by exec_rebase_inner's pre-rebase stash on the worktree.
-    let _ = std::process::Command::new("git")
-        .args(["stash", "pop"])
-        .current_dir(&rcr.worktree_path)
-        .output();
+    let _ = Git::stash_pop_by_message(&rcr.worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
 
     let completion = if rcr.continue_with_merge {
-        send_phase(&tx, "Restoring merge stash...");
-        // Pop any stash left from the pre-merge stash in squash_merge_into_main().
-        // The merge conflicted, so the stash was never popped. Pop it before
-        // re-calling squash_merge (which would stash again, orphaning the first).
-        let _ = std::process::Command::new("git")
-            .args(["stash", "pop"])
-            .current_dir(&rcr.repo_root)
-            .output();
-
         send_phase(&tx, "Pushing rebased branch...");
         let branch_push_note = match Git::push(&rcr.worktree_path) {
             Ok(_) => String::new(),
@@ -158,6 +146,8 @@ fn run_abort_rcr(rcr: RcrSession, tx: mpsc::Sender<BackgroundOpProgress>) {
         .args(["rebase", "--abort"])
         .current_dir(&rcr.worktree_path)
         .output();
+    send_phase(&tx, "Restoring pre-rebase stash...");
+    let _ = Git::stash_pop_by_message(&rcr.worktree_path, Git::PRE_REBASE_STASH_MESSAGE);
     send_rcr_completion(
         tx,
         RcrCompletion {
@@ -171,7 +161,9 @@ fn run_abort_rcr(rcr: RcrSession, tx: mpsc::Sender<BackgroundOpProgress>) {
 mod tests {
     use super::*;
     use crate::app::types::RcrSession;
+    use std::fs;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::time::Duration;
 
     fn make_rcr(branch: &str, continue_merge: bool) -> RcrSession {
@@ -200,6 +192,25 @@ mod tests {
                 return completion;
             }
         }
+    }
+
+    fn run_git(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
+        Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap_or_else(|e| panic!("git {:?} failed to spawn: {}", args, e))
+    }
+
+    fn run_git_ok(dir: &std::path::Path, args: &[&str]) {
+        let output = run_git(dir, args);
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     // ── accept_rcr with no rcr_session (None) ──
@@ -369,6 +380,73 @@ mod tests {
         let completion = recv_rcr_completion(&mut app);
         assert!(completion.status_msg.contains("RCR cancelled"));
         assert!(completion.post_merge_dialog.is_none());
+    }
+
+    #[test]
+    fn test_abort_rcr_restores_pre_rebase_stash() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path();
+
+        run_git_ok(repo_path, &["init", "-q", "-b", "main"]);
+        run_git_ok(repo_path, &["config", "user.email", "test@example.com"]);
+        run_git_ok(repo_path, &["config", "user.name", "Test"]);
+
+        fs::write(repo_path.join("f.txt"), "base\n").unwrap();
+        run_git_ok(repo_path, &["add", "f.txt"]);
+        run_git_ok(repo_path, &["commit", "-qm", "base"]);
+
+        run_git_ok(repo_path, &["switch", "-q", "-c", "feature"]);
+        fs::write(repo_path.join("f.txt"), "feature\n").unwrap();
+        run_git_ok(repo_path, &["commit", "-am", "feature", "-q"]);
+
+        run_git_ok(repo_path, &["switch", "-q", "main"]);
+        fs::write(repo_path.join("f.txt"), "main\n").unwrap();
+        run_git_ok(repo_path, &["commit", "-am", "main", "-q"]);
+
+        run_git_ok(repo_path, &["switch", "-q", "feature"]);
+        fs::write(repo_path.join("scratch.txt"), "scratch\n").unwrap();
+        run_git_ok(
+            repo_path,
+            &[
+                "stash",
+                "push",
+                "--include-untracked",
+                "-m",
+                "azureal-pre-rebase",
+            ],
+        );
+
+        let rebase = run_git(repo_path, &["rebase", "main"]);
+        assert!(!rebase.status.success(), "rebase should conflict");
+        assert!(
+            !repo_path.join("scratch.txt").exists(),
+            "pre-rebase stash should hide scratch file before abort"
+        );
+
+        let rcr = RcrSession {
+            branch: "feature".to_string(),
+            display_name: "feature".to_string(),
+            worktree_path: repo_path.to_path_buf(),
+            repo_root: repo_path.to_path_buf(),
+            slot_id: "42".to_string(),
+            session_id: None,
+            approval_pending: true,
+            continue_with_merge: false,
+        };
+        let (tx, _rx) = mpsc::channel();
+        run_abort_rcr(rcr, tx);
+
+        assert!(
+            repo_path.join("scratch.txt").exists(),
+            "RCR abort should restore the pre-rebase stash"
+        );
+        let stash_list = run_git(repo_path, &["stash", "list"]);
+        assert!(
+            String::from_utf8_lossy(&stash_list.stdout)
+                .trim()
+                .is_empty(),
+            "RCR abort should pop the pre-rebase stash"
+        );
     }
 
     // ── accept_rcr with session_id triggers cleanup ──

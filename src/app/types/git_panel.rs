@@ -59,7 +59,7 @@ pub struct GitCommitOverlay {
     pub receiver: Option<std::sync::mpsc::Receiver<Result<GeneratedCommitMessage, String>>>,
 }
 
-/// Conflict resolution overlay — shown when squash merge encounters conflicts.
+/// Conflict resolution overlay — shown when rebase encounters conflicts.
 /// Displays conflicted/auto-merged file lists and offers Claude-assisted resolution.
 #[derive(Debug)]
 pub struct GitConflictOverlay {
@@ -212,8 +212,13 @@ pub enum SquashMergeOutcome {
         display_name: String,
         worktree_path: PathBuf,
     },
-    /// Rebase or merge hit conflicts — show conflict overlay
-    Conflict {
+    /// Pre-merge rebase hit conflicts — show RCR overlay in the feature worktree
+    RebaseConflict {
+        conflicted: Vec<String>,
+        auto_merged: Vec<String>,
+    },
+    /// Squash merge hit conflicts on main — do not route through rebase RCR
+    MergeConflict {
         conflicted: Vec<String>,
         auto_merged: Vec<String>,
     },
