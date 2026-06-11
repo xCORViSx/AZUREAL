@@ -256,3 +256,65 @@ impl Git {
         Self::untrack_gitignored_files(repo_root);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Git;
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
+    fn run_git(dir: &Path, args: &[&str]) -> std::process::Output {
+        Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap_or_else(|e| panic!("git {:?} failed to spawn: {}", args, e))
+    }
+
+    fn run_git_ok(dir: &Path, args: &[&str]) {
+        let output = run_git(dir, args);
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout: {}\nstderr: {}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn test_stash_pop_by_message_preserves_unmatched_user_stash() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path();
+
+        run_git_ok(repo_path, &["init", "-q", "-b", "main"]);
+        run_git_ok(repo_path, &["config", "user.email", "test@example.com"]);
+        run_git_ok(repo_path, &["config", "user.name", "Test"]);
+
+        fs::write(repo_path.join("tracked.txt"), "base\n").unwrap();
+        run_git_ok(repo_path, &["add", "tracked.txt"]);
+        run_git_ok(repo_path, &["commit", "-qm", "base"]);
+
+        fs::write(repo_path.join("scratch.txt"), "user stash\n").unwrap();
+        run_git_ok(
+            repo_path,
+            &["stash", "push", "--include-untracked", "-m", "user-scratch"],
+        );
+
+        let popped = Git::stash_pop_by_message(repo_path, Git::PRE_REBASE_STASH_MESSAGE).unwrap();
+        assert!(!popped, "non-Azureal stash should not be popped");
+        assert!(
+            !repo_path.join("scratch.txt").exists(),
+            "user stash should still hide scratch.txt"
+        );
+
+        let stash_list = run_git(repo_path, &["stash", "list"]);
+        let stash_text = String::from_utf8_lossy(&stash_list.stdout);
+        assert!(
+            stash_text.contains("user-scratch"),
+            "user stash should remain in stash list: {}",
+            stash_text
+        );
+    }
+}
