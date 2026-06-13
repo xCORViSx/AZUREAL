@@ -350,31 +350,6 @@ fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
     let mut total = 0usize;
     let mut documented = 0usize;
 
-    /// Patterns that indicate a documentable item (checked against trimmed line starts)
-    const ITEM_PREFIXES: &[&str] = &[
-        "pub fn ",
-        "fn ",
-        "pub struct ",
-        "struct ",
-        "pub enum ",
-        "enum ",
-        "pub trait ",
-        "trait ",
-        "pub const ",
-        "const ",
-        "pub static ",
-        "static ",
-        "pub type ",
-        "type ",
-        "pub async fn ",
-        "async fn ",
-        "pub unsafe fn ",
-        "unsafe fn ",
-        "impl ",
-        "pub mod ",
-        "mod ",
-    ];
-
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         // Skip blank lines, comments, attributes, use/extern/cfg
@@ -388,28 +363,105 @@ fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
             continue;
         }
 
-        // Check if this line starts a documentable item
-        let is_item = ITEM_PREFIXES.iter().any(|p| trimmed.starts_with(p));
-        if !is_item {
+        if !is_documentable_item_line(trimmed) {
             continue;
         }
 
         total += 1;
-        // Walk backwards from this line to find a doc comment (skip blanks + attributes)
+        // Walk backwards from this line to find a doc comment.
         let mut j = i;
         while j > 0 {
             j -= 1;
             let prev = lines[j].trim();
-            if prev.is_empty() || prev.starts_with("#[") || prev.starts_with("#![") {
-                continue;
-            }
-            if prev.starts_with("///") || prev.starts_with("//!") {
+            if is_doc_comment_line(prev) {
                 documented += 1;
+                break;
+            }
+            if prev.is_empty()
+                || prev.starts_with("#[")
+                || prev.starts_with("#![")
+                || is_plain_comment_line(prev)
+            {
+                continue;
             }
             break;
         }
     }
     (total, documented)
+}
+
+fn is_documentable_item_line(trimmed: &str) -> bool {
+    let Some(after_visibility) = strip_rust_visibility(trimmed) else {
+        return false;
+    };
+    let item = strip_rust_item_modifiers(after_visibility);
+
+    starts_with_rust_keyword(item, "fn")
+        || starts_with_rust_keyword(item, "struct")
+        || starts_with_rust_keyword(item, "enum")
+        || starts_with_rust_keyword(item, "trait")
+        || starts_with_rust_keyword(item, "const")
+        || starts_with_rust_keyword(item, "static")
+        || starts_with_rust_keyword(item, "type")
+        || starts_with_rust_keyword(item, "mod")
+        || starts_with_impl_keyword(item)
+}
+
+fn strip_rust_visibility(trimmed: &str) -> Option<&str> {
+    if let Some(rest) = trimmed.strip_prefix("pub ") {
+        return Some(rest.trim_start());
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("pub(") {
+        let close = rest.find(')')?;
+        return Some(rest[close + 1..].trim_start());
+    }
+
+    Some(trimmed)
+}
+
+fn strip_rust_item_modifiers(mut line: &str) -> &str {
+    loop {
+        if let Some(rest) = line.strip_prefix("async ") {
+            line = rest.trim_start();
+        } else if let Some(rest) = line.strip_prefix("unsafe ") {
+            line = rest.trim_start();
+        } else {
+            return line;
+        }
+    }
+}
+
+fn starts_with_rust_keyword(line: &str, keyword: &str) -> bool {
+    let Some(rest) = line.strip_prefix(keyword) else {
+        return false;
+    };
+    rest.chars()
+        .next()
+        .map(|c| c.is_whitespace() || matches!(c, '<' | '(' | ';'))
+        .unwrap_or(false)
+}
+
+fn starts_with_impl_keyword(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("impl") else {
+        return false;
+    };
+    rest.chars()
+        .next()
+        .map(|c| c.is_whitespace() || c == '<')
+        .unwrap_or(false)
+}
+
+fn is_doc_comment_line(trimmed: &str) -> bool {
+    trimmed.starts_with("///")
+        || trimmed.starts_with("//!")
+        || trimmed.starts_with("/**")
+        || trimmed.starts_with("/*!")
+}
+
+fn is_plain_comment_line(trimmed: &str) -> bool {
+    (trimmed.starts_with("//") && !is_doc_comment_line(trimmed))
+        || (trimmed.starts_with("/*") && !is_doc_comment_line(trimmed))
 }
 
 /// Build the documentation health prompt for a file missing doc comments.
@@ -483,6 +535,14 @@ mod tests {
     #[test]
     fn test_scan_pub_fn() {
         let (total, documented) = scan_content("/// Documented\npub fn bar() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_restricted_visibility_fn() {
+        let (total, documented) =
+            scan_content("/// Configure the window\npub(crate) fn configure_window() {}");
         assert_eq!(total, 1);
         assert_eq!(documented, 1);
     }
@@ -614,6 +674,13 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_restricted_visibility_async_fn() {
+        let (total, documented) = scan_content("/// Fetch data\npub(super) async fn fetch() {}");
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
     fn test_scan_unsafe_fn() {
         let (total, documented) = scan_content("/// Unsafe function\nunsafe fn danger() {}");
         assert_eq!(total, 1);
@@ -730,6 +797,49 @@ fn separated() {}
         assert_eq!(documented, 1);
     }
 
+    #[test]
+    fn test_scan_plain_comment_between_doc_and_item() {
+        let content = "\
+/// Actual doc comment.
+// Ordinary explanatory comment.
+pub(crate) const FOO: u32 = 1;
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_windows_platform_patterns_from_external_project() {
+        let content = "\
+/// Provides lightweight per-thread mutable state.
+use std::cell::Cell;
+
+// Declares UI-thread-local guards used by the Windows platform hook.
+thread_local! {
+    /// Tracks whether the current UI thread has already applied native window styling.
+    static WINDOW_STYLED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Applies Windows titlebar styling once the native window exists.
+pub(crate) fn configure_window_once() {}
+
+/// Configure Windows window with extended frame for blended titlebar effect.
+fn configure_window() {
+    /// DWM attribute ID that opts the native frame into dark mode.
+    // DWMWA_USE_IMMERSIVE_DARK_MODE = 20.
+    // Enables dark mode for window frame/titlebar.
+    const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+
+    /// `WM_SETICON` selector for the large icon slot.
+    const ICON_BIG: usize = 1;
+}
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 5);
+        assert_eq!(documented, 5);
+    }
+
     // ── scan_file_doc_coverage: skipped lines ──
 
     #[test]
@@ -761,6 +871,17 @@ fn foo() {}
         let (total, documented) = scan_content(content);
         assert_eq!(total, 1);
         // Regular // comment is not a doc comment
+        assert_eq!(documented, 0);
+    }
+
+    #[test]
+    fn test_scan_plain_comment_without_doc_stays_undocumented() {
+        let content = "\
+// Ordinary explanatory comment.
+pub(crate) const FOO: u32 = 1;
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 1);
         assert_eq!(documented, 0);
     }
 
@@ -828,6 +949,20 @@ use std::path::Path;
         let (total, documented) = scan_content("/// A public const\npub const SIZE: usize = 10;");
         assert_eq!(total, 1);
         assert_eq!(documented, 1);
+    }
+
+    #[test]
+    fn test_scan_restricted_visibility_consts_and_statics() {
+        let content = "\
+/// Styled window id
+pub(crate) const WINDOW_STYLED: u32 = 1;
+
+/// Icon id
+pub(in crate::platform) static ICON_BIG: u32 = 2;
+";
+        let (total, documented) = scan_content(content);
+        assert_eq!(total, 2);
+        assert_eq!(documented, 2);
     }
 
     #[test]
