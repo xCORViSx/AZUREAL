@@ -1,6 +1,8 @@
 //! God File System — scans project for oversized source files (>1000 LOC)
 //! and spawns serial Claude sessions to modularize them. Includes scope
-//! mode for user-customizable directory filtering with persistence.
+//! mode for user-customizable directory filtering with persistence, while
+//! ignoring test-only paths so fixtures and integration suites do not trigger
+//! production modularization work.
 
 use std::collections::{HashSet, VecDeque};
 use std::fs;
@@ -17,6 +19,79 @@ use super::{load_health_scope, SKIP_DIRS, SOURCE_EXTENSIONS, SOURCE_ROOTS};
 
 /// Minimum line count for a file to be considered a "god file"
 const GOD_FILE_THRESHOLD: usize = 1000;
+
+/// Test-only directory names that should never produce god-file entries.
+const TEST_DIR_NAMES: &[&str] = &[
+    "test",
+    "tests",
+    "__tests__",
+    "spec",
+    "specs",
+    "__specs__",
+    "e2e",
+    "cypress",
+    "playwright",
+];
+
+/// Returns true when a directory name is conventionally reserved for tests.
+fn is_test_dir_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    TEST_DIR_NAMES.iter().any(|&candidate| candidate == lower)
+        || lower.ends_with("_test")
+        || lower.ends_with("_tests")
+        || lower.ends_with("-test")
+        || lower.ends_with("-tests")
+        || lower.ends_with(".test")
+        || lower.ends_with(".tests")
+        || lower.ends_with("_spec")
+        || lower.ends_with("_specs")
+        || lower.ends_with("-spec")
+        || lower.ends_with("-specs")
+        || lower.ends_with(".spec")
+        || lower.ends_with(".specs")
+        || name.ends_with("Test")
+        || name.ends_with("Tests")
+        || name.ends_with("Spec")
+        || name.ends_with("Specs")
+}
+
+/// Returns true when a source file name follows a common test-file convention.
+fn is_test_source_file(path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    let lower = stem.to_ascii_lowercase();
+
+    matches!(
+        lower.as_str(),
+        "test" | "tests" | "spec" | "specs" | "conftest"
+    ) || lower.starts_with("test_")
+        || lower.starts_with("test-")
+        || lower.starts_with("test.")
+        || lower.starts_with("spec_")
+        || lower.starts_with("spec-")
+        || lower.starts_with("spec.")
+        || lower.ends_with("_test")
+        || lower.ends_with("_tests")
+        || lower.ends_with("-test")
+        || lower.ends_with("-tests")
+        || lower.ends_with(".test")
+        || lower.ends_with(".tests")
+        || lower.ends_with("_spec")
+        || lower.ends_with("_specs")
+        || lower.ends_with("-spec")
+        || lower.ends_with("-specs")
+        || lower.ends_with(".spec")
+        || lower.ends_with(".specs")
+        || lower.ends_with(".e2e")
+        || lower.ends_with(".cy")
+        || stem.starts_with("Test")
+        || stem.ends_with("Test")
+        || stem.ends_with("Tests")
+        || stem.ends_with("Spec")
+        || stem.ends_with("Specs")
+        || stem.ends_with("IT")
+}
 
 /// Count source lines in a file, excluding `#[cfg(test)]` module blocks for Rust files.
 ///
@@ -599,6 +674,9 @@ fn scan_top_level_files(root: &Path, results: &mut Vec<GodFileEntry>) {
         if !SOURCE_EXTENSIONS.contains(&ext) {
             continue;
         }
+        if is_test_source_file(&path) {
+            continue;
+        }
         let line_count = match count_source_lines(&path) {
             Some(c) => c,
             None => continue,
@@ -622,6 +700,15 @@ fn scan_top_level_files(root: &Path, results: &mut Vec<GodFileEntry>) {
 /// Recursively scan a directory for source files exceeding the LOC threshold.
 /// Skips hidden directories and known build/dependency/non-source directories.
 fn scan_dir_recursive(root: &Path, dir: &Path, results: &mut Vec<GodFileEntry>) {
+    if dir != root
+        && dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(is_test_dir_name)
+    {
+        return;
+    }
+
     let read_dir = match fs::read_dir(dir) {
         Ok(rd) => rd,
         Err(_) => return,
@@ -638,13 +725,16 @@ fn scan_dir_recursive(root: &Path, dir: &Path, results: &mut Vec<GodFileEntry>) 
 
         if path.is_dir() {
             let name_lower = name.to_ascii_lowercase();
-            if SKIP_DIRS.iter().any(|&s| s == name_lower) {
+            if SKIP_DIRS.iter().any(|&s| s == name_lower) || is_test_dir_name(&name) {
                 continue;
             }
             scan_dir_recursive(root, &path, results);
         } else if path.is_file() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if !SOURCE_EXTENSIONS.contains(&ext) {
+                continue;
+            }
+            if is_test_source_file(&path) {
                 continue;
             }
             let line_count = match count_source_lines(&path) {
@@ -986,6 +1076,67 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_dir_recursive_skips_test_directories() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        for dir in [
+            "tests",
+            "__tests__",
+            "spec",
+            "e2e",
+            "AppTests",
+            "commonTest",
+        ] {
+            fs::create_dir(root.join(dir)).unwrap();
+            make_source_file(&root.join(dir), "huge.rs", 5000);
+        }
+
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_skips_scoped_test_directory() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let tests_dir = root.join("tests");
+        fs::create_dir(&tests_dir).unwrap();
+        make_source_file(&tests_dir, "huge.rs", 5000);
+
+        let mut results = Vec::new();
+        scan_dir_recursive(root, &tests_dir, &mut results);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_recursive_skips_test_named_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("src")).unwrap();
+        for file in [
+            "foo_test.rs",
+            "foo.test.ts",
+            "foo.spec.tsx",
+            "foo.e2e.js",
+            "foo.cy.ts",
+            "test_widget.py",
+            "FooTests.swift",
+            "FooSpec.kt",
+            "FooIT.java",
+            "TestHarness.cs",
+        ] {
+            make_source_file(&root.join("src"), file, 5000);
+        }
+        make_source_file(&root.join("src"), "contest.rs", 1500);
+
+        let mut results = Vec::new();
+        scan_dir_recursive(root, root, &mut results);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rel_path, "src/contest.rs");
+    }
+
+    #[test]
     fn test_scan_dir_recursive_ignores_non_source_ext() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
@@ -1087,6 +1238,21 @@ mod tests {
         let mut results = Vec::new();
         scan_top_level_files(root, &mut results);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scan_top_level_skips_test_named_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        make_source_file(root, "main_test.rs", 5000);
+        make_source_file(root, "main.test.ts", 5000);
+        make_source_file(root, "AppTests.swift", 5000);
+        make_source_file(root, "main.rs", 1500);
+
+        let mut results = Vec::new();
+        scan_top_level_files(root, &mut results);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rel_path, "main.rs");
     }
 
     #[test]
