@@ -29,6 +29,7 @@ use portable_pty::{Child as PtyChild, MasterPty};
 use super::project_snapshot::ProjectSnapshot;
 use super::AgentEvent;
 use super::DisplayEvent;
+use crate::app::prompt_history::PromptHistoryStore;
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{
     BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, GodFileModularizeQueue,
@@ -468,10 +469,11 @@ pub struct App {
     /// Previous viewer state before Edit diff (content, path, scroll) for restoration on Esc
     pub viewer_prev_state: Option<(Option<String>, Option<PathBuf>, usize)>,
     /// Current position in prompt history (None = new input, Some(idx) = browsing history)
-    /// History is pulled from display_events UserMessage entries (last 50)
     pub prompt_history_idx: Option<usize>,
     /// Saved current input when browsing history (restored when returning to bottom)
     pub prompt_history_temp: Option<String>,
+    /// Session-independent prompt history used by Up/Down in the prompt box.
+    pub(crate) prompt_history: PromptHistoryStore,
     /// Viewer tabs (each tab holds file state)
     pub viewer_tabs: Vec<crate::app::types::ViewerTab>,
     /// Currently active tab index
@@ -665,7 +667,9 @@ pub struct App {
     pub codex_available: bool,
 }
 
+/// Constructors and core initialization helpers for the application state.
 impl App {
+    /// Create a fully initialized application state with empty project/session data.
     pub fn new() -> Self {
         Self {
             backend: model::backend_for_model(model::default_model()),
@@ -861,6 +865,7 @@ impl App {
             viewer_prev_state: None,
             prompt_history_idx: None,
             prompt_history_temp: None,
+            prompt_history: PromptHistoryStore::load_default(),
             viewer_tabs: Vec::new(),
             viewer_active_tab: 0,
             viewer_tab_dialog: false,

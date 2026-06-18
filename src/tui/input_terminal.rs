@@ -182,7 +182,7 @@ pub fn handle_input_mode(
         (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
             app.toggle_stt();
         }
-        // ↑/↓ — browse prompt history (pulled from display_events UserMessage entries)
+        // ↑/↓ — browse the session-independent prompt history store.
         (KeyModifiers::NONE, KeyCode::Up) => app.prompt_history_prev(),
         (KeyModifiers::NONE, KeyCode::Down) => app.prompt_history_next(),
         // Shift+Arrow for selection extension

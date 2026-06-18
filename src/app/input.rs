@@ -7,6 +7,7 @@
 
 use super::App;
 
+/// Prompt input editing, selection, clipboard, and history methods.
 impl App {
     /// Copy text to system clipboard via persistent handle. Falls back to
     /// internal clipboard if system clipboard is unavailable.
@@ -144,23 +145,9 @@ impl App {
         self.prompt_history_temp = None;
     }
 
-    /// Collect prompt history from display_events UserMessage entries (most recent last)
+    /// Collect prompt history from the session-independent prompt history store.
     fn collect_prompt_history(&self) -> Vec<String> {
-        self.display_events
-            .iter()
-            .filter_map(|ev| {
-                if let crate::events::DisplayEvent::UserMessage { content, .. } = ev {
-                    let trimmed = content.trim();
-                    if !trimmed.is_empty() {
-                        Some(trimmed.to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect()
+        self.prompt_history.entries().to_vec()
     }
 
     /// Navigate to previous prompt in history (↑)
@@ -919,16 +906,8 @@ mod tests {
     #[test]
     fn test_prompt_history_prev_with_history() {
         let mut app = App::new();
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u1".to_string(),
-                content: "first prompt".to_string(),
-            });
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u2".to_string(),
-                content: "second prompt".to_string(),
-            });
+        app.record_prompt_history("first prompt");
+        app.record_prompt_history("second prompt");
         app.input = "current".to_string();
         app.prompt_history_prev();
         assert_eq!(app.input, "second prompt");
@@ -939,16 +918,8 @@ mod tests {
     #[test]
     fn test_prompt_history_prev_twice() {
         let mut app = App::new();
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u1".to_string(),
-                content: "first".to_string(),
-            });
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u2".to_string(),
-                content: "second".to_string(),
-            });
+        app.record_prompt_history("first");
+        app.record_prompt_history("second");
         app.prompt_history_prev();
         app.prompt_history_prev();
         assert_eq!(app.input, "first");
@@ -958,11 +929,7 @@ mod tests {
     #[test]
     fn test_prompt_history_next_restores() {
         let mut app = App::new();
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u1".to_string(),
-                content: "prompt".to_string(),
-            });
+        app.record_prompt_history("prompt");
         app.input = "typing...".to_string();
         app.prompt_history_prev();
         assert_eq!(app.input, "prompt");
@@ -974,11 +941,7 @@ mod tests {
     #[test]
     fn test_prompt_history_prev_at_oldest_stays() {
         let mut app = App::new();
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u1".to_string(),
-                content: "only".to_string(),
-            });
+        app.record_prompt_history("only");
         app.prompt_history_prev();
         app.prompt_history_prev(); // already at oldest
         assert_eq!(app.input, "only");
@@ -994,13 +957,12 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_prompt_history_filters_non_user() {
+    fn test_collect_prompt_history_ignores_transcript_events() {
         let mut app = App::new();
         app.display_events
-            .push(crate::events::DisplayEvent::AssistantText {
+            .push(crate::events::DisplayEvent::UserMessage {
                 _uuid: "u".to_string(),
-                _message_id: "m".to_string(),
-                text: "response".to_string(),
+                content: "transcript prompt".to_string(),
             });
         assert!(app.collect_prompt_history().is_empty());
     }
@@ -1008,22 +970,14 @@ mod tests {
     #[test]
     fn test_collect_prompt_history_filters_empty_content() {
         let mut app = App::new();
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u".to_string(),
-                content: "   ".to_string(),
-            });
+        app.record_prompt_history("   ");
         assert!(app.collect_prompt_history().is_empty());
     }
 
     #[test]
     fn test_collect_prompt_history_trims() {
         let mut app = App::new();
-        app.display_events
-            .push(crate::events::DisplayEvent::UserMessage {
-                _uuid: "u".to_string(),
-                content: "  hello  ".to_string(),
-            });
+        app.record_prompt_history("  hello  ");
         let h = app.collect_prompt_history();
         assert_eq!(h, vec!["hello"]);
     }

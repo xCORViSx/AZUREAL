@@ -9,6 +9,7 @@ use crate::app::App;
 use crate::backend::AgentProcess;
 use crate::backend::Backend;
 
+/// Result of spawning an agent process, including data needed for registration.
 struct SpawnOutcome {
     rx: std::sync::mpsc::Receiver<crate::claude::AgentEvent>,
     pid: u32,
@@ -16,6 +17,7 @@ struct SpawnOutcome {
     success_notice: Option<String>,
 }
 
+/// Format a spawn failure that includes primary retries and fallback failure details.
 fn format_spawn_failure(
     action: &str,
     primary_label: &str,
@@ -35,6 +37,7 @@ fn format_spawn_failure(
     )
 }
 
+/// Format a status notice when fallback backend spawning succeeds.
 fn format_fallback_notice(
     action: &str,
     primary_label: &str,
@@ -51,6 +54,7 @@ fn format_fallback_notice(
     )
 }
 
+/// Spawn the selected backend with retry, falling back to the alternate backend on failure.
 fn spawn_with_retry_and_fallback(
     claude_process: &AgentProcess,
     wt_path: &std::path::Path,
@@ -130,6 +134,7 @@ fn spawn_with_retry_and_fallback(
     }
 }
 
+/// Send a prompt to the current worktree and optionally show it as a user message.
 pub(crate) fn send_prompt_to_current_worktree(
     app: &mut App,
     claude_process: &AgentProcess,
@@ -150,6 +155,7 @@ pub(crate) fn send_prompt_to_current_worktree(
     let send_prompt = app.build_context_prompt_for_current_session(actual_prompt);
 
     if let Some(prompt) = display_prompt {
+        app.record_prompt_history(prompt);
         app.add_user_message(prompt.to_string());
         app.process_session_chunk(&format!("You: {}\n", prompt));
         app.current_todos.clear();
