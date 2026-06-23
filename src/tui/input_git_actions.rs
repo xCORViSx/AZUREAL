@@ -14,15 +14,20 @@
 //! - `auto_resolve_overlay`: Auto-resolve file list settings overlay
 
 mod auto_resolve_overlay;
+/// Commit message overlay editing and commit execution helpers.
 mod commit_overlay;
+/// Conflict resolution overlay and RCR agent launch helpers.
 mod conflict_resolution;
+/// Inline file and commit diff loading for the Git Actions panel.
 mod diff_viewer;
+/// Git operation implementations for panel commands.
 mod operations;
 
 // Re-export pub(crate) items for external consumers
 pub(crate) use operations::{
     exec_rebase_inner, is_unborn_head, refresh_changed_files, refresh_commit_log, RebaseOutcome,
 };
+/// Re-exported diff viewer entry points used by mouse and scroll handlers.
 pub(crate) mod diff_viewer_api {
     pub(crate) use super::diff_viewer::{load_commit_diff_inline, load_file_diff_inline};
 }
@@ -96,15 +101,15 @@ pub fn handle_git_actions_input(
             if let Some(ref p) = app.git_actions_panel {
                 if let Some((ref msg, _)) = p.result_message {
                     let text = msg.clone();
-                    app.copy_to_clipboard(&text);
-                    app.set_status("Copied to clipboard");
+                    let copied = app.copy_to_clipboard(&text);
+                    app.set_clipboard_copy_status(copied, "Copied to clipboard");
                 }
             }
         } else if let Some(ref p) = app.git_actions_panel {
             if let Some((ref msg, _)) = p.result_message {
                 let text = msg.clone();
-                app.copy_to_clipboard(&text);
-                app.set_status("Copied to clipboard");
+                let copied = app.copy_to_clipboard(&text);
+                app.set_clipboard_copy_status(copied, "Copied to clipboard");
             }
         }
         return Ok(());

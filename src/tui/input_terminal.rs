@@ -150,7 +150,11 @@ pub fn handle_input_mode(
     // Uses is_cmd_key() for macOS ⌥-unicode fallback (WezTerm doesn't deliver ⌘)
     if let KeyCode::Char(c) = key.code {
         if is_cmd_key(key.modifiers, key.code, 'c') {
-            app.input_copy();
+            let had_selection = app.has_input_selection();
+            let copied = app.input_copy();
+            if copied || had_selection {
+                app.set_clipboard_copy_status(copied, "Copied to clipboard");
+            }
             return Ok(());
         }
         if is_cmd_key(key.modifiers, key.code, 'x') {

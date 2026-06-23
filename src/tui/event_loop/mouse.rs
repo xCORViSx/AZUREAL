@@ -446,8 +446,8 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
     if app.pane_status.contains(pos) {
         if let Some(ref msg) = app.status_message {
             let text = msg.clone();
-            app.copy_to_clipboard(&text);
-            app.set_status("Copied to clipboard");
+            let copied = app.copy_to_clipboard(&text);
+            app.set_clipboard_copy_status(copied, "Copied to clipboard");
         }
         return true;
     }
@@ -666,8 +666,8 @@ pub fn copy_viewer_selection(app: &mut App) {
     if text.is_empty() {
         return;
     }
-    app.copy_to_clipboard(&text);
-    app.set_status("Copied to clipboard");
+    let copied = app.copy_to_clipboard(&text);
+    app.set_clipboard_copy_status(copied, "Copied to clipboard");
 }
 
 /// Copy text selected in the session pane to clipboard.
@@ -681,8 +681,8 @@ pub fn copy_session_selection(app: &mut App) {
     if text.is_empty() {
         return;
     }
-    app.copy_to_clipboard(&text);
-    app.set_status("Copied to clipboard");
+    let copied = app.copy_to_clipboard(&text);
+    app.set_clipboard_copy_status(copied, "Copied to clipboard");
 }
 
 /// Extract text from session pane cache, respecting per-line content bounds.
@@ -696,7 +696,8 @@ fn extract_session_text(
     ec: usize,
 ) -> String {
     use crate::tui::draw_output::compute_line_content_bounds;
-    let mut parts: Vec<String> = Vec::new();
+    let mut out = String::new();
+    let mut previous_kind: Option<SessionCopyLineKind> = None;
     for idx in sl..=el {
         let Some(line) = cache.get(idx) else { continue };
         let (cb_start, cb_end) = compute_line_content_bounds(line);
@@ -712,19 +713,83 @@ fn extract_session_text(
         };
         let end = if idx == el { ec.min(cb_end) } else { cb_end };
         if start < end && start < chars.len() {
-            parts.push(chars[start..end.min(chars.len())].iter().collect());
-        } else {
-            parts.push(String::new()); // empty content line (paragraph break)
+            let kind = session_copy_line_kind(line);
+            let fragment: String = chars[start..end.min(chars.len())].iter().collect();
+            append_session_copy_fragment(&mut out, &fragment, kind, previous_kind);
+            previous_kind = Some(kind);
         }
     }
-    // Trim leading/trailing empty parts from skipped decoration boundaries
-    while parts.last().map(|s| s.is_empty()).unwrap_or(false) {
-        parts.pop();
+    out.trim_end().to_string()
+}
+
+/// Join behavior for one selected session cache line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionCopyLineKind {
+    /// Flowing prose that was split into visual rows by terminal wrapping.
+    Flow,
+    /// Literal rows, such as code-block content, where line breaks carry meaning.
+    Literal,
+}
+
+/// Classify a rendered session line for copy serialization.
+fn session_copy_line_kind(line: &ratatui::text::Line) -> SessionCopyLineKind {
+    let spans = &line.spans;
+    let is_assistant_literal = spans.first().is_some_and(|span| {
+        span.content.as_ref() == "│ " && span.style.fg == Some(crate::tui::colorize::ORANGE)
+    }) && spans.get(1).is_some_and(|span| {
+        span.content.starts_with('│') && span.style.fg == Some(ratatui::style::Color::DarkGray)
+    });
+
+    if is_assistant_literal {
+        SessionCopyLineKind::Literal
+    } else {
+        SessionCopyLineKind::Flow
     }
-    while parts.first().map(|s| s.is_empty()).unwrap_or(false) {
-        parts.remove(0);
+}
+
+/// Append one selected session line fragment to clipboard text.
+fn append_session_copy_fragment(
+    out: &mut String,
+    fragment: &str,
+    kind: SessionCopyLineKind,
+    previous_kind: Option<SessionCopyLineKind>,
+) {
+    match kind {
+        SessionCopyLineKind::Flow => append_flow_session_fragment(out, fragment, previous_kind),
+        SessionCopyLineKind::Literal => append_literal_session_fragment(out, fragment),
     }
-    parts.join("\n")
+}
+
+/// Append prose text, replacing render-time wraps with a single space.
+fn append_flow_session_fragment(
+    out: &mut String,
+    fragment: &str,
+    previous_kind: Option<SessionCopyLineKind>,
+) {
+    let fragment = fragment.trim();
+    if fragment.is_empty() {
+        return;
+    }
+
+    if !out.is_empty() {
+        if previous_kind == Some(SessionCopyLineKind::Literal) {
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+        } else if !out.ends_with(' ') && !out.ends_with('\n') {
+            out.push(' ');
+        }
+    }
+    out.push_str(fragment);
+}
+
+/// Append literal text, preserving line boundaries for code-like content.
+fn append_literal_session_fragment(out: &mut String, fragment: &str) {
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(fragment.trim_end());
+    out.push('\n');
 }
 
 /// Copy text selected in the terminal pane to clipboard.
@@ -811,8 +876,8 @@ pub fn copy_terminal_selection(app: &mut App) {
     if text.is_empty() {
         return;
     }
-    app.copy_to_clipboard(&text);
-    app.set_status("Copied to clipboard");
+    let copied = app.copy_to_clipboard(&text);
+    app.set_clipboard_copy_status(copied, "Copied to clipboard");
 }
 
 #[cfg(test)]
@@ -948,6 +1013,61 @@ mod tests {
         let lines = vec![Line::from("a"), Line::from("b")];
         let result = extract_text_from_cache(&lines, 0, 0, 1, 1, 0);
         assert!(!result.ends_with('\n'));
+    }
+
+    /// Wrapped assistant prose copies as a single flowing sentence.
+    #[test]
+    fn test_extract_session_assistant_wraps_as_flow_text() {
+        let lines = vec![
+            Line::from(vec![
+                Span::styled("│ ", Style::default().fg(crate::tui::colorize::ORANGE)),
+                Span::raw("hello"),
+            ]),
+            Line::from(vec![
+                Span::styled("│ ", Style::default().fg(crate::tui::colorize::ORANGE)),
+                Span::raw("world"),
+            ]),
+        ];
+        let result = extract_session_text(&lines, 0, 0, 1, 80);
+        assert_eq!(result, "hello world");
+    }
+
+    /// Wrapped user bubble rows copy without right borders or render-time line breaks.
+    #[test]
+    fn test_extract_session_user_bubble_wraps_as_flow_text() {
+        let lines = vec![
+            Line::from(vec![
+                Span::raw("     "),
+                Span::styled("hello", Style::default()),
+                Span::styled(" │", Style::default().fg(crate::tui::util::AZURE)),
+            ]),
+            Line::from(vec![
+                Span::raw("     "),
+                Span::styled("world", Style::default()),
+                Span::styled(" │", Style::default().fg(crate::tui::util::AZURE)),
+            ]),
+        ];
+        let result = extract_session_text(&lines, 0, 0, 1, 80);
+        assert_eq!(result, "hello world");
+    }
+
+    /// Code-block content keeps meaningful line breaks while still dropping gutters.
+    #[test]
+    fn test_extract_session_literal_code_preserves_lines() {
+        let lines = vec![
+            Line::from(vec![
+                Span::styled("│ ", Style::default().fg(crate::tui::colorize::ORANGE)),
+                Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                Span::raw("let a = 1;"),
+            ]),
+            Line::from(vec![
+                Span::styled("│ ", Style::default().fg(crate::tui::colorize::ORANGE)),
+                Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                Span::raw("let b = 2;"),
+            ]),
+        ];
+        let result = extract_session_text(&lines, 0, 0, 1, 80);
+        assert_eq!(result, "let a = 1;\nlet b = 2;");
     }
 
     // -- Position and Rect construction --

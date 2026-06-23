@@ -288,6 +288,28 @@ store.append_events(session_id, &events)?;
 self.refresh_display_from_store_after_append(session_id, &wt_path);
 ```
 
+### Clipboard Copy Must Use System Result And Flow Text
+
+**Problem:** UI copy actions can show "Copied to clipboard" after only updating Azureal's internal clipboard or after ignoring a failed system clipboard write. Session-pane selection can also serialize rendered bubble rows directly, copying visual wrap line breaks instead of the original flowing message text.
+
+**Solution:** Route copy actions through `copy_to_clipboard()` and use its boolean result for status text. When extracting session-pane bubble text, strip bubble chrome and join wrapped prose fragments with spaces while preserving literal code-like rows.
+
+**WRONG:**
+
+```rust
+app.copy_to_clipboard(&text);
+app.set_status("Copied to clipboard");
+parts.join("\n")
+```
+
+**CORRECT:**
+
+```rust
+let copied = app.copy_to_clipboard(&text);
+app.set_clipboard_copy_status(copied, "Copied to clipboard");
+append_session_copy_fragment(&mut out, &fragment, kind, previous_kind);
+```
+
 # REFERENCES
 
 (None fetched yet)

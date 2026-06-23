@@ -31,6 +31,7 @@ fn word_wrap_breaks(text: &str, max_width: usize) -> Vec<usize> {
     breaks
 }
 
+/// Viewer edit-mode text editing, selection, clipboard, undo, and save methods.
 impl App {
     /// Enter edit mode for current viewer file
     pub fn enter_viewer_edit_mode(&mut self) {
@@ -471,16 +472,15 @@ impl App {
         let Some(text) = self.get_selected_text() else {
             return false;
         };
-        self.copy_to_clipboard(&text);
-        true
+        self.copy_to_clipboard(&text)
     }
 
-    /// Cut selected text to system clipboard
-    pub fn viewer_edit_cut(&mut self) {
+    /// Cut selected text to system clipboard and return whether the system copy worked.
+    pub fn viewer_edit_cut(&mut self) -> bool {
         let Some(text) = self.delete_selection_text() else {
-            return;
+            return false;
         };
-        self.copy_to_clipboard(&text);
+        self.copy_to_clipboard(&text)
     }
 
     /// Paste from system clipboard (falls back to internal clipboard)

@@ -42,7 +42,8 @@ pub(super) fn execute_action(
         Action::CopySelection => {
             // Copy from whichever pane has an active selection
             if app.prompt_mode && app.has_input_selection() {
-                app.input_copy();
+                let copied = app.input_copy();
+                app.set_clipboard_copy_status(copied, "Copied to clipboard");
             } else if app.viewer_selection.is_some() {
                 copy_viewer_selection(app);
             } else if app.session_selection.is_some() {
@@ -53,8 +54,8 @@ pub(super) fn execute_action(
                 // Git mode fallback: copy status box result message
                 if let Some((ref msg, _)) = p.result_message {
                     let text = msg.clone();
-                    app.copy_to_clipboard(&text);
-                    app.set_status("Copied to clipboard");
+                    let copied = app.copy_to_clipboard(&text);
+                    app.set_clipboard_copy_status(copied, "Copied to clipboard");
                 }
             }
         }

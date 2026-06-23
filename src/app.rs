@@ -8,6 +8,8 @@
 //! - `util`: Utility functions (ANSI stripping, JSON parsing)
 //! - `session_parser`: Claude session file parsing
 
+/// System clipboard bridge with an internal fallback for app-local paste.
+mod clipboard;
 /// Codex JSONL parsing for persisted Codex CLI sessions.
 pub(crate) mod codex_session_parser;
 /// Context injection and transcript sanitization before prompts are sent.

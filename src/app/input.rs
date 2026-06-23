@@ -5,26 +5,22 @@
 //! `char_to_byte()` before calling them. This prevents panics on multi-byte
 //! characters like `ç` (⌥+c on macOS sends unicode).
 
+use super::clipboard::{read_system_clipboard, write_system_clipboard};
 use super::App;
 
 /// Prompt input editing, selection, clipboard, and history methods.
 impl App {
-    /// Copy text to system clipboard via persistent handle. Falls back to
-    /// internal clipboard if system clipboard is unavailable.
-    pub fn copy_to_clipboard(&mut self, text: &str) {
+    /// Copy text to the in-app clipboard and try to mirror it to the system clipboard.
+    /// Returns true when the operating system clipboard accepted the text.
+    pub fn copy_to_clipboard(&mut self, text: &str) -> bool {
         self.clipboard = text.to_string();
-        if let Some(ref mut cb) = self.system_clipboard {
-            let _ = cb.set_text(text);
-        }
+        write_system_clipboard(&mut self.system_clipboard, text)
     }
 
-    /// Read text from system clipboard via persistent handle. Falls back to
-    /// internal clipboard if system clipboard is unavailable.
+    /// Read text from the system clipboard, falling back to Azureal's in-app clipboard.
     pub fn paste_from_clipboard(&mut self) -> String {
-        if let Some(ref mut cb) = self.system_clipboard {
-            if let Ok(text) = cb.get_text() {
-                return text;
-            }
+        if let Some(text) = read_system_clipboard(&mut self.system_clipboard) {
+            return text;
         }
         self.clipboard.clone()
     }
@@ -266,8 +262,7 @@ impl App {
         let Some(text) = self.get_input_selected_text() else {
             return false;
         };
-        self.copy_to_clipboard(&text);
-        true
+        self.copy_to_clipboard(&text)
     }
 
     /// Cut selected text to system clipboard

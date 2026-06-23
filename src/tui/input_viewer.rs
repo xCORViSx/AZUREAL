@@ -76,16 +76,18 @@ fn handle_edit_mode_input(key: KeyEvent, app: &mut App) -> Result<()> {
 
         // Copy: Cmd+C / Ctrl+C / ⌥c(ç)
         _ if is_cmd_key(m, c, 'c') => {
-            if app.viewer_edit_copy() {
-                app.set_status("Copied to clipboard");
+            let had_selection = app.has_edit_selection();
+            let copied = app.viewer_edit_copy();
+            if copied || had_selection {
+                app.set_clipboard_copy_status(copied, "Copied to clipboard");
             }
         }
 
         // Cut: Cmd+X / Ctrl+X / ⌥x(≈)
         _ if is_cmd_key(m, c, 'x') => {
             if app.has_edit_selection() {
-                app.viewer_edit_cut();
-                app.set_status("Cut to clipboard");
+                let copied = app.viewer_edit_cut();
+                app.set_clipboard_copy_status(copied, "Cut to clipboard");
             }
         }
 
