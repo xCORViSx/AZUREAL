@@ -31,11 +31,10 @@ fn ctrl_a_belongs_to_existing_mode(app: &App) -> bool {
 
 /// Toggle auto prompt and update the status bar with the new state.
 fn toggle_auto_prompt(app: &mut App) {
-    let enabled = app.auto_prompt.toggle();
-    let status = if enabled {
-        "Auto prompt ON - next prompt will repeat"
-    } else {
-        "Auto prompt OFF"
+    let status = match app.toggle_auto_prompt_for_current_session() {
+        Ok(true) => "Auto prompt ON for this session - next prompt will repeat",
+        Ok(false) => "Auto prompt OFF for this session",
+        Err(message) => message,
     };
     app.set_status(status);
 }
@@ -260,6 +259,18 @@ mod tests {
         (needs_redraw, had_key_event)
     }
 
+    /// Add a current worktree and store session so per-session toggles have a key.
+    fn attach_current_session(app: &mut App) {
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "feature".into(),
+            worktree_path: Some(std::path::PathBuf::from("/tmp/feature")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(7);
+    }
+
     /// Dispatch a synthetic paste event and return redraw/key flags.
     fn dispatch_paste(app: &mut App, text: &str) -> (bool, bool) {
         dispatch_event(app, Event::Paste(text.to_string()))
@@ -323,17 +334,38 @@ mod tests {
     #[test]
     fn ctrl_a_toggles_auto_prompt() {
         let mut app = App::new();
+        attach_current_session(&mut app);
+        let target = app.current_auto_prompt_target().unwrap();
 
         let (needs_redraw, had_key_event) = dispatch_event(
             &mut app,
             Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
         );
 
-        assert!(app.auto_prompt.is_enabled());
+        assert!(app.auto_prompt.is_enabled_for(target.key()));
         assert_eq!(
             app.status_message.as_deref(),
-            Some("Auto prompt ON - next prompt will repeat")
+            Some("Auto prompt ON for this session - next prompt will repeat")
         );
+        assert!(needs_redraw);
+        assert!(had_key_event);
+    }
+
+    /// Ctrl+A reports a status message when no active session can be keyed.
+    #[test]
+    fn ctrl_a_without_session_does_not_enable_auto_prompt() {
+        let mut app = App::new();
+
+        let (needs_redraw, had_key_event) = dispatch_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+        );
+
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Auto prompt needs an active session")
+        );
+        assert!(app.auto_prompt.tracked_keys().is_empty());
         assert!(needs_redraw);
         assert!(had_key_event);
     }
@@ -342,6 +374,8 @@ mod tests {
     #[test]
     fn ctrl_a_terminal_type_mode_does_not_toggle_auto_prompt() {
         let mut app = App::new();
+        attach_current_session(&mut app);
+        let target = app.current_auto_prompt_target().unwrap();
         app.focus = Focus::Input;
         app.terminal_mode = true;
         app.prompt_mode = true;
@@ -351,7 +385,7 @@ mod tests {
             Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
         );
 
-        assert!(!app.auto_prompt.is_enabled());
+        assert!(!app.auto_prompt.is_enabled_for(target.key()));
         assert!(had_key_event);
     }
 }

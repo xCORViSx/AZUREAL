@@ -342,10 +342,7 @@ fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
         Ok(f) => f,
         Err(_) => return (0, 0),
     };
-    let lines: Vec<String> = BufReader::new(file)
-        .lines()
-        .map_while(Result::ok)
-        .collect();
+    let lines: Vec<String> = BufReader::new(file).lines().map_while(Result::ok).collect();
 
     let mut total = 0usize;
     let mut documented = 0usize;
@@ -958,8 +955,11 @@ fn bar() {}
     fn test_scan_invalid_utf8_stops_without_looping() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("invalid.rs");
-        fs::write(&path, b"/// Valid prefix\nfn before_invalid() {}\n\xff\nfn after_invalid() {}\n")
-            .unwrap();
+        fs::write(
+            &path,
+            b"/// Valid prefix\nfn before_invalid() {}\n\xff\nfn after_invalid() {}\n",
+        )
+        .unwrap();
 
         let (total, documented) = scan_file_doc_coverage(&path);
 

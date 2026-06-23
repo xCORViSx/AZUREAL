@@ -173,14 +173,14 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
         }
     }
 
-    // Auto-prompt indicator on bottom-left, opposite the model indicator.
-    if app.auto_prompt.is_enabled() {
-        let auto_label = if app.auto_prompt.prompt().is_some() {
+    // Auto-prompt indicator on bottom-left for the currently viewed session.
+    if let Some(auto_entry) = app.current_auto_prompt_entry() {
+        let auto_label = if auto_entry.prompt().is_some() {
             "AUTO"
         } else {
             "AUTO:next"
         };
-        let auto_color = if app.auto_prompt.is_pending_after_compaction() {
+        let auto_color = if auto_entry.is_pending_after_compaction() {
             Color::Yellow
         } else {
             Color::Green

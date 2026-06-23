@@ -3,11 +3,11 @@
 //! Handles sending staged prompts to agents, spawning/retrying compaction
 //! agents, and auto-continuing after mid-turn compaction.
 
-use crate::app::state::backend_for_model;
-use crate::app::state::default_model;
+use crate::app::state::{backend_for_model, default_model, AutoPromptKey, AutoPromptTarget};
 use crate::app::App;
 use crate::backend::AgentProcess;
 use crate::backend::Backend;
+use crate::events::DisplayEvent;
 
 /// Result of spawning an agent process, including data needed for registration.
 struct SpawnOutcome {
@@ -140,54 +140,242 @@ fn is_pause_response_prompt(actual_prompt: &str) -> bool {
         || actual_prompt.starts_with("[SYSTEM: You just called AskUserQuestion.")
 }
 
+/// Build a context-injected prompt for a specific session target.
+fn build_context_prompt_for_target(app: &App, target: &AutoPromptTarget, prompt: &str) -> String {
+    let is_current_target = app
+        .current_auto_prompt_target()
+        .map(|current| current.key() == target.key())
+        .unwrap_or(false);
+    if is_current_target {
+        return app.build_context_prompt_for_current_session(prompt);
+    }
+
+    let store = match crate::app::session_store::SessionStore::open(target.key().worktree_path()) {
+        Ok(store) => store,
+        Err(_) => return prompt.to_string(),
+    };
+    let payload = match store.build_context(target.key().session_id()) {
+        Ok(Some(payload)) => payload,
+        Ok(None) | Err(_) => return prompt.to_string(),
+    };
+    crate::app::context_injection::build_context_prompt(&payload, prompt)
+}
+
+/// Return true when the target session is the currently visible session pane.
+fn target_is_visible(app: &App, target: &AutoPromptTarget) -> bool {
+    app.current_auto_prompt_target()
+        .map(|current| current.key() == target.key())
+        .unwrap_or(false)
+}
+
+/// Return true when the target has a current project or snapshot to own the slot.
+fn target_project_is_registered(app: &App, target: &AutoPromptTarget) -> bool {
+    let is_current_project =
+        target.project_path() == app.project.as_ref().map(|project| project.path.as_path());
+    is_current_project
+        || target
+            .project_path()
+            .map(|path| app.project_snapshots.contains_key(path))
+            .unwrap_or(true)
+}
+
+/// Count already-stored events for a target session before a background send.
+fn stored_event_count(target: &AutoPromptTarget) -> usize {
+    crate::app::session_store::SessionStore::open(target.key().worktree_path())
+        .and_then(|store| store.count_events(target.key().session_id(), None))
+        .unwrap_or(0)
+}
+
+/// Register a spawned prompt against either the active project or a background snapshot.
+fn register_prompt_process(
+    app: &mut App,
+    target: &AutoPromptTarget,
+    outcome: SpawnOutcome,
+    make_visible: bool,
+    events_offset: usize,
+    session_file_size: u64,
+) -> u32 {
+    let slot = outcome.pid.to_string();
+    app.agent_receivers.insert(slot.clone(), outcome.rx);
+    app.running_sessions.insert(slot.clone());
+    let backend = outcome
+        .registration_model
+        .as_deref()
+        .map(backend_for_model)
+        .unwrap_or(Backend::Claude);
+    app.agent_slot_models.insert(
+        slot.clone(),
+        outcome
+            .registration_model
+            .as_deref()
+            .map(str::to_string)
+            .unwrap_or_else(|| backend.to_string()),
+    );
+    match backend {
+        Backend::Codex => {
+            app.codex_slot_started_at
+                .insert(slot.clone(), std::time::Instant::now());
+        }
+        Backend::Claude => {
+            app.codex_slot_started_at.remove(&slot);
+        }
+    }
+
+    if let Some(project_path) = target.project_path() {
+        app.slot_to_project
+            .insert(slot.clone(), project_path.to_path_buf());
+    } else if let Some(project) = app.project.as_ref() {
+        app.slot_to_project
+            .insert(slot.clone(), project.path.clone());
+    }
+
+    let is_current_project =
+        target.project_path() == app.project.as_ref().map(|project| project.path.as_path());
+    if is_current_project {
+        app.branch_slots
+            .entry(target.branch().to_string())
+            .or_default()
+            .push(slot.clone());
+        app.pid_session_target.insert(
+            slot.clone(),
+            (
+                target.key().session_id(),
+                target.key().worktree_path().to_path_buf(),
+                events_offset,
+                session_file_size,
+            ),
+        );
+        if make_visible {
+            app.active_slot
+                .insert(target.branch().to_string(), slot.clone());
+            app.viewing_historic_session = false;
+            app.last_session_event_time = std::time::Instant::now();
+            app.compaction_banner_injected = false;
+        }
+        app.invalidate_sidebar();
+    } else if let Some(project_path) = target.project_path().map(std::path::Path::to_path_buf) {
+        if let Some(snapshot) = app.project_snapshots.get_mut(&project_path) {
+            snapshot
+                .branch_slots
+                .entry(target.branch().to_string())
+                .or_default()
+                .push(slot.clone());
+            snapshot.pid_session_target.insert(
+                slot.clone(),
+                (
+                    target.key().session_id(),
+                    target.key().worktree_path().to_path_buf(),
+                    events_offset,
+                    session_file_size,
+                ),
+            );
+        }
+    }
+
+    outcome.pid
+}
+
 /// Track a successfully spawned prompt for auto-prompt repeat decisions.
 fn track_auto_prompt_spawn(
     app: &mut App,
+    target: &AutoPromptTarget,
     display_prompt: Option<&str>,
     actual_prompt: &str,
     pid: u32,
-    branch: &str,
 ) {
     let slot = pid.to_string();
     if let Some(prompt) = display_prompt {
-        if !is_pause_response_prompt(actual_prompt) {
-            app.auto_prompt
-                .capture_prompt(prompt, slot, branch, app.current_session_id);
+        if is_pause_response_prompt(actual_prompt) {
+            app.auto_prompt.track_continuation_slot(target.key(), slot);
+        } else {
+            app.auto_prompt.capture_prompt(target.clone(), prompt, slot);
         }
     } else if actual_prompt == crate::app::context_injection::AUTO_CONTINUE_PROMPT {
-        app.auto_prompt.track_continuation_slot(slot);
+        app.auto_prompt.track_continuation_slot(target.key(), slot);
     }
 }
 
-/// Return true when a stopped slot is only waiting on an agent pause workflow.
-fn auto_prompt_blocked_by_pause(app: &App) -> bool {
-    app.awaiting_plan_approval
-        || app.awaiting_ask_user_question
-        || app.rcr_session.is_some()
-        || app.issue_session.is_some()
+/// Return true when events contain a pause tool call without a later user response.
+fn events_have_unanswered_pause(events: &[DisplayEvent]) -> bool {
+    let mut pending_pause = false;
+    for event in events {
+        match event {
+            DisplayEvent::ToolCall { tool_name, .. }
+                if tool_name == "ExitPlanMode" || tool_name == "AskUserQuestion" =>
+            {
+                pending_pause = true;
+            }
+            DisplayEvent::UserMessage { .. } => pending_pause = false,
+            _ => {}
+        }
+    }
+    pending_pause
 }
 
-/// Stage the captured auto prompt when the tracked turn has really completed.
-fn stage_auto_prompt_if_ready(app: &mut App) -> bool {
-    if !app.auto_prompt.is_enabled() || app.staged_prompt.is_some() {
-        return false;
+/// Return true when the target session is waiting on a user-answer pause.
+fn target_has_unanswered_pause(app: &App, key: &AutoPromptKey) -> bool {
+    let is_current_target = app
+        .current_auto_prompt_target()
+        .map(|target| target.key() == key)
+        .unwrap_or(false);
+    if is_current_target {
+        return app.awaiting_plan_approval
+            || app.awaiting_ask_user_question
+            || events_have_unanswered_pause(&app.display_events);
     }
 
-    let Some(tracked_slot) = app.auto_prompt.tracked_slot().map(str::to_string) else {
+    crate::app::session_store::SessionStore::open(key.worktree_path())
+        .and_then(|store| store.load_events(key.session_id()))
+        .map(|events| events_have_unanswered_pause(&events))
+        .unwrap_or(false)
+}
+
+/// Return true when a special session pause owns the tracked slot.
+fn special_pause_owns_slot(app: &App, tracked_slot: &str) -> bool {
+    app.rcr_session
+        .as_ref()
+        .map(|rcr| rcr.slot_id == tracked_slot)
+        .unwrap_or(false)
+        || app
+            .issue_session
+            .as_ref()
+            .map(|issue| issue.slot_id == tracked_slot)
+            .unwrap_or(false)
+}
+
+/// Return true when a stopped slot is only waiting on a target-local pause workflow.
+fn auto_prompt_blocked_by_pause(app: &App, key: &AutoPromptKey, tracked_slot: &str) -> bool {
+    special_pause_owns_slot(app, tracked_slot) || target_has_unanswered_pause(app, key)
+}
+
+/// Return true when compaction belongs to the target session.
+fn compaction_blocks_auto_prompt(app: &App, key: &AutoPromptKey) -> bool {
+    let pending = app
+        .compaction_needed
+        .as_ref()
+        .map(|(sid, path)| *sid == key.session_id() && path.as_path() == key.worktree_path())
+        .unwrap_or(false);
+    let retry = app
+        .compaction_retry_needed
+        .as_ref()
+        .map(|(sid, path)| *sid == key.session_id() && path.as_path() == key.worktree_path())
+        .unwrap_or(false);
+    let running = app.compaction_receivers.values().any(|job| {
+        job.session_id == key.session_id() && job.wt_path.as_path() == key.worktree_path()
+    });
+    pending || retry || running
+}
+
+/// Return true when the target entry's tracked turn has really completed.
+fn auto_prompt_ready_for_key(app: &mut App, key: &AutoPromptKey) -> bool {
+    let Some(tracked_slot) = app
+        .auto_prompt
+        .entry_for(key)
+        .and_then(|entry| entry.tracked_slot())
+        .map(str::to_string)
+    else {
         return false;
     };
-    let Some(tracked_branch) = app.auto_prompt.branch().map(str::to_string) else {
-        app.auto_prompt.clear_tracked_turn();
-        return false;
-    };
-    let tracked_session_id = app.auto_prompt.session_id();
-    let current_branch = app.current_worktree().map(|wt| wt.branch_name.clone());
-    if current_branch.as_deref() != Some(tracked_branch.as_str())
-        || app.current_session_id != tracked_session_id
-        || app.viewing_historic_session
-    {
-        return false;
-    }
     if app.running_sessions.contains(&tracked_slot) {
         return false;
     }
@@ -196,33 +384,116 @@ fn stage_auto_prompt_if_ready(app: &mut App) -> bool {
         return false;
     };
     if exit_code != 0 {
-        app.auto_prompt.clear_tracked_turn();
+        app.auto_prompt.clear_tracked_turn(key);
         return false;
     }
-    if app.auto_continue_after_compaction {
+    if auto_prompt_blocked_by_pause(app, key, &tracked_slot) {
         return false;
     }
-    if auto_prompt_blocked_by_pause(app) {
-        app.auto_prompt.clear_tracked_turn();
-        return false;
-    }
-    if app.compaction_needed.is_some()
-        || !app.compaction_receivers.is_empty()
-        || app.compaction_retry_needed.is_some()
-    {
-        app.auto_prompt.defer_for_compaction();
+    if compaction_blocks_auto_prompt(app, key) {
+        app.auto_prompt.defer_for_compaction(key);
         return false;
     }
 
-    let Some(prompt) = app.auto_prompt.take_repeat_prompt() else {
+    true
+}
+
+/// Send a prompt to a session target and optionally show it as a user message.
+fn send_prompt_to_target(
+    app: &mut App,
+    claude_process: &AgentProcess,
+    target: AutoPromptTarget,
+    display_prompt: Option<&str>,
+    actual_prompt: &str,
+    action: &str,
+    default_status: &str,
+) -> bool {
+    if !target_project_is_registered(app, &target) {
+        app.set_status("Auto prompt target project is no longer loaded.");
         return false;
+    }
+    let visible = target_is_visible(app, &target);
+    let events_offset = if visible {
+        app.display_events.len()
+    } else {
+        stored_event_count(&target)
     };
-    app.staged_prompt = Some(prompt);
+    let session_file_size = if visible { app.session_file_size } else { 0 };
+    let send_prompt = build_context_prompt_for_target(app, &target, actual_prompt);
+
+    if visible {
+        if let Some(prompt) = display_prompt {
+            app.record_prompt_history(prompt);
+            app.add_user_message(prompt.to_string());
+            app.process_session_chunk(&format!("You: {}\n", prompt));
+            app.current_todos.clear();
+        }
+    } else if let Some(prompt) = display_prompt {
+        app.record_prompt_history(prompt);
+    }
+
+    let selected_model = app.selected_model.clone();
+    match spawn_with_retry_and_fallback(
+        claude_process,
+        target.key().worktree_path(),
+        &send_prompt,
+        None,
+        selected_model.as_deref(),
+        action,
+    ) {
+        Ok(outcome) => {
+            let success_notice = outcome.success_notice.clone();
+            let pid = register_prompt_process(
+                app,
+                &target,
+                outcome,
+                visible,
+                events_offset,
+                session_file_size,
+            );
+            track_auto_prompt_spawn(app, &target, display_prompt, actual_prompt, pid);
+            if visible {
+                app.update_title_session_name();
+            }
+            app.set_status(success_notice.unwrap_or_else(|| default_status.to_string()));
+        }
+        Err(e) => app.set_status(e),
+    }
     true
 }
 
 /// Send a prompt to the current worktree and optionally show it as a user message.
 pub(crate) fn send_prompt_to_current_worktree(
+    app: &mut App,
+    claude_process: &AgentProcess,
+    display_prompt: Option<&str>,
+    actual_prompt: &str,
+    action: &str,
+    default_status: &str,
+) -> bool {
+    if let Some(target) = app.current_auto_prompt_target() {
+        return send_prompt_to_target(
+            app,
+            claude_process,
+            target,
+            display_prompt,
+            actual_prompt,
+            action,
+            default_status,
+        );
+    }
+    send_prompt_to_current_worktree_without_store(
+        app,
+        claude_process,
+        display_prompt,
+        actual_prompt,
+        action,
+        default_status,
+    )
+}
+
+/// Send a current-worktree prompt when no store session id exists yet.
+fn send_prompt_to_current_worktree_without_store(
     app: &mut App,
     claude_process: &AgentProcess,
     display_prompt: Option<&str>,
@@ -238,7 +509,6 @@ pub(crate) fn send_prompt_to_current_worktree(
         .current_worktree()
         .map(|s| s.branch_name.clone())
         .unwrap_or_default();
-    let events_offset = app.display_events.len();
     let send_prompt = app.build_context_prompt_for_current_session(actual_prompt);
 
     if let Some(prompt) = display_prompt {
@@ -258,19 +528,12 @@ pub(crate) fn send_prompt_to_current_worktree(
         action,
     ) {
         Ok(outcome) => {
-            if let Some(sid) = app.current_session_id {
-                app.pid_session_target.insert(
-                    outcome.pid.to_string(),
-                    (sid, wt_path.clone(), events_offset, app.session_file_size),
-                );
-            }
             app.register_claude(
-                branch.clone(),
+                branch,
                 outcome.pid,
                 outcome.rx,
                 outcome.registration_model.as_deref(),
             );
-            track_auto_prompt_spawn(app, display_prompt, actual_prompt, outcome.pid, &branch);
             app.update_title_session_name();
             app.set_status(
                 outcome
@@ -283,47 +546,81 @@ pub(crate) fn send_prompt_to_current_worktree(
     true
 }
 
+/// Send all ready auto-prompt repeats to their own target sessions.
+fn send_ready_auto_prompts(app: &mut App, claude_process: &AgentProcess) -> bool {
+    let mut sent = false;
+    for key in app.auto_prompt.tracked_keys() {
+        if !auto_prompt_ready_for_key(app, &key) {
+            continue;
+        }
+        let Some(target) = app.auto_prompt.entry_for(&key).and_then(|entry| {
+            if entry.prompt().is_some() {
+                Some(entry.target().clone())
+            } else {
+                None
+            }
+        }) else {
+            app.auto_prompt.clear_tracked_turn(&key);
+            continue;
+        };
+        let Some(prompt) = app.auto_prompt.take_repeat_prompt(&key) else {
+            continue;
+        };
+        sent |= send_prompt_to_target(
+            app,
+            claude_process,
+            target,
+            Some(&prompt),
+            &prompt,
+            "auto prompt repeat",
+            "Auto prompt running...",
+        );
+    }
+    sent
+}
+
 use super::agent_events;
 
 /// Send staged prompt when no agent is running and no dialog is blocking.
 /// Returns true if a prompt was sent (needs redraw).
 pub fn send_staged_prompt(app: &mut App, claude_process: &AgentProcess) -> bool {
-    if app.is_active_slot_running() || app.new_session_dialog_active {
+    if app.new_session_dialog_active {
         return false;
     }
-    if app.staged_prompt.is_none() {
-        stage_auto_prompt_if_ready(app);
-    }
-    if app.staged_prompt.is_none() {
-        return false;
-    }
+    let mut sent = false;
 
-    // Issue session: first prompt spawns the issue agent with hidden system prompt
-    if let Some(ref issue) = app.issue_session {
-        if issue.slot_id.is_empty() {
+    if !app.is_active_slot_running() && app.staged_prompt.is_some() {
+        // Issue session: first prompt spawns the issue agent with hidden system prompt
+        if let Some(ref issue) = app.issue_session {
+            if issue.slot_id.is_empty() {
+                if let Some(prompt) = app.staged_prompt.take() {
+                    let cached_json = app
+                        .issue_session
+                        .as_ref()
+                        .map(|i| i.cached_issues_json.clone())
+                        .unwrap_or_default();
+                    app.spawn_issue_session(&prompt, &cached_json, claude_process);
+                    sent = true;
+                }
+            }
+        }
+
+        if !sent {
             if let Some(prompt) = app.staged_prompt.take() {
-                let cached_json = app
-                    .issue_session
-                    .as_ref()
-                    .map(|i| i.cached_issues_json.clone())
-                    .unwrap_or_default();
-                app.spawn_issue_session(&prompt, &cached_json, claude_process);
-                return true;
+                sent |= send_prompt_to_current_worktree(
+                    app,
+                    claude_process,
+                    Some(&prompt),
+                    &prompt,
+                    "prompt start",
+                    "Running...",
+                );
             }
         }
     }
 
-    if let Some(prompt) = app.staged_prompt.take() {
-        return send_prompt_to_current_worktree(
-            app,
-            claude_process,
-            Some(&prompt),
-            &prompt,
-            "prompt start",
-            "Running...",
-        );
-    }
-    false
+    let auto_sent = send_ready_auto_prompts(app, claude_process);
+    sent || auto_sent
 }
 
 /// Manage compaction lifecycle: poll existing agents, spawn new ones when
@@ -400,21 +697,23 @@ mod tests {
     use std::path::PathBuf;
 
     /// Build an app whose tracked auto-prompt slot has exited successfully.
-    fn app_with_tracked_auto_prompt() -> App {
+    fn app_with_tracked_auto_prompt() -> (App, AutoPromptKey) {
         let mut app = App::new();
+        let wt_path = PathBuf::from("/tmp/feature");
         app.worktrees.push(crate::models::Worktree {
             branch_name: "feature".into(),
-            worktree_path: Some(PathBuf::from("/tmp/feature")),
+            worktree_path: Some(wt_path.clone()),
             claude_session_id: None,
             archived: false,
         });
         app.selected_worktree = Some(0);
         app.current_session_id = Some(7);
-        app.auto_prompt.toggle();
-        app.auto_prompt
-            .capture_prompt("repeat me", "42", "feature", Some(7));
+        let target = app.current_auto_prompt_target().unwrap();
+        let key = target.key().clone();
+        app.auto_prompt.toggle(target.clone());
+        app.auto_prompt.capture_prompt(target, "repeat me", "42");
         app.agent_exit_codes.insert("42".into(), 0);
-        app
+        (app, key)
     }
 
     /// Spawn failure messages include retry details and fallback failure text.
@@ -451,40 +750,127 @@ mod tests {
 
     /// A zero-exit tracked turn queues the captured prompt for repeat.
     #[test]
-    fn stage_auto_prompt_queues_after_completed_tracked_turn() {
-        let mut app = app_with_tracked_auto_prompt();
+    fn auto_prompt_ready_after_completed_tracked_turn() {
+        let (mut app, key) = app_with_tracked_auto_prompt();
 
-        assert!(stage_auto_prompt_if_ready(&mut app));
+        assert!(auto_prompt_ready_for_key(&mut app, &key));
 
-        assert_eq!(app.staged_prompt.as_deref(), Some("repeat me"));
-        assert!(app.auto_prompt.tracked_slot().is_none());
+        assert_eq!(
+            app.auto_prompt.entry_for(&key).unwrap().prompt(),
+            Some("repeat me")
+        );
+        assert_eq!(
+            app.auto_prompt.entry_for(&key).unwrap().tracked_slot(),
+            Some("42")
+        );
     }
 
     /// Compaction delays the repeat until the compaction request clears.
     #[test]
-    fn stage_auto_prompt_defers_while_compaction_is_pending() {
-        let mut app = app_with_tracked_auto_prompt();
+    fn auto_prompt_defers_while_target_compaction_is_pending() {
+        let (mut app, key) = app_with_tracked_auto_prompt();
         app.compaction_needed = Some((7, PathBuf::from("/tmp/feature")));
 
-        assert!(!stage_auto_prompt_if_ready(&mut app));
+        assert!(!auto_prompt_ready_for_key(&mut app, &key));
 
-        assert!(app.staged_prompt.is_none());
-        assert!(app.auto_prompt.is_pending_after_compaction());
+        assert!(app
+            .auto_prompt
+            .entry_for(&key)
+            .unwrap()
+            .is_pending_after_compaction());
 
         app.compaction_needed = None;
-        assert!(stage_auto_prompt_if_ready(&mut app));
-        assert_eq!(app.staged_prompt.as_deref(), Some("repeat me"));
+        assert!(auto_prompt_ready_for_key(&mut app, &key));
     }
 
-    /// Agent pause workflows suppress repeats instead of treating the pause as completion.
+    /// Compaction in one session does not block a different auto-prompt key.
     #[test]
-    fn stage_auto_prompt_suppresses_agent_pause_turns() {
-        let mut app = app_with_tracked_auto_prompt();
-        app.awaiting_plan_approval = true;
+    fn auto_prompt_compaction_block_is_per_session() {
+        let (mut app, first_key) = app_with_tracked_auto_prompt();
+        let second_target = AutoPromptTarget::new(
+            PathBuf::from("/tmp/feature"),
+            8,
+            "feature",
+            app.project.as_ref().map(|project| project.path.clone()),
+        );
+        let second_key = second_target.key().clone();
+        app.auto_prompt.toggle(second_target.clone());
+        app.auto_prompt
+            .capture_prompt(second_target, "other repeat", "43");
+        app.agent_exit_codes.insert("43".into(), 0);
+        app.compaction_needed = Some((7, PathBuf::from("/tmp/feature")));
 
-        assert!(!stage_auto_prompt_if_ready(&mut app));
+        assert!(!auto_prompt_ready_for_key(&mut app, &first_key));
+        assert!(auto_prompt_ready_for_key(&mut app, &second_key));
+    }
 
-        assert!(app.staged_prompt.is_none());
-        assert!(app.auto_prompt.tracked_slot().is_none());
+    /// Build an ExitPlanMode tool call for pause-detection tests.
+    fn exit_plan_tool_call() -> DisplayEvent {
+        DisplayEvent::ToolCall {
+            _uuid: String::new(),
+            tool_use_id: "tool-1".into(),
+            tool_name: "ExitPlanMode".into(),
+            file_path: None,
+            input: serde_json::json!({}),
+        }
+    }
+
+    /// Agent pause workflows hold repeats instead of treating the pause as completion.
+    #[test]
+    fn auto_prompt_defers_agent_pause_turns() {
+        let (mut app, key) = app_with_tracked_auto_prompt();
+        app.display_events.push(exit_plan_tool_call());
+
+        assert!(!auto_prompt_ready_for_key(&mut app, &key));
+
+        assert_eq!(
+            app.auto_prompt.entry_for(&key).unwrap().tracked_slot(),
+            Some("42")
+        );
+    }
+
+    /// A pause in the viewed session does not block another session's loop.
+    #[test]
+    fn auto_prompt_pause_block_is_per_session() {
+        let (mut app, first_key) = app_with_tracked_auto_prompt();
+        let second_target = AutoPromptTarget::new(
+            PathBuf::from("/tmp/feature"),
+            8,
+            "feature",
+            app.project.as_ref().map(|project| project.path.clone()),
+        );
+        let second_key = second_target.key().clone();
+        app.auto_prompt.toggle(second_target.clone());
+        app.auto_prompt
+            .capture_prompt(second_target, "other repeat", "43");
+        app.agent_exit_codes.insert("43".into(), 0);
+        app.display_events.push(exit_plan_tool_call());
+
+        assert!(!auto_prompt_ready_for_key(&mut app, &first_key));
+        assert!(auto_prompt_ready_for_key(&mut app, &second_key));
+    }
+
+    /// A user response to a pause tracks the continuation without replacing the repeat prompt.
+    #[test]
+    fn auto_prompt_pause_response_tracks_continuation_slot() {
+        let (mut app, key) = app_with_tracked_auto_prompt();
+        let target = app.current_auto_prompt_target().unwrap();
+
+        track_auto_prompt_spawn(
+            &mut app,
+            &target,
+            Some("1"),
+            "[SYSTEM: You just called ExitPlanMode.]\n\nUser response: 1",
+            77,
+        );
+
+        let entry = app.auto_prompt.entry_for(&key).unwrap();
+        assert_eq!(entry.prompt(), Some("repeat me"));
+        assert!(app
+            .auto_prompt
+            .entry_for(&key)
+            .unwrap()
+            .tracked_slot()
+            .is_some_and(|slot| slot == "77"));
     }
 }

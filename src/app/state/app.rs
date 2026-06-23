@@ -25,7 +25,7 @@ mod stt;
 /// Todo item types and parsing helpers.
 mod todo;
 
-pub use auto_prompt::AutoPromptState;
+pub use auto_prompt::{AutoPromptKey, AutoPromptState, AutoPromptTarget};
 pub(crate) use cpu::get_cpu_time_micros;
 pub use deferred::DeferredAction;
 pub use todo::{TodoItem, TodoStatus};
@@ -79,7 +79,7 @@ pub struct App {
     pub pending_user_message: Option<String>,
     /// Prompt staged to send after cancelling current Claude process
     pub staged_prompt: Option<String>,
-    /// Repeat-prompt toggle and tracked turn state for auto prompt mode.
+    /// Per-session repeat-prompt entries for auto prompt mode.
     pub auto_prompt: AutoPromptState,
     pub event_parser: EventParser,
     pub selected_event: Option<usize>,
