@@ -11,6 +11,7 @@ use crate::claude::AgentEvent;
 
 use crate::app::state::App;
 
+/// Agent process lifecycle methods attached to the application state.
 impl App {
     /// Remove one slot from all PID/slot-keyed tracking maps. Does not mutate
     /// branch slot lists; callers that know the branch should update those too.
@@ -84,10 +85,8 @@ impl App {
         };
 
         // If not in current project, check background project snapshots
-        if branch.is_none() {
-            if self.handle_background_exit(slot_id, code) {
-                return;
-            }
+        if branch.is_none() && self.handle_background_exit(slot_id, code) {
+            return;
         }
 
         // Send notification before cleaning up state
@@ -257,7 +256,7 @@ impl App {
         let branch = snapshot
             .branch_slots
             .iter()
-            .find(|(_, slots)| slots.contains(&slot_id.to_string()))
+            .find(|(_, slots)| slots.iter().any(|slot| slot == slot_id))
             .map(|(b, _)| b.clone());
 
         // Send notification with the background project's name, not the active project
@@ -585,9 +584,7 @@ impl App {
         // recovered on restart, even if the user switched worktrees before the
         // agent reported its real session ID.
         if let Some((session_id, wt_path, _, _)) = self.pid_session_target.get(slot_id) {
-            let store = if self.session_store_path.as_ref().map(|p| p.as_path())
-                == Some(wt_path.as_path())
-            {
+            let store = if self.session_store_path.as_deref() == Some(wt_path.as_path()) {
                 self.session_store.as_ref()
             } else {
                 None
@@ -620,11 +617,13 @@ impl App {
 }
 
 #[cfg(test)]
+/// Tests for slot lifecycle tracking and session UUID persistence.
 mod tests {
     use super::*;
     use std::io::Write;
     use std::sync::mpsc;
 
+    /// Viewed Codex slots retarget JSONL watches when the real session id arrives.
     #[test]
     fn set_claude_session_id_retargets_viewed_codex_session_file() {
         let mut app = App::new();
@@ -692,6 +691,7 @@ mod tests {
         crate::config::remove_session_file(&session_path);
     }
 
+    /// Session UUID persistence writes to the target worktree store after a project switch.
     #[test]
     fn set_claude_session_id_persists_uuid_to_target_worktree_store_after_switch() {
         let mut app = App::new();

@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::file_icons::file_icon;
 use super::util::{truncate, AZURE};
@@ -167,7 +168,7 @@ fn build_file_tree_lines(app: &App) -> Vec<Line<'static>> {
             };
 
             // Check if this entry is the clipboard source (Copy/Move target)
-            let is_clipboard_src = clipboard_src.map_or(false, |p| *p == entry.path);
+            let is_clipboard_src = clipboard_src.is_some_and(|p| p == &entry.path);
 
             let max_name_len = 38usize.saturating_sub(entry.depth * 2 + 2);
             if is_clipboard_src {
@@ -290,6 +291,10 @@ fn build_action_bar_content(action: &FileTreeAction) -> (String, Vec<(String, St
 /// tokens like "Enter:paste" or "Esc:cancel" stay together on one line.
 /// Falls back to hard char-break only when a single token exceeds max_width.
 fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'static>> {
+    if max_width == 0 {
+        return Vec::new();
+    }
+
     // Flatten all parts into (word, style) tokens split on spaces.
     // Leading/trailing spaces become empty "" tokens to preserve spacing.
     let mut tokens: Vec<(&str, Style)> = Vec::new();
@@ -311,10 +316,10 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
     let mut col = 0usize;
 
     for (token, style) in tokens {
-        let len = token.chars().count();
+        let len = UnicodeWidthStr::width(token);
         // Space token — only emit if it fits, otherwise skip (line break absorbs it)
         if token == " " {
-            if col + 1 <= max_width {
+            if col < max_width {
                 current_spans.push(Span::styled(" ", style));
                 col += 1;
             }
@@ -329,29 +334,31 @@ fn wrap_action_bar(parts: &[(String, Style)], max_width: usize) -> Vec<Line<'sta
         // Word doesn't fit — wrap to next line (flush current)
         if !current_spans.is_empty() {
             lines.push(Line::from(std::mem::take(&mut current_spans)));
-            col = 0;
         }
         // If the word itself fits on a fresh line, emit it whole
         if len <= max_width {
             current_spans.push(Span::styled(token.to_string(), style));
             col = len;
         } else {
-            // Single word wider than max_width — hard-break it char by char
+            // Single word wider than max_width — hard-break by display columns.
             let mut chunk = String::new();
+            let mut chunk_width = 0usize;
             for ch in token.chars() {
-                if col >= max_width {
-                    if !chunk.is_empty() {
-                        current_spans.push(Span::styled(chunk.clone(), style));
-                        chunk.clear();
-                    }
+                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+                if !chunk.is_empty() && chunk_width + ch_width > max_width {
+                    current_spans.push(Span::styled(chunk.clone(), style));
+                    chunk.clear();
                     lines.push(Line::from(std::mem::take(&mut current_spans)));
-                    col = 0;
+                    chunk_width = 0;
                 }
                 chunk.push(ch);
-                col += 1;
+                chunk_width += ch_width;
             }
             if !chunk.is_empty() {
                 current_spans.push(Span::styled(chunk, style));
+                col = chunk_width;
+            } else {
+                col = 0;
             }
         }
     }
@@ -543,6 +550,7 @@ pub fn draw_file_tree(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(widget, area);
 }
 
+/// Tests for file-tree rendering helpers and action-bar wrapping.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -552,36 +560,43 @@ mod tests {
     // FT_OPTIONS constant
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies ft options count.
     #[test]
     fn test_ft_options_count() {
         assert_eq!(FT_OPTIONS.len(), 7);
     }
 
+    /// Verifies ft options contains worktrees.
     #[test]
     fn test_ft_options_contains_worktrees() {
         assert!(FT_OPTIONS.contains(&"worktrees"));
     }
 
+    /// Verifies ft options contains git.
     #[test]
     fn test_ft_options_contains_git() {
         assert!(FT_OPTIONS.contains(&".git"));
     }
 
+    /// Verifies ft options contains claude.
     #[test]
     fn test_ft_options_contains_claude() {
         assert!(FT_OPTIONS.contains(&".claude"));
     }
 
+    /// Verifies ft options contains azureal.
     #[test]
     fn test_ft_options_contains_azureal() {
         assert!(FT_OPTIONS.contains(&".azureal"));
     }
 
+    /// Verifies ft options contains ds store.
     #[test]
     fn test_ft_options_contains_ds_store() {
         assert!(FT_OPTIONS.contains(&".DS_Store"));
     }
 
+    /// Verifies ft options all non empty.
     #[test]
     fn test_ft_options_all_non_empty() {
         for opt in FT_OPTIONS {
@@ -589,6 +604,7 @@ mod tests {
         }
     }
 
+    /// Verifies ft options order.
     #[test]
     fn test_ft_options_order() {
         assert_eq!(FT_OPTIONS[0], "worktrees");
@@ -599,18 +615,21 @@ mod tests {
     // GF_GREEN and GF_GREEN_DIM colors (from build_file_tree_lines)
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies gf green color.
     #[test]
     fn test_gf_green_color() {
         let gf_green = Color::Rgb(80, 200, 80);
         assert_eq!(gf_green, Color::Rgb(80, 200, 80));
     }
 
+    /// Verifies gf green dim color.
     #[test]
     fn test_gf_green_dim_color() {
         let gf_green_dim = Color::Rgb(60, 140, 60);
         assert_eq!(gf_green_dim, Color::Rgb(60, 140, 60));
     }
 
+    /// Verifies gf border green color.
     #[test]
     fn test_gf_border_green_color() {
         let gf_border_green = Color::Rgb(80, 200, 80);
@@ -621,6 +640,7 @@ mod tests {
     // build_action_bar_content
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies action bar copy.
     #[test]
     fn test_action_bar_copy() {
         let action = FileTreeAction::Copy(PathBuf::from("/tmp/test.rs"));
@@ -630,6 +650,7 @@ mod tests {
         assert!(!parts.is_empty());
     }
 
+    /// Verifies action bar move.
     #[test]
     fn test_action_bar_move() {
         let action = FileTreeAction::Move(PathBuf::from("/tmp/file.txt"));
@@ -639,6 +660,7 @@ mod tests {
         assert!(!parts.is_empty());
     }
 
+    /// Verifies action bar add.
     #[test]
     fn test_action_bar_add() {
         let action = FileTreeAction::Add("new_file.rs".into());
@@ -648,6 +670,7 @@ mod tests {
         assert!(!parts.is_empty());
     }
 
+    /// Verifies action bar add empty.
     #[test]
     fn test_action_bar_add_empty() {
         let action = FileTreeAction::Add(String::new());
@@ -655,6 +678,7 @@ mod tests {
         assert!(plain.contains("Add"));
     }
 
+    /// Verifies action bar rename.
     #[test]
     fn test_action_bar_rename() {
         let action = FileTreeAction::Rename("renamed.rs".into());
@@ -664,6 +688,7 @@ mod tests {
         assert!(!parts.is_empty());
     }
 
+    /// Verifies action bar delete.
     #[test]
     fn test_action_bar_delete() {
         let action = FileTreeAction::Delete;
@@ -672,6 +697,7 @@ mod tests {
         assert_eq!(parts.len(), 1);
     }
 
+    /// Verifies action bar copy includes hints.
     #[test]
     fn test_action_bar_copy_includes_hints() {
         let action = FileTreeAction::Copy(PathBuf::from("/a/b"));
@@ -680,6 +706,7 @@ mod tests {
         assert!(plain.contains("Esc:cancel"));
     }
 
+    /// Verifies action bar move includes hints.
     #[test]
     fn test_action_bar_move_includes_hints() {
         let action = FileTreeAction::Move(PathBuf::from("/x"));
@@ -687,6 +714,7 @@ mod tests {
         assert!(plain.contains("Enter:paste"));
     }
 
+    /// Verifies action bar add includes cursor.
     #[test]
     fn test_action_bar_add_includes_cursor() {
         let action = FileTreeAction::Add("test".into());
@@ -694,6 +722,7 @@ mod tests {
         assert!(plain.ends_with('\u{2588}')); // block char cursor
     }
 
+    /// Verifies action bar rename includes cursor.
     #[test]
     fn test_action_bar_rename_includes_cursor() {
         let action = FileTreeAction::Rename("test".into());
@@ -701,6 +730,7 @@ mod tests {
         assert!(plain.ends_with('\u{2588}'));
     }
 
+    /// Verifies action bar copy no filename.
     #[test]
     fn test_action_bar_copy_no_filename() {
         let action = FileTreeAction::Copy(PathBuf::from("/"));
@@ -708,6 +738,7 @@ mod tests {
         assert!(plain.contains("Copy"));
     }
 
+    /// Verifies action bar parts have styles.
     #[test]
     fn test_action_bar_parts_have_styles() {
         let action = FileTreeAction::Delete;
@@ -721,6 +752,7 @@ mod tests {
     // wrap_action_bar
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap action bar single line fits.
     #[test]
     fn test_wrap_action_bar_single_line_fits() {
         let parts = vec![("hello".to_string(), Style::default())];
@@ -728,6 +760,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
     }
 
+    /// Verifies wrap action bar wraps at width.
     #[test]
     fn test_wrap_action_bar_wraps_at_width() {
         let parts = vec![("hello world foo bar".to_string(), Style::default())];
@@ -735,6 +768,7 @@ mod tests {
         assert!(lines.len() > 1);
     }
 
+    /// Verifies wrap action bar empty.
     #[test]
     fn test_wrap_action_bar_empty() {
         let parts: Vec<(String, Style)> = vec![];
@@ -742,6 +776,7 @@ mod tests {
         assert!(lines.is_empty());
     }
 
+    /// Verifies wrap action bar single word fits.
     #[test]
     fn test_wrap_action_bar_single_word_fits() {
         let parts = vec![("short".to_string(), Style::default())];
@@ -749,6 +784,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
     }
 
+    /// Verifies wrap action bar hard break long word.
     #[test]
     fn test_wrap_action_bar_hard_break_long_word() {
         let parts = vec![("abcdefghijklmnop".to_string(), Style::default())];
@@ -756,6 +792,7 @@ mod tests {
         assert!(lines.len() > 1);
     }
 
+    /// Verifies wrap action bar preserves style.
     #[test]
     fn test_wrap_action_bar_preserves_style() {
         let style = Style::default().fg(Color::Red);
@@ -765,6 +802,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].style.fg, Some(Color::Red));
     }
 
+    /// Verifies wrap action bar multiple parts.
     #[test]
     fn test_wrap_action_bar_multiple_parts() {
         let parts = vec![
@@ -775,6 +813,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
     }
 
+    /// Verifies wrap action bar width 1.
     #[test]
     fn test_wrap_action_bar_width_1() {
         let parts = vec![("abc".to_string(), Style::default())];
@@ -782,6 +821,41 @@ mod tests {
         assert_eq!(lines.len(), 3);
     }
 
+    /// Verifies wrap action bar uses display width for wide chars.
+    #[test]
+    fn test_wrap_action_bar_uses_display_width_for_wide_chars() {
+        let parts = vec![("日本".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 3);
+        let text: Vec<String> = lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+        assert_eq!(text, vec!["日", "本"]);
+    }
+
+    /// Verifies wrap action bar skips space after exact hard wrap.
+    #[test]
+    fn test_wrap_action_bar_skips_space_after_exact_hard_wrap() {
+        let parts = vec![("abcd ef".to_string(), Style::default())];
+        let lines = wrap_action_bar(&parts, 2);
+        let text: Vec<String> = lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+        assert_eq!(text, vec!["ab", "cd", "ef"]);
+    }
+
+    /// Verifies wrap action bar exact width.
     #[test]
     fn test_wrap_action_bar_exact_width() {
         let parts = vec![("hello".to_string(), Style::default())];
@@ -789,6 +863,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
     }
 
+    /// Verifies wrap action bar space at boundary.
     #[test]
     fn test_wrap_action_bar_space_at_boundary() {
         let parts = vec![("ab cd ef".to_string(), Style::default())];
@@ -796,6 +871,7 @@ mod tests {
         assert!(lines.len() >= 2);
     }
 
+    /// Verifies wrap action bar real copy action.
     #[test]
     fn test_wrap_action_bar_real_copy_action() {
         let action = FileTreeAction::Copy(PathBuf::from("/home/user/project/src/main.rs"));
@@ -804,6 +880,7 @@ mod tests {
         assert!(!lines.is_empty());
     }
 
+    /// Verifies wrap action bar real delete action.
     #[test]
     fn test_wrap_action_bar_real_delete_action() {
         let action = FileTreeAction::Delete;
@@ -816,36 +893,42 @@ mod tests {
     // FileTreeAction variants
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies file tree action add.
     #[test]
     fn test_file_tree_action_add() {
         let a = FileTreeAction::Add("file.rs".into());
         assert!(matches!(a, FileTreeAction::Add(_)));
     }
 
+    /// Verifies file tree action rename.
     #[test]
     fn test_file_tree_action_rename() {
         let a = FileTreeAction::Rename("new_name".into());
         assert!(matches!(a, FileTreeAction::Rename(_)));
     }
 
+    /// Verifies file tree action copy.
     #[test]
     fn test_file_tree_action_copy() {
         let a = FileTreeAction::Copy(PathBuf::from("/tmp/file"));
         assert!(matches!(a, FileTreeAction::Copy(_)));
     }
 
+    /// Verifies file tree action move.
     #[test]
     fn test_file_tree_action_move() {
         let a = FileTreeAction::Move(PathBuf::from("/tmp/file"));
         assert!(matches!(a, FileTreeAction::Move(_)));
     }
 
+    /// Verifies file tree action delete.
     #[test]
     fn test_file_tree_action_delete() {
         let a = FileTreeAction::Delete;
         assert!(matches!(a, FileTreeAction::Delete));
     }
 
+    /// Verifies file tree action clone.
     #[test]
     fn test_file_tree_action_clone() {
         let a = FileTreeAction::Add("test".into());
@@ -857,6 +940,7 @@ mod tests {
     // FileTreeEntry
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies file tree entry file.
     #[test]
     fn test_file_tree_entry_file() {
         let entry = crate::app::types::FileTreeEntry {
@@ -870,6 +954,7 @@ mod tests {
         assert_eq!(entry.depth, 1);
     }
 
+    /// Verifies file tree entry dir.
     #[test]
     fn test_file_tree_entry_dir() {
         let entry = crate::app::types::FileTreeEntry {
@@ -882,6 +967,7 @@ mod tests {
         assert!(entry.is_dir);
     }
 
+    /// Verifies file tree entry hidden.
     #[test]
     fn test_file_tree_entry_hidden() {
         let entry = crate::app::types::FileTreeEntry {
@@ -898,21 +984,25 @@ mod tests {
     // Indent and name length math
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies indent depth 0.
     #[test]
     fn test_indent_depth_0() {
         assert_eq!("  ".repeat(0), "");
     }
 
+    /// Verifies indent depth 1.
     #[test]
     fn test_indent_depth_1() {
-        assert_eq!("  ".repeat(1), "  ");
+        assert_eq!("  ".to_string(), "  ");
     }
 
+    /// Verifies indent depth 3.
     #[test]
     fn test_indent_depth_3() {
         assert_eq!("  ".repeat(3), "      ");
     }
 
+    /// Verifies max name len depth 0.
     #[test]
     fn test_max_name_len_depth_0() {
         let depth = 0;
@@ -920,6 +1010,7 @@ mod tests {
         assert_eq!(max, 36);
     }
 
+    /// Verifies max name len depth 3.
     #[test]
     fn test_max_name_len_depth_3() {
         let depth = 3;
@@ -927,6 +1018,7 @@ mod tests {
         assert_eq!(max, 30);
     }
 
+    /// Verifies max name len deep.
     #[test]
     fn test_max_name_len_deep() {
         let depth = 18;
@@ -938,6 +1030,7 @@ mod tests {
     // Clipboard border characters (from build_file_tree_lines)
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies clipboard move borders.
     #[test]
     fn test_clipboard_move_borders() {
         let is_move = true;
@@ -950,6 +1043,7 @@ mod tests {
         assert_eq!(r, "\u{254e}");
     }
 
+    /// Verifies clipboard copy borders.
     #[test]
     fn test_clipboard_copy_borders() {
         let is_move = false;
@@ -966,6 +1060,7 @@ mod tests {
     // Title formatting (from draw_file_tree)
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies filetree title simple.
     #[test]
     fn test_filetree_title_simple() {
         let ro_suffix = "";
@@ -973,6 +1068,7 @@ mod tests {
         assert_eq!(title, " Filetree ");
     }
 
+    /// Verifies filetree title readonly.
     #[test]
     fn test_filetree_title_readonly() {
         let ro_suffix = " (read-only)";
@@ -980,6 +1076,7 @@ mod tests {
         assert_eq!(title, " Filetree (read-only) ");
     }
 
+    /// Verifies filetree title scrolled.
     #[test]
     fn test_filetree_title_scrolled() {
         let ro_suffix = "";
@@ -990,6 +1087,7 @@ mod tests {
         assert_eq!(title, " Filetree [15/20] ");
     }
 
+    /// Verifies health scope title.
     #[test]
     fn test_health_scope_title() {
         let scope_count = 3;
@@ -1001,6 +1099,7 @@ mod tests {
         assert_eq!(title, " Health Scope (3 dirs) ");
     }
 
+    /// Verifies health scope title singular.
     #[test]
     fn test_health_scope_title_singular() {
         let scope_count = 1;

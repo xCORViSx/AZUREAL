@@ -11,9 +11,48 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::super::util::AZURE;
 use crate::app::{App, Focus};
+
+/// Measure text the way the terminal renders it: in display columns.
+fn display_width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+/// Return `text` truncated to at most `max_width` terminal columns.
+fn truncate_text_to_width(text: &str, max_width: usize) -> String {
+    if display_width(text) <= max_width {
+        return text.to_string();
+    }
+
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis = "\u{2026}";
+    let ellipsis_width = display_width(ellipsis);
+    if max_width <= ellipsis_width {
+        return ellipsis.to_string();
+    }
+
+    let content_width = max_width - ellipsis_width;
+    let mut current_width = 0usize;
+    let mut truncated = String::new();
+
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if current_width + ch_width > content_width {
+            break;
+        }
+        truncated.push(ch);
+        current_width += ch_width;
+    }
+
+    truncated.push_str(ellipsis);
+    truncated
+}
 
 /// Draw the Claude session list overlay — full-pane list of all Claude session files.
 /// Each row shows: session name, mtime, [N msgs].
@@ -143,10 +182,12 @@ fn draw_content_search(
         } else {
             Style::default().fg(Color::White)
         };
-        // Truncate preview to fit
-        let prefix_len = name_display.chars().count() + 4; // " name | "
+        // Truncate both name and preview to terminal-column budgets.
+        let name_space = inner_width.saturating_sub(4); // " name " + "│ "
+        let name_display = truncate_text_to_width(&name_display, name_space);
+        let prefix_len = display_width(&name_display) + 4; // " name | "
         let preview_space = inner_width.saturating_sub(prefix_len);
-        let trunc_preview: String = preview.chars().take(preview_space).collect();
+        let trunc_preview = truncate_text_to_width(preview, preview_space);
 
         rows.push(Line::from(vec![
             Span::styled(format!(" {} ", name_display), name_style),
@@ -279,17 +320,9 @@ fn draw_name_list(
                 None => format!(" {} {} ", time_str, msg_badge),
             };
             // Row: " ● session_name    mtime 3s [N msgs]"
-            let name_space = inner_width.saturating_sub(3 + suffix.chars().count());
-            let truncated_name = if name_display.chars().count() > name_space {
-                let trunc: String = name_display
-                    .chars()
-                    .take(name_space.saturating_sub(1))
-                    .collect();
-                format!("{}\u{2026}", trunc)
-            } else {
-                name_display
-            };
-            let pad = name_space.saturating_sub(truncated_name.chars().count());
+            let name_space = inner_width.saturating_sub(3 + display_width(&suffix));
+            let truncated_name = truncate_text_to_width(&name_display, name_space);
+            let pad = name_space.saturating_sub(display_width(&truncated_name));
 
             let is_selected = rows.len() == app.session_list_selected;
             let name_style = if is_selected {
@@ -490,6 +523,7 @@ fn draw_rename_dialog(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
+/// Exercises session-list layout helpers and display formatting rules.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,11 +536,13 @@ mod tests {
     //  AZURE constant accessibility
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies azure is correct rgb.
     #[test]
     fn azure_is_correct_rgb() {
         assert_eq!(AZURE, Color::Rgb(51, 153, 255));
     }
 
+    /// Verifies azure is not plain blue.
     #[test]
     fn azure_is_not_plain_blue() {
         assert_ne!(AZURE, Color::Blue);
@@ -516,16 +552,19 @@ mod tests {
     //  Focus::Session variant
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies focus session equals itself.
     #[test]
     fn focus_session_equals_itself() {
         assert_eq!(Focus::Session, Focus::Session);
     }
 
+    /// Verifies focus session ne worktrees.
     #[test]
     fn focus_session_ne_worktrees() {
         assert_ne!(Focus::Session, Focus::Worktrees);
     }
 
+    /// Verifies focus session ne input.
     #[test]
     fn focus_session_ne_input() {
         assert_ne!(Focus::Session, Focus::Input);
@@ -535,6 +574,7 @@ mod tests {
     //  Loading dialog sizing math
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies loading msg text.
     #[test]
     fn loading_msg_text() {
         let msg = " Loading sessions\u{2026} ";
@@ -542,6 +582,7 @@ mod tests {
         assert!(msg.contains('\u{2026}')); // ellipsis
     }
 
+    /// Verifies loading dialog width normal area.
     #[test]
     fn loading_dialog_width_normal_area() {
         let msg = " Loading sessions\u{2026} ";
@@ -551,6 +592,7 @@ mod tests {
         assert!(w > 0);
     }
 
+    /// Verifies loading dialog width narrow area.
     #[test]
     fn loading_dialog_width_narrow_area() {
         let msg = " Loading sessions\u{2026} ";
@@ -559,12 +601,14 @@ mod tests {
         assert_eq!(w, area_width);
     }
 
+    /// Verifies loading dialog height is three.
     #[test]
     fn loading_dialog_height_is_three() {
         let h = 3u16;
         assert_eq!(h, 3);
     }
 
+    /// Verifies loading dialog centering x.
     #[test]
     fn loading_dialog_centering_x() {
         let area = Rect::new(0, 0, 80, 24);
@@ -575,6 +619,7 @@ mod tests {
         assert!(x + w <= area.x + area.width);
     }
 
+    /// Verifies loading dialog centering y.
     #[test]
     fn loading_dialog_centering_y() {
         let area = Rect::new(0, 0, 80, 24);
@@ -583,6 +628,7 @@ mod tests {
         assert_eq!(y, 10); // (24-3)/2 = 10
     }
 
+    /// Verifies loading dialog centering y small area.
     #[test]
     fn loading_dialog_centering_y_small_area() {
         let area = Rect::new(0, 0, 80, 3);
@@ -595,6 +641,7 @@ mod tests {
     //  Filter bar layout splitting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies filter bar splits give 3 plus rest.
     #[test]
     fn filter_bar_splits_give_3_plus_rest() {
         let area = Rect::new(0, 0, 80, 24);
@@ -603,6 +650,7 @@ mod tests {
         assert_eq!(chunks[1].height, 21);
     }
 
+    /// Verifies no filter uses full area.
     #[test]
     fn no_filter_uses_full_area() {
         let area = Rect::new(0, 0, 80, 24);
@@ -616,6 +664,7 @@ mod tests {
         assert_eq!(list_area, area);
     }
 
+    /// Verifies has filter gives some filter area.
     #[test]
     fn has_filter_gives_some_filter_area() {
         let area = Rect::new(0, 0, 80, 24);
@@ -634,6 +683,7 @@ mod tests {
     //  Mode prefix logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies mode prefix content search.
     #[test]
     fn mode_prefix_content_search() {
         let session_content_search = true;
@@ -641,6 +691,7 @@ mod tests {
         assert_eq!(prefix, "//");
     }
 
+    /// Verifies mode prefix name filter.
     #[test]
     fn mode_prefix_name_filter() {
         let session_content_search = false;
@@ -652,6 +703,7 @@ mod tests {
     //  Border color logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies filter border active is yellow.
     #[test]
     fn filter_border_active_is_yellow() {
         let active = true;
@@ -663,6 +715,7 @@ mod tests {
         assert_eq!(color, Color::Yellow);
     }
 
+    /// Verifies filter border inactive is dark gray.
     #[test]
     fn filter_border_inactive_is_dark_gray() {
         let active = false;
@@ -678,6 +731,7 @@ mod tests {
     //  Right info formatting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies right info content search shows count.
     #[test]
     fn right_info_content_search_shows_count() {
         let content_search = true;
@@ -690,6 +744,7 @@ mod tests {
         assert_eq!(right_info, " 5 results ");
     }
 
+    /// Verifies right info name filter is empty.
     #[test]
     fn right_info_name_filter_is_empty() {
         let content_search = false;
@@ -701,6 +756,7 @@ mod tests {
         assert!(right_info.is_empty());
     }
 
+    /// Verifies right info zero results.
     #[test]
     fn right_info_zero_results() {
         let right_info = format!(" {} results ", 0);
@@ -711,6 +767,7 @@ mod tests {
     //  Viewport height / inner width math
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies viewport height normal.
     #[test]
     fn viewport_height_normal() {
         let area = Rect::new(0, 0, 80, 24);
@@ -718,6 +775,7 @@ mod tests {
         assert_eq!(vh, 22);
     }
 
+    /// Verifies viewport height tiny.
     #[test]
     fn viewport_height_tiny() {
         let area = Rect::new(0, 0, 80, 2);
@@ -725,6 +783,7 @@ mod tests {
         assert_eq!(vh, 0);
     }
 
+    /// Verifies inner width normal.
     #[test]
     fn inner_width_normal() {
         let area = Rect::new(0, 0, 80, 24);
@@ -732,6 +791,7 @@ mod tests {
         assert_eq!(iw, 78);
     }
 
+    /// Verifies inner width narrow.
     #[test]
     fn inner_width_narrow() {
         let area = Rect::new(0, 0, 2, 24);
@@ -743,13 +803,15 @@ mod tests {
     //  Preview truncation in content search
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies preview truncation prefix len.
     #[test]
     fn preview_truncation_prefix_len() {
         let name_display = "my-session";
-        let prefix_len = name_display.chars().count() + 4; // " name | "
+        let prefix_len = display_width(name_display) + 4; // " name | "
         assert_eq!(prefix_len, 14);
     }
 
+    /// Verifies preview space calculation.
     #[test]
     fn preview_space_calculation() {
         let inner_width = 78;
@@ -758,70 +820,86 @@ mod tests {
         assert_eq!(preview_space, 64);
     }
 
+    /// Verifies preview truncation respects budget.
     #[test]
     fn preview_truncation_respects_budget() {
         let preview = "This is a really long preview text that should be truncated at some point";
         let preview_space = 20;
-        let trunc: String = preview.chars().take(preview_space).collect();
-        assert_eq!(trunc.len(), 20);
+        let trunc = truncate_text_to_width(preview, preview_space);
+        assert_eq!(display_width(&trunc), 20);
+        assert!(trunc.ends_with('\u{2026}'));
     }
 
+    /// Verifies preview truncation short preview unchanged.
     #[test]
     fn preview_truncation_short_preview_unchanged() {
         let preview = "short";
         let preview_space = 20;
-        let trunc: String = preview.chars().take(preview_space).collect();
+        let trunc = truncate_text_to_width(preview, preview_space);
         assert_eq!(trunc, "short");
+    }
+
+    /// Verifies preview truncation uses display width for wide text.
+    #[test]
+    fn preview_truncation_uses_display_width_for_wide_text() {
+        let preview = "日本語abc";
+        let trunc = truncate_text_to_width(preview, 5);
+        assert_eq!(trunc, "日本\u{2026}");
+        assert_eq!(display_width(&trunc), 5);
     }
 
     // ══════════════════════════════════════════════════════════════════
     //  Name truncation with ellipsis
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies name truncation short name unchanged.
     #[test]
     fn name_truncation_short_name_unchanged() {
         let name = "hello".to_string();
         let space = 20;
-        let result = if name.chars().count() > space {
-            let trunc: String = name.chars().take(space.saturating_sub(1)).collect();
-            format!("{}\u{2026}", trunc)
-        } else {
-            name.clone()
-        };
+        let result = truncate_text_to_width(&name, space);
         assert_eq!(result, "hello");
     }
 
+    /// Verifies name truncation long name gets ellipsis.
     #[test]
     fn name_truncation_long_name_gets_ellipsis() {
         let name = "very-long-session-name-here".to_string();
         let space = 10;
-        let result = if name.chars().count() > space {
-            let trunc: String = name.chars().take(space.saturating_sub(1)).collect();
-            format!("{}\u{2026}", trunc)
-        } else {
-            name.clone()
-        };
+        let result = truncate_text_to_width(&name, space);
         assert!(result.ends_with('\u{2026}'));
-        assert_eq!(result.chars().count(), 10);
+        assert_eq!(display_width(&result), 10);
     }
 
+    /// Verifies name truncation exact fit.
     #[test]
     fn name_truncation_exact_fit() {
         let name = "abcde".to_string();
         let space = 5;
-        let result = if name.chars().count() > space {
-            let trunc: String = name.chars().take(space.saturating_sub(1)).collect();
-            format!("{}\u{2026}", trunc)
-        } else {
-            name.clone()
-        };
+        let result = truncate_text_to_width(&name, space);
         assert_eq!(result, "abcde");
+    }
+
+    /// Verifies name truncation handles tiny budgets.
+    #[test]
+    fn name_truncation_handles_tiny_budgets() {
+        assert_eq!(truncate_text_to_width("abcdef", 0), "");
+        assert_eq!(truncate_text_to_width("abcdef", 1), "\u{2026}");
+    }
+
+    /// Verifies name truncation uses display width for wide text.
+    #[test]
+    fn name_truncation_uses_display_width_for_wide_text() {
+        let result = truncate_text_to_width("編集中-session", 6);
+        assert_eq!(result, "編集\u{2026}");
+        assert_eq!(display_width(&result), 5);
     }
 
     // ══════════════════════════════════════════════════════════════════
     //  Scroll clamping logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies clamp selected to total.
     #[test]
     fn clamp_selected_to_total() {
         let total = 5;
@@ -832,6 +910,7 @@ mod tests {
         assert_eq!(selected, 4);
     }
 
+    /// Verifies clamp selected zero items.
     #[test]
     fn clamp_selected_zero_items() {
         let total = 0;
@@ -843,6 +922,7 @@ mod tests {
         assert_eq!(selected, 5);
     }
 
+    /// Verifies max scroll calculation.
     #[test]
     fn max_scroll_calculation() {
         let total = 20;
@@ -851,6 +931,7 @@ mod tests {
         assert_eq!(max, 10);
     }
 
+    /// Verifies max scroll when all fit.
     #[test]
     fn max_scroll_when_all_fit() {
         let total: usize = 5;
@@ -859,6 +940,7 @@ mod tests {
         assert_eq!(max, 0);
     }
 
+    /// Verifies scroll up when selected above viewport.
     #[test]
     fn scroll_up_when_selected_above_viewport() {
         let selected: usize = 3;
@@ -872,6 +954,7 @@ mod tests {
         assert_eq!(scroll, 3);
     }
 
+    /// Verifies scroll down when selected below viewport.
     #[test]
     fn scroll_down_when_selected_below_viewport() {
         let selected: usize = 15;
@@ -885,6 +968,7 @@ mod tests {
         assert_eq!(scroll, 6);
     }
 
+    /// Verifies scroll unchanged when selected visible.
     #[test]
     fn scroll_unchanged_when_selected_visible() {
         let selected: usize = 5;
@@ -902,6 +986,7 @@ mod tests {
     //  Title formatting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies search title format.
     #[test]
     fn search_title_format() {
         let selected: usize = 3;
@@ -914,6 +999,7 @@ mod tests {
         assert_eq!(title, " Search [4/10] ");
     }
 
+    /// Verifies search title empty.
     #[test]
     fn search_title_empty() {
         let total: usize = 0;
@@ -925,6 +1011,7 @@ mod tests {
         assert_eq!(title, " Search [0/0] ");
     }
 
+    /// Verifies session title no filter.
     #[test]
     fn session_title_no_filter() {
         let filtering = false;
@@ -944,6 +1031,7 @@ mod tests {
         assert_eq!(title, " Sessions [3/5] ");
     }
 
+    /// Verifies session title with filter.
     #[test]
     fn session_title_with_filter() {
         let filtering = true;
@@ -963,6 +1051,7 @@ mod tests {
         assert_eq!(title, " Sessions [2/3 of 10] ");
     }
 
+    /// Verifies session title zero total.
     #[test]
     fn session_title_zero_total() {
         let total: usize = 0;
@@ -978,6 +1067,7 @@ mod tests {
     //  Border styles
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies border style focused.
     #[test]
     fn border_style_focused() {
         let is_focused = true;
@@ -989,6 +1079,7 @@ mod tests {
         assert_eq!(style.fg, Some(AZURE));
     }
 
+    /// Verifies border style unfocused.
     #[test]
     fn border_style_unfocused() {
         let is_focused = false;
@@ -1000,6 +1091,7 @@ mod tests {
         assert_eq!(style.fg, Some(Color::White));
     }
 
+    /// Verifies border type focused is double.
     #[test]
     fn border_type_focused_is_double() {
         let is_focused = true;
@@ -1011,6 +1103,7 @@ mod tests {
         assert_eq!(bt, BorderType::Double);
     }
 
+    /// Verifies border type unfocused is plain.
     #[test]
     fn border_type_unfocused_is_plain() {
         let is_focused = false;
@@ -1026,6 +1119,7 @@ mod tests {
     //  Name style logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies name style selected has bg azure.
     #[test]
     fn name_style_selected_has_bg_azure() {
         let is_selected = true;
@@ -1041,6 +1135,7 @@ mod tests {
         assert_eq!(style.fg, Some(Color::Black));
     }
 
+    /// Verifies name style unselected white.
     #[test]
     fn name_style_unselected_white() {
         let is_selected = false;
@@ -1060,6 +1155,7 @@ mod tests {
     //  Dot indicators (running vs idle)
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies running dot green.
     #[test]
     fn running_dot_green() {
         let running = true;
@@ -1072,6 +1168,7 @@ mod tests {
         assert_eq!(color, Color::Green);
     }
 
+    /// Verifies idle dot dark gray.
     #[test]
     fn idle_dot_dark_gray() {
         let running = false;
@@ -1088,6 +1185,7 @@ mod tests {
     //  Message badge formatting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies msg badge format.
     #[test]
     fn msg_badge_format() {
         let count = 42;
@@ -1095,12 +1193,14 @@ mod tests {
         assert_eq!(badge, "[42 msgs]");
     }
 
+    /// Verifies msg badge zero.
     #[test]
     fn msg_badge_zero() {
         let badge = format!("[{} msgs]", 0);
         assert_eq!(badge, "[0 msgs]");
     }
 
+    /// Verifies suffix format.
     #[test]
     fn suffix_format() {
         let time_str = "2h ago";
@@ -1113,6 +1213,7 @@ mod tests {
     //  Cursor position logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies cursor x calculation.
     #[test]
     fn cursor_x_calculation() {
         let fa = Rect::new(5, 2, 40, 3);
@@ -1121,6 +1222,7 @@ mod tests {
         assert_eq!(cursor_x, 14); // 5 + 1 + 8
     }
 
+    /// Verifies cursor y calculation.
     #[test]
     fn cursor_y_calculation() {
         let fa = Rect::new(5, 2, 40, 3);
@@ -1128,6 +1230,7 @@ mod tests {
         assert_eq!(cursor_y, 3);
     }
 
+    /// Verifies cursor bounds check.
     #[test]
     fn cursor_bounds_check() {
         let fa = Rect::new(5, 2, 40, 3);
@@ -1135,6 +1238,7 @@ mod tests {
         assert!(cursor_x < fa.right()); // 16 < 45
     }
 
+    /// Verifies cursor at edge.
     #[test]
     fn cursor_at_edge() {
         let fa = Rect::new(0, 0, 10, 3);
@@ -1146,6 +1250,7 @@ mod tests {
     //  Rect construction
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies rect new basic.
     #[test]
     fn rect_new_basic() {
         let r = Rect::new(10, 20, 30, 40);
@@ -1155,6 +1260,7 @@ mod tests {
         assert_eq!(r.height, 40);
     }
 
+    /// Verifies rect right bottom.
     #[test]
     fn rect_right_bottom() {
         let r = Rect::new(5, 10, 20, 15);
@@ -1166,6 +1272,7 @@ mod tests {
     //  Filter match logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies filter matches name.
     #[test]
     fn filter_matches_name() {
         let name_display = "My Session".to_string();
@@ -1176,6 +1283,7 @@ mod tests {
         assert!(matches);
     }
 
+    /// Verifies filter matches session id.
     #[test]
     fn filter_matches_session_id() {
         let name_display = "My Session".to_string();
@@ -1186,6 +1294,7 @@ mod tests {
         assert!(matches);
     }
 
+    /// Verifies filter no match.
     #[test]
     fn filter_no_match() {
         let name_display = "My Session".to_string();
@@ -1196,6 +1305,7 @@ mod tests {
         assert!(!matches);
     }
 
+    /// Verifies filter case insensitive.
     #[test]
     fn filter_case_insensitive() {
         let name_display = "MySession".to_string();
@@ -1207,12 +1317,14 @@ mod tests {
     //  Span and Line construction
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies span styled construction.
     #[test]
     fn span_styled_construction() {
         let s = Span::styled("hello", Style::default().fg(Color::White));
         assert_eq!(s.content, "hello");
     }
 
+    /// Verifies line from spans.
     #[test]
     fn line_from_spans() {
         let line = Line::from(vec![
@@ -1222,6 +1334,7 @@ mod tests {
         assert_eq!(line.spans.len(), 2);
     }
 
+    /// Verifies block with borders and title.
     #[test]
     fn block_with_borders_and_title() {
         let block = Block::default()

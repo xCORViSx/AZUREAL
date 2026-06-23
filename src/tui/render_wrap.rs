@@ -2,6 +2,7 @@
 
 use ratatui::{style::Style, text::Span};
 use textwrap::{wrap, Options};
+use unicode_width::UnicodeWidthStr;
 
 /// Wrap text to fit within max_width, returning wrapped lines.
 /// Fast path: if text fits in max_width, returns single-element vec without calling textwrap.
@@ -10,7 +11,7 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
         return vec![String::new()];
     }
     // Fast path: text fits in one line — skip textwrap entirely
-    if text.chars().count() <= max_width && !text.contains('\n') {
+    if UnicodeWidthStr::width(text) <= max_width && !text.contains('\n') {
         return vec![text.to_string()];
     }
     let opts = Options::new(max_width).break_words(true);
@@ -27,12 +28,14 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
     }
 
     let mut full_text = String::new();
+    let mut full_text_chars = 0usize;
     let mut style_ranges: Vec<(usize, usize, Style)> = Vec::new();
 
     for span in &spans {
-        let start = full_text.len();
+        let start = full_text_chars;
         full_text.push_str(&span.content);
-        let end = full_text.len();
+        full_text_chars += span.content.chars().count();
+        let end = full_text_chars;
         style_ranges.push((start, end, span.style));
     }
 
@@ -51,7 +54,7 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
 
     for wrapped in wrapped_lines {
         let line_start = char_offset;
-        let line_end = char_offset + wrapped.len();
+        let line_end = char_offset + wrapped.chars().count();
         let mut line_spans: Vec<Span<'static>> = Vec::new();
 
         for &(range_start, range_end, style) in &style_ranges {
@@ -78,7 +81,7 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
 
         result.push(line_spans);
         char_offset = line_end;
-        if char_offset < full_text.len() {
+        if char_offset < full_text_chars {
             char_offset += 1;
         }
     }
@@ -89,28 +92,39 @@ pub fn wrap_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Vec<Span<'
     result
 }
 
+/// Tests for text and span wrapping behavior.
 #[cfg(test)]
 mod tests {
     use super::*;
     use ratatui::style::{Color, Modifier};
 
     // ─── Helpers ──────────────────────────────────────────────────────
+    /// Build a styled span for wrapping assertions.
     fn s(text: &str, style: Style) -> Span<'static> {
         Span::styled(text.to_string(), style)
     }
+
+    /// Return the default style used for unstyled spans.
     fn plain() -> Style {
         Style::default()
     }
+
+    /// Return the red style used by styled wrapping tests.
     fn red() -> Style {
         Style::default().fg(Color::Red)
     }
+
+    /// Return the blue style used by styled wrapping tests.
     fn blue() -> Style {
         Style::default().fg(Color::Blue)
     }
+
+    /// Return the bold style used by styled wrapping tests.
     fn bold() -> Style {
         Style::default().add_modifier(Modifier::BOLD)
     }
 
+    /// Collect span contents from wrapped lines for focused text assertions.
     fn _texts_from(lines: &[Vec<Span<'static>>]) -> Vec<Vec<String>> {
         lines
             .iter()
@@ -122,31 +136,37 @@ mod tests {
     // wrap_text — Empty / trivial
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap empty string.
     #[test]
     fn wrap_empty_string() {
         assert_eq!(wrap_text("", 80), vec![""]);
     }
 
+    /// Verifies wrap short fits.
     #[test]
     fn wrap_short_fits() {
         assert_eq!(wrap_text("hello", 80), vec!["hello"]);
     }
 
+    /// Verifies wrap exact fit.
     #[test]
     fn wrap_exact_fit() {
         assert_eq!(wrap_text("hello", 5), vec!["hello"]);
     }
 
+    /// Verifies wrap one char under.
     #[test]
     fn wrap_one_char_under() {
         assert_eq!(wrap_text("hell", 5), vec!["hell"]);
     }
 
+    /// Verifies wrap single char.
     #[test]
     fn wrap_single_char() {
         assert_eq!(wrap_text("a", 1), vec!["a"]);
     }
 
+    /// Verifies wrap single char wide.
     #[test]
     fn wrap_single_char_wide() {
         assert_eq!(wrap_text("a", 100), vec!["a"]);
@@ -156,6 +176,7 @@ mod tests {
     // wrap_text — Wrapping needed
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap two words.
     #[test]
     fn wrap_two_words() {
         let result = wrap_text("hello world", 5);
@@ -164,12 +185,14 @@ mod tests {
         assert_eq!(result[1], "world");
     }
 
+    /// Verifies wrap three words.
     #[test]
     fn wrap_three_words() {
         let result = wrap_text("aa bb cc", 5);
         assert!(result.len() >= 2);
     }
 
+    /// Verifies wrap long word break.
     #[test]
     fn wrap_long_word_break() {
         // break_words is true, so a long word gets broken
@@ -181,6 +204,7 @@ mod tests {
         }
     }
 
+    /// Verifies wrap width 1.
     #[test]
     fn wrap_width_1() {
         let result = wrap_text("abc", 1);
@@ -190,12 +214,14 @@ mod tests {
         assert_eq!(result[2], "c");
     }
 
+    /// Verifies wrap width 2.
     #[test]
     fn wrap_width_2() {
         let result = wrap_text("abcd", 2);
         assert_eq!(result.len(), 2);
     }
 
+    /// Verifies wrap width 3 multi word.
     #[test]
     fn wrap_width_3_multi_word() {
         let result = wrap_text("ab cd", 3);
@@ -206,6 +232,7 @@ mod tests {
     // wrap_text — Newlines
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap with newline.
     #[test]
     fn wrap_with_newline() {
         let result = wrap_text("hello\nworld", 80);
@@ -214,29 +241,33 @@ mod tests {
         assert_eq!(result[1], "world");
     }
 
+    /// Verifies wrap multiple newlines.
     #[test]
     fn wrap_multiple_newlines() {
         let result = wrap_text("a\nb\nc", 80);
         assert_eq!(result.len(), 3);
     }
 
+    /// Verifies wrap newline and wrapping.
     #[test]
     fn wrap_newline_and_wrapping() {
         let result = wrap_text("hello world\nfoo bar", 5);
         assert!(result.len() >= 4);
     }
 
+    /// Verifies wrap trailing newline.
     #[test]
     fn wrap_trailing_newline() {
         let result = wrap_text("hello\n", 80);
         // textwrap treats trailing newline as a separate (empty) line
-        assert!(result.len() >= 1);
+        assert!(!result.is_empty());
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // wrap_text — Various lengths
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap sentence.
     #[test]
     fn wrap_sentence() {
         let result = wrap_text("the quick brown fox jumps over the lazy dog", 20);
@@ -246,6 +277,7 @@ mod tests {
         }
     }
 
+    /// Verifies wrap many short words.
     #[test]
     fn wrap_many_short_words() {
         let text = "a b c d e f g h i j k l m n o p";
@@ -253,6 +285,7 @@ mod tests {
         assert!(result.len() >= 2);
     }
 
+    /// Verifies wrap very long single word.
     #[test]
     fn wrap_very_long_single_word() {
         let word = "a".repeat(100);
@@ -267,11 +300,13 @@ mod tests {
     // wrap_text — Unicode
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap unicode fits.
     #[test]
     fn wrap_unicode_fits() {
         assert_eq!(wrap_text("日本語", 10), vec!["日本語"]);
     }
 
+    /// Verifies wrap unicode needs wrap.
     #[test]
     fn wrap_unicode_needs_wrap() {
         let text = "日本語テキスト";
@@ -279,12 +314,24 @@ mod tests {
         assert!(result.len() >= 2);
     }
 
+    /// Verifies wide Unicode text uses display columns for the no-wrap fast path.
+    #[test]
+    fn wrap_unicode_display_width_bypasses_fast_path() {
+        let result = wrap_text("日本", 2);
+        assert!(result.len() > 1);
+        for line in &result {
+            assert!(UnicodeWidthStr::width(line.as_str()) <= 2);
+        }
+    }
+
+    /// Verifies wrap emoji.
     #[test]
     fn wrap_emoji() {
         let result = wrap_text("🎉🎊🎈", 10);
         assert!(!result.is_empty());
     }
 
+    /// Verifies wrap mixed ascii unicode.
     #[test]
     fn wrap_mixed_ascii_unicode() {
         let result = wrap_text("hello 世界 world", 8);
@@ -295,6 +342,7 @@ mod tests {
     // wrap_text — Edge cases
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap only spaces.
     #[test]
     fn wrap_only_spaces() {
         let result = wrap_text("     ", 3);
@@ -302,6 +350,7 @@ mod tests {
         assert!(!result.is_empty());
     }
 
+    /// Verifies wrap large width.
     #[test]
     fn wrap_large_width() {
         let text = "short";
@@ -312,6 +361,7 @@ mod tests {
     // wrap_spans — Empty / trivial
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans empty vec.
     #[test]
     fn spans_empty_vec() {
         let result = wrap_spans(vec![], 80);
@@ -319,6 +369,7 @@ mod tests {
         assert!(result[0].is_empty());
     }
 
+    /// Verifies spans single fits.
     #[test]
     fn spans_single_fits() {
         let spans = vec![s("hello", plain())];
@@ -328,6 +379,7 @@ mod tests {
         assert_eq!(result[0][0].content.as_ref(), "hello");
     }
 
+    /// Verifies spans single exact fit.
     #[test]
     fn spans_single_exact_fit() {
         let spans = vec![s("hello", plain())];
@@ -339,6 +391,7 @@ mod tests {
     // wrap_spans — Wrapping
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans single wraps.
     #[test]
     fn spans_single_wraps() {
         let spans = vec![s("hello world", plain())];
@@ -346,6 +399,7 @@ mod tests {
         assert_eq!(result.len(), 2);
     }
 
+    /// Verifies spans two words two spans.
     #[test]
     fn spans_two_words_two_spans() {
         let spans = vec![s("hello ", red()), s("world", blue())];
@@ -353,6 +407,7 @@ mod tests {
         assert!(result.len() >= 2);
     }
 
+    /// Verifies spans style preserved on first line.
     #[test]
     fn spans_style_preserved_on_first_line() {
         let spans = vec![s("hi", red()), s(" there", blue())];
@@ -362,6 +417,7 @@ mod tests {
         assert_eq!(result[0][1].style, blue());
     }
 
+    /// Verifies spans style preserved after wrap.
     #[test]
     fn spans_style_preserved_after_wrap() {
         let spans = vec![s("hello ", red()), s("world", blue())];
@@ -373,6 +429,7 @@ mod tests {
         }
     }
 
+    /// Verifies spans long single span wraps.
     #[test]
     fn spans_long_single_span_wraps() {
         let spans = vec![s("abcdefghij", red())];
@@ -390,6 +447,7 @@ mod tests {
     // wrap_spans — Zero width
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans zero width returns input.
     #[test]
     fn spans_zero_width_returns_input() {
         let spans = vec![s("hello", plain())];
@@ -401,6 +459,7 @@ mod tests {
     // wrap_spans — Narrow widths (1-3)
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans width 1.
     #[test]
     fn spans_width_1() {
         let spans = vec![s("abc", plain())];
@@ -408,6 +467,7 @@ mod tests {
         assert_eq!(result.len(), 3);
     }
 
+    /// Verifies spans width 2.
     #[test]
     fn spans_width_2() {
         let spans = vec![s("abcd", plain())];
@@ -415,6 +475,7 @@ mod tests {
         assert_eq!(result.len(), 2);
     }
 
+    /// Verifies spans width 3.
     #[test]
     fn spans_width_3() {
         let spans = vec![s("abcdef", plain())];
@@ -426,6 +487,7 @@ mod tests {
     // wrap_spans — Each char in its own span
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans each char own span.
     #[test]
     fn spans_each_char_own_span() {
         let spans = vec![s("a", red()), s("b", blue()), s("c", bold())];
@@ -434,6 +496,7 @@ mod tests {
         assert_eq!(result[0].len(), 3);
     }
 
+    /// Verifies spans each char own span wraps.
     #[test]
     fn spans_each_char_own_span_wraps() {
         let spans = vec![s("a", red()), s("b", blue()), s("c", bold()), s("d", red())];
@@ -445,6 +508,7 @@ mod tests {
     // wrap_spans — Multiple spans, various scenarios
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans all in one span.
     #[test]
     fn spans_all_in_one_span() {
         let spans = vec![s("the quick brown fox", plain())];
@@ -452,6 +516,7 @@ mod tests {
         assert!(result.len() >= 2);
     }
 
+    /// Verifies spans three spans wrap.
     #[test]
     fn spans_three_spans_wrap() {
         let spans = vec![
@@ -463,6 +528,7 @@ mod tests {
         assert!(result.len() >= 2);
     }
 
+    /// Verifies spans empty span content.
     #[test]
     fn spans_empty_span_content() {
         let spans = vec![s("", plain()), s("hello", red())];
@@ -471,6 +537,7 @@ mod tests {
         assert_eq!(result.len(), 1);
     }
 
+    /// Verifies spans all empty.
     #[test]
     fn spans_all_empty() {
         let spans = vec![s("", plain()), s("", red())];
@@ -479,6 +546,7 @@ mod tests {
         assert!(result[0].is_empty());
     }
 
+    /// Verifies spans many small spans.
     #[test]
     fn spans_many_small_spans() {
         let spans: Vec<Span<'static>> = (0..20)
@@ -488,6 +556,7 @@ mod tests {
         assert!(result.len() >= 2);
     }
 
+    /// Verifies spans preserves line count with newlines in text.
     #[test]
     fn spans_preserves_line_count_with_newlines_in_text() {
         // wrap_spans delegates to textwrap which handles newlines
@@ -500,6 +569,7 @@ mod tests {
     // wrap_spans — Style correctness
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans style split across lines.
     #[test]
     fn spans_style_split_across_lines() {
         // One long red span that wraps — both lines should be red
@@ -512,6 +582,7 @@ mod tests {
         }
     }
 
+    /// Verifies spans different styles on different lines.
     #[test]
     fn spans_different_styles_on_different_lines() {
         let spans = vec![s("aaa ", red()), s("bbb", blue())];
@@ -523,6 +594,7 @@ mod tests {
         }
     }
 
+    /// Verifies spans bold style preserved.
     #[test]
     fn spans_bold_style_preserved() {
         let spans = vec![s("bold text", bold())];
@@ -538,6 +610,7 @@ mod tests {
     // wrap_text — Whitespace patterns
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies wrap consecutive spaces between words.
     #[test]
     fn wrap_consecutive_spaces_between_words() {
         // Multiple spaces between words — textwrap normalizes or preserves them
@@ -550,6 +623,7 @@ mod tests {
         assert!(joined.contains("world"));
     }
 
+    /// Verifies wrap tab characters.
     #[test]
     fn wrap_tab_characters() {
         // Tabs count as characters; textwrap handles them
@@ -564,6 +638,7 @@ mod tests {
     // wrap_spans — Unicode in styled spans
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies spans unicode styled wrap.
     #[test]
     fn spans_unicode_styled_wrap() {
         // CJK characters in a styled span that requires wrapping
@@ -576,5 +651,19 @@ mod tests {
                 assert_eq!(sp.style, red());
             }
         }
+    }
+
+    /// Verifies spans unicode mixed styles keep character boundaries.
+    #[test]
+    fn spans_unicode_mixed_styles_keep_character_boundaries() {
+        let spans = vec![s("日本", red()), s("語abc", blue())];
+        let result = wrap_spans(spans, 80);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].len(), 2);
+        assert_eq!(result[0][0].content.as_ref(), "日本");
+        assert_eq!(result[0][0].style, red());
+        assert_eq!(result[0][1].content.as_ref(), "語abc");
+        assert_eq!(result[0][1].style, blue());
     }
 }

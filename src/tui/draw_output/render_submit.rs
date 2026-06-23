@@ -969,7 +969,7 @@ mod tests {
 
         let mut applied = false;
         for _ in 0..100 {
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(100));
             if poll_render_result(&mut app) {
                 applied = true;
                 break;

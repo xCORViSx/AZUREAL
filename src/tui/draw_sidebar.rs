@@ -11,6 +11,7 @@ use ratatui::{
 use super::keybindings;
 use super::util::{GIT_BROWN, GIT_ORANGE};
 use crate::app::App;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Draw the sidebar — in Git mode shows Actions + Changed Files,
 /// otherwise delegates to the file tree pane.
@@ -27,6 +28,61 @@ pub fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 /// Draw the file tree in the left pane (always visible in normal mode)
 pub fn draw_file_tree_overlay(f: &mut Frame, app: &mut App, area: Rect) {
     super::draw_file_tree::draw_file_tree(f, app, area);
+}
+
+/// Return the display-cell width of text rendered in the terminal.
+fn text_width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+/// Return the prefix of `text` that fits within `max_width` terminal cells.
+fn truncate_prefix_to_width(text: &str, max_width: usize) -> String {
+    if text_width(text) <= max_width {
+        return text.to_string();
+    }
+
+    let mut rendered = String::new();
+    let mut used_width = 0;
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1);
+        if used_width + ch_width > max_width {
+            break;
+        }
+        rendered.push(ch);
+        used_width += ch_width;
+    }
+    rendered
+}
+
+/// Return a path tail prefixed with an ellipsis that fits within `max_width`.
+fn truncate_path_tail_to_width(path: &str, max_width: usize) -> String {
+    if text_width(path) <= max_width {
+        return path.to_string();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis_width = UnicodeWidthChar::width('\u{2026}').unwrap_or(1);
+    if max_width <= ellipsis_width {
+        return "\u{2026}".to_string();
+    }
+
+    let tail_budget = max_width - ellipsis_width;
+    let mut tail_chars = Vec::new();
+    let mut used_width = 0;
+    for ch in path.chars().rev() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1);
+        if used_width + ch_width > tail_budget {
+            break;
+        }
+        tail_chars.push(ch);
+        used_width += ch_width;
+    }
+
+    tail_chars.reverse();
+    let tail: String = tail_chars.into_iter().collect();
+    format!("\u{2026}{tail}")
 }
 
 /// Git panel sidebar — Actions list (top) + Changed Files (bottom)
@@ -185,13 +241,8 @@ fn draw_git_sidebar(
         // Discard confirmation replaces the file line
         if discard_idx == Some(i) {
             let msg = format!(" Discard {}? [y/n] ", file.path);
-            let trunc = if msg.len() > inner_w {
-                &msg[..inner_w]
-            } else {
-                &msg
-            };
             file_lines.push(Line::from(Span::styled(
-                trunc.to_string(),
+                truncate_prefix_to_width(&msg, inner_w),
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             )));
             continue;
@@ -212,18 +263,9 @@ fn draw_git_sidebar(
         let del_str = format!("-{}", file.deletions);
         let stat_len = add_str.len() + 1 + del_str.len();
         let path_budget = inner_w.saturating_sub(prefix.len() + 2 + stat_len + 1);
-        let path_display = if file.path.len() > path_budget {
-            format!(
-                "\u{2026}{}",
-                &file.path[file
-                    .path
-                    .len()
-                    .saturating_sub(path_budget.saturating_sub(1))..]
-            )
-        } else {
-            file.path.clone()
-        };
-        let padding = inner_w.saturating_sub(prefix.len() + 2 + path_display.len() + stat_len);
+        let path_display = truncate_path_tail_to_width(&file.path, path_budget);
+        let padding =
+            inner_w.saturating_sub(prefix.len() + 2 + text_width(&path_display) + stat_len);
 
         // Unstaged files get strikethrough on the path, dimmed colors
         let path_style = if selected {
@@ -325,6 +367,7 @@ fn draw_git_sidebar(
     file_scroll_writeback
 }
 
+/// Tests for sidebar layout, styling, truncation, and git file summary rendering.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,16 +379,19 @@ mod tests {
     //  Color constants
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies git orange value.
     #[test]
     fn git_orange_value() {
         assert_eq!(GIT_ORANGE, Color::Rgb(240, 80, 50));
     }
 
+    /// Verifies git brown value.
     #[test]
     fn git_brown_value() {
         assert_eq!(GIT_BROWN, Color::Rgb(160, 82, 45));
     }
 
+    /// Verifies git orange ne brown.
     #[test]
     fn git_orange_ne_brown() {
         assert_ne!(GIT_ORANGE, GIT_BROWN);
@@ -355,6 +401,7 @@ mod tests {
     //  Action row count logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies action rows main dynamic.
     #[test]
     fn action_rows_main_dynamic() {
         let action_count = keybindings::git_actions_labels(true).len();
@@ -363,6 +410,7 @@ mod tests {
         assert_eq!(rows, 9); // 5 actions + 2 extra + 2 border
     }
 
+    /// Verifies action rows feature dynamic.
     #[test]
     fn action_rows_feature_dynamic() {
         let action_count = keybindings::git_actions_labels(false).len();
@@ -375,6 +423,7 @@ mod tests {
     //  Layout splitting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies sidebar layout main branch.
     #[test]
     fn sidebar_layout_main_branch() {
         let area = Rect::new(0, 0, 40, 30);
@@ -385,6 +434,7 @@ mod tests {
         assert_eq!(splits[1].height, 21);
     }
 
+    /// Verifies sidebar layout feature branch.
     #[test]
     fn sidebar_layout_feature_branch() {
         let area = Rect::new(0, 0, 40, 30);
@@ -399,12 +449,14 @@ mod tests {
     //  Focused pane logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies actions focused when pane zero.
     #[test]
     fn actions_focused_when_pane_zero() {
         let focused_pane: u8 = 0;
         assert!(focused_pane == 0);
     }
 
+    /// Verifies files focused when pane one.
     #[test]
     fn files_focused_when_pane_one() {
         let focused_pane: u8 = 1;
@@ -415,6 +467,7 @@ mod tests {
     //  Action prefix (selection arrow)
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies selected prefix has triangle.
     #[test]
     fn selected_prefix_has_triangle() {
         let selected = true;
@@ -422,6 +475,7 @@ mod tests {
         assert_eq!(prefix, " \u{25b8} ");
     }
 
+    /// Verifies unselected prefix is spaces.
     #[test]
     fn unselected_prefix_is_spaces() {
         let selected = false;
@@ -433,6 +487,7 @@ mod tests {
     //  Action style logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies selected action style orange bold.
     #[test]
     fn selected_action_style_orange_bold() {
         let selected = true;
@@ -444,6 +499,7 @@ mod tests {
         assert_eq!(style.fg, Some(GIT_ORANGE));
     }
 
+    /// Verifies unselected action style white.
     #[test]
     fn unselected_action_style_white() {
         let selected = false;
@@ -455,6 +511,7 @@ mod tests {
         assert_eq!(style.fg, Some(Color::White));
     }
 
+    /// Verifies key style selected orange.
     #[test]
     fn key_style_selected_orange() {
         let selected = true;
@@ -466,6 +523,7 @@ mod tests {
         assert_eq!(style.fg, Some(GIT_ORANGE));
     }
 
+    /// Verifies key style unselected brown.
     #[test]
     fn key_style_unselected_brown() {
         let selected = false;
@@ -481,6 +539,7 @@ mod tests {
     //  Auto-rebase indicator
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies auto rebase enabled indicator.
     #[test]
     fn auto_rebase_enabled_indicator() {
         let enabled = true;
@@ -493,6 +552,7 @@ mod tests {
         assert_eq!(color, Color::Green);
     }
 
+    /// Verifies auto rebase disabled indicator.
     #[test]
     fn auto_rebase_disabled_indicator() {
         let enabled = false;
@@ -509,6 +569,7 @@ mod tests {
     //  Divider line
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies divider line width.
     #[test]
     fn divider_line_width() {
         let area_width = 40u16;
@@ -517,6 +578,7 @@ mod tests {
         assert_eq!(divider.chars().count(), 38);
     }
 
+    /// Verifies divider line zero width.
     #[test]
     fn divider_line_zero_width() {
         let area_width = 2u16;
@@ -529,6 +591,7 @@ mod tests {
     //  Auto-resolve count format
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies auto resolve count format.
     #[test]
     fn auto_resolve_count_format() {
         let count = 3;
@@ -536,6 +599,7 @@ mod tests {
         assert_eq!(text, " Auto-resolve (3)");
     }
 
+    /// Verifies auto resolve count zero.
     #[test]
     fn auto_resolve_count_zero() {
         let text = format!(" Auto-resolve ({})", 0);
@@ -546,6 +610,7 @@ mod tests {
     //  File status colors
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies status color added green.
     #[test]
     fn status_color_added_green() {
         let status = 'A';
@@ -560,6 +625,7 @@ mod tests {
         assert_eq!(color, Color::Green);
     }
 
+    /// Verifies status color deleted red.
     #[test]
     fn status_color_deleted_red() {
         let color = match 'D' {
@@ -573,6 +639,7 @@ mod tests {
         assert_eq!(color, Color::Red);
     }
 
+    /// Verifies status color modified yellow.
     #[test]
     fn status_color_modified_yellow() {
         let color = match 'M' {
@@ -586,6 +653,7 @@ mod tests {
         assert_eq!(color, Color::Yellow);
     }
 
+    /// Verifies status color renamed cyan.
     #[test]
     fn status_color_renamed_cyan() {
         let color = match 'R' {
@@ -599,6 +667,7 @@ mod tests {
         assert_eq!(color, Color::Cyan);
     }
 
+    /// Verifies status color untracked magenta.
     #[test]
     fn status_color_untracked_magenta() {
         let color = match '?' {
@@ -612,6 +681,7 @@ mod tests {
         assert_eq!(color, Color::Magenta);
     }
 
+    /// Verifies status color unknown white.
     #[test]
     fn status_color_unknown_white() {
         let color = match 'X' {
@@ -629,40 +699,56 @@ mod tests {
     //  File path truncation
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies path truncation short path unchanged.
     #[test]
     fn path_truncation_short_path_unchanged() {
         let path = "src/main.rs";
         let budget = 30;
-        let display = if path.len() > budget {
-            format!(
-                "\u{2026}{}",
-                &path[path.len().saturating_sub(budget.saturating_sub(1))..]
-            )
-        } else {
-            path.to_string()
-        };
+        let display = truncate_path_tail_to_width(path, budget);
         assert_eq!(display, "src/main.rs");
     }
 
+    /// Verifies path truncation long path gets ellipsis.
     #[test]
     fn path_truncation_long_path_gets_ellipsis() {
         let path = "src/very/deeply/nested/module/file.rs";
         let budget = 15;
-        let display = if path.len() > budget {
-            format!(
-                "\u{2026}{}",
-                &path[path.len().saturating_sub(budget.saturating_sub(1))..]
-            )
-        } else {
-            path.to_string()
-        };
+        let display = truncate_path_tail_to_width(path, budget);
         assert!(display.starts_with('\u{2026}'));
+        assert!(text_width(&display) <= budget);
+    }
+
+    /// Verifies path truncation unicode path keeps char boundaries.
+    #[test]
+    fn path_truncation_unicode_path_keeps_char_boundaries() {
+        let path = "src/日本語/深い/ファイル.rs";
+        let budget = 12;
+        let display = truncate_path_tail_to_width(path, budget);
+        assert!(display.starts_with('\u{2026}'));
+        assert!(text_width(&display) <= budget);
+        assert!(display.is_char_boundary(display.len()));
+    }
+
+    /// Verifies path truncation zero budget is empty.
+    #[test]
+    fn path_truncation_zero_budget_is_empty() {
+        assert_eq!(truncate_path_tail_to_width("src/main.rs", 0), "");
+    }
+
+    /// Verifies discard confirmation unicode truncates without panic.
+    #[test]
+    fn discard_confirmation_unicode_truncates_without_panic() {
+        let msg = " Discard src/日本語/ファイル.rs? [y/n] ";
+        let display = truncate_prefix_to_width(msg, 14);
+        assert!(text_width(&display) <= 14);
+        assert!(display.is_char_boundary(display.len()));
     }
 
     // ══════════════════════════════════════════════════════════════════
     //  Add/Del stat formatting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies add del format.
     #[test]
     fn add_del_format() {
         let additions = 42;
@@ -673,6 +759,7 @@ mod tests {
         assert_eq!(del_str, "-10");
     }
 
+    /// Verifies stat len calculation.
     #[test]
     fn stat_len_calculation() {
         let add_str = "+42";
@@ -685,6 +772,7 @@ mod tests {
     //  File scroll logic
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies scroll when selected above.
     #[test]
     fn scroll_when_selected_above() {
         let selected_file: usize = 2;
@@ -700,6 +788,7 @@ mod tests {
         assert_eq!(scroll, 2);
     }
 
+    /// Verifies scroll when selected below.
     #[test]
     fn scroll_when_selected_below() {
         let selected_file: usize = 20;
@@ -715,6 +804,7 @@ mod tests {
         assert_eq!(scroll, 11);
     }
 
+    /// Verifies scroll when visible.
     #[test]
     fn scroll_when_visible() {
         let selected_file: usize = 7;
@@ -734,6 +824,7 @@ mod tests {
     //  Changed Files title
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies files title empty.
     #[test]
     fn files_title_empty() {
         let files: Vec<GitChangedFile> = vec![];
@@ -752,9 +843,10 @@ mod tests {
         assert_eq!(title, " Changed Files (none) ");
     }
 
+    /// Verifies files title with files.
     #[test]
     fn files_title_with_files() {
-        let files = vec![
+        let files = [
             GitChangedFile {
                 path: "a.rs".into(),
                 status: 'M',
@@ -785,6 +877,7 @@ mod tests {
     //  Border types
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies actions border focused double.
     #[test]
     fn actions_border_focused_double() {
         let focused = true;
@@ -796,6 +889,7 @@ mod tests {
         assert_eq!(bt, BorderType::Double);
     }
 
+    /// Verifies actions border unfocused plain.
     #[test]
     fn actions_border_unfocused_plain() {
         let focused = false;
@@ -811,6 +905,7 @@ mod tests {
     //  Title style for focused/unfocused panes
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies title focused orange bold.
     #[test]
     fn title_focused_orange_bold() {
         let focused = true;
@@ -824,6 +919,7 @@ mod tests {
         assert_eq!(style.fg, Some(GIT_ORANGE));
     }
 
+    /// Verifies title unfocused brown.
     #[test]
     fn title_unfocused_brown() {
         let focused = false;
@@ -841,6 +937,7 @@ mod tests {
     //  Path style
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies path style selected orange bold underline.
     #[test]
     fn path_style_selected_orange_bold_underline() {
         let selected = true;
@@ -856,6 +953,7 @@ mod tests {
         assert_eq!(style.fg, Some(GIT_ORANGE));
     }
 
+    /// Verifies path style unselected white underline.
     #[test]
     fn path_style_unselected_white_underline() {
         let selected = false;
@@ -875,6 +973,7 @@ mod tests {
     //  GitChangedFile construction
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies git changed file construction.
     #[test]
     fn git_changed_file_construction() {
         let f = GitChangedFile {
@@ -890,6 +989,7 @@ mod tests {
         assert_eq!(f.deletions, 3);
     }
 
+    /// Verifies git changed file clone.
     #[test]
     fn git_changed_file_clone() {
         let f = GitChangedFile {
@@ -904,6 +1004,7 @@ mod tests {
         assert_eq!(f.status, cloned.status);
     }
 
+    /// Verifies git changed file debug.
     #[test]
     fn git_changed_file_debug() {
         let f = GitChangedFile {
@@ -918,16 +1019,19 @@ mod tests {
         assert!(dbg.contains("D"));
     }
 
+    /// Verifies git orange is rgb.
     #[test]
     fn git_orange_is_rgb() {
         assert!(matches!(GIT_ORANGE, Color::Rgb(_, _, _)));
     }
 
+    /// Verifies git brown is rgb.
     #[test]
     fn git_brown_is_rgb() {
         assert!(matches!(GIT_BROWN, Color::Rgb(_, _, _)));
     }
 
+    /// Verifies rect zero area.
     #[test]
     fn rect_zero_area() {
         let r = Rect::new(0, 0, 0, 0);
@@ -935,12 +1039,14 @@ mod tests {
         assert_eq!(r.height, 0);
     }
 
+    /// Verifies constraint percentage clamps.
     #[test]
     fn constraint_percentage_clamps() {
         let c = Constraint::Percentage(100);
         assert_eq!(c, Constraint::Percentage(100));
     }
 
+    /// Verifies style bold modifier.
     #[test]
     fn style_bold_modifier() {
         let s = Style::default().add_modifier(Modifier::BOLD);

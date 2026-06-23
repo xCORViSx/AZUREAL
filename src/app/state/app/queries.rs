@@ -4,7 +4,9 @@ use super::App;
 use crate::models::{Project, Worktree, WorktreeStatus};
 use std::path::Path;
 
+/// Query and status helpers for current project/worktree application state.
 impl App {
+    /// Return the currently loaded project, if any.
     pub fn current_project(&self) -> Option<&Project> {
         self.project.as_ref()
     }
@@ -41,7 +43,7 @@ impl App {
     pub fn branch_for_slot(&self, slot_id: &str) -> Option<String> {
         self.branch_slots
             .iter()
-            .find(|(_, slots)| slots.contains(&slot_id.to_string()))
+            .find(|(_, slots)| slots.iter().any(|slot| slot == slot_id))
             .map(|(branch, _)| branch.clone())
     }
 
@@ -80,9 +82,12 @@ impl App {
             && self.branch_dialog.is_none()
     }
 
+    /// Set the transient status message shown in the status bar.
     pub fn set_status(&mut self, msg: impl Into<String>) {
         self.status_message = Some(msg.into());
     }
+
+    /// Clear any transient status message from the status bar.
     pub fn clear_status(&mut self) {
         self.status_message = None;
     }
@@ -151,5 +156,45 @@ fn status_priority(status: &WorktreeStatus) -> u8 {
         WorktreeStatus::Pending => 2,
         WorktreeStatus::Completed => 1,
         WorktreeStatus::Stopped => 0,
+    }
+}
+
+#[cfg(test)]
+/// Tests for project, worktree, slot, and status query helpers.
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// Slot reverse lookup should find the owning branch without allocating a probe String.
+    #[test]
+    fn branch_for_slot_finds_existing_slot() {
+        let mut app = App::new();
+        app.branch_slots.insert(
+            "feature".into(),
+            vec!["slot-a".to_string(), "slot-b".to_string()],
+        );
+
+        assert_eq!(app.branch_for_slot("slot-b"), Some("feature".into()));
+    }
+
+    /// Slot reverse lookup returns none when no branch owns the slot.
+    #[test]
+    fn branch_for_slot_returns_none_for_missing_slot() {
+        let mut app = App::new();
+        app.branch_slots = HashMap::from([("feature".into(), vec!["slot-a".to_string()])]);
+
+        assert_eq!(app.branch_for_slot("slot-z"), None);
+    }
+
+    /// Status helpers update and clear the status bar message.
+    #[test]
+    fn status_helpers_update_message() {
+        let mut app = App::new();
+
+        app.set_status("ready");
+        assert_eq!(app.status_message.as_deref(), Some("ready"));
+
+        app.clear_status();
+        assert!(app.status_message.is_none());
     }
 }

@@ -293,6 +293,11 @@ self.refresh_display_from_store_after_append(session_id, &wt_path);
 **Problem:** UI copy actions can show "Copied to clipboard" after only updating Azureal's internal clipboard or after ignoring a failed system clipboard write. Session-pane selection can also serialize rendered bubble rows directly, copying visual wrap line breaks instead of the original flowing message text.
 
 **Solution:** Route copy actions through `copy_to_clipboard()` and use its boolean result for status text. When extracting session-pane bubble text, strip bubble chrome and join wrapped prose fragments with spaces while preserving literal code-like rows.
+### Sidebar Path Truncation Must Respect Character Boundaries
+
+**Problem:** Git sidebar paths and discard prompts can contain Unicode. Slicing strings by byte length while fitting text to a terminal width can panic when the slice starts or ends inside a multi-byte character.
+
+**Solution:** Use display-width-aware helpers that walk characters and never slice `&str` by computed byte offsets.
 
 **WRONG:**
 
@@ -300,6 +305,11 @@ self.refresh_display_from_store_after_append(session_id, &wt_path);
 app.copy_to_clipboard(&text);
 app.set_status("Copied to clipboard");
 parts.join("\n")
+let path_display = if file.path.len() > path_budget {
+    format!("…{}", &file.path[file.path.len().saturating_sub(path_budget - 1)..])
+} else {
+    file.path.clone()
+};
 ```
 
 **CORRECT:**
@@ -308,6 +318,283 @@ parts.join("\n")
 let copied = app.copy_to_clipboard(&text);
 app.set_clipboard_copy_status(copied, "Copied to clipboard");
 append_session_copy_fragment(&mut out, &fragment, kind, previous_kind);
+let path_display = truncate_path_tail_to_width(&file.path, path_budget);
+let padding =
+    inner_w.saturating_sub(prefix.len() + 2 + text_width(&path_display) + stat_len);
+```
+
+### Health Panel Paths And Bars Must Sanitize Display Inputs
+
+**Problem:** Health-panel source paths and coverage percentages come from scanned project state. Unicode paths can panic if they are truncated by byte offsets, and corrupt or out-of-range coverage values can underflow fixed-width bar rendering.
+
+**Solution:** Truncate paths by terminal display width with character iteration, compute padding from display width, and clamp non-finite or out-of-range percentages before building progress bars.
+
+**WRONG:**
+
+```rust
+let path_display = if entry.rel_path.len() > path_max {
+    format!("…{}", &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..])
+} else {
+    entry.rel_path.clone()
+};
+let filled = (entry.coverage_pct / 100.0 * bar_width as f32).round() as usize;
+let bar = "█".repeat(filled) + &"░".repeat(bar_width - filled);
+```
+
+**CORRECT:**
+
+```rust
+let path_display = truncate_path_tail_to_width(&entry.rel_path, path_max);
+let padding = inner_w.saturating_sub(fixed_width + display_width(&path_display));
+let filled = filled_bar_cells(entry.coverage_pct, bar_width);
+let bar = "█".repeat(filled) + &"░".repeat(bar_width - filled);
+```
+
+### Styled Wrap Ranges Must Use Character Offsets
+
+**Problem:** Styled text wrapping can flatten spans into a string, but byte offsets from `String::len()` do not match character offsets used by `.chars().skip()` and `.take()`. Unicode assistant output or tool text can render with the wrong style spans when a range boundary lands after a multi-byte character.
+
+**Solution:** Track style ranges in character offsets while flattening spans, and advance wrapped line offsets by `wrapped.chars().count()`.
+
+**WRONG:**
+
+```rust
+let start = full_text.len();
+full_text.push_str(&span.content);
+let end = full_text.len();
+style_ranges.push((start, end, span.style));
+let line_end = char_offset + wrapped.len();
+```
+
+**CORRECT:**
+
+```rust
+let start = full_text_chars;
+full_text.push_str(&span.content);
+full_text_chars += span.content.chars().count();
+let end = full_text_chars;
+style_ranges.push((start, end, span.style));
+let line_end = char_offset + wrapped.chars().count();
+```
+
+### Wrap Fast Paths Must Use Display Width
+
+**Problem:** Terminal wrapping is measured in display columns, not Unicode scalar count. A short CJK string can have `chars().count() <= max_width` while still being too wide for the terminal, causing a fast path to skip wrapping and let text overflow.
+
+**Solution:** Use `UnicodeWidthStr::width()` for no-wrap fast paths and keep character counts only for character-index mapping.
+
+**WRONG:**
+
+```rust
+if text.chars().count() <= max_width && !text.contains('\n') {
+    return vec![text.to_string()];
+}
+```
+
+**CORRECT:**
+
+```rust
+if UnicodeWidthStr::width(text) <= max_width && !text.contains('\n') {
+    return vec![text.to_string()];
+}
+```
+
+### Tool Parameter Truncation Must Use Display Width
+
+**Problem:** Tool parameter previews are rendered into fixed terminal column budgets. Truncating by `chars().count()` can still overflow for CJK, emoji, or other wide glyphs, and returning an ellipsis for a zero-width budget draws outside the allocated area.
+
+**Solution:** Measure the trimmed text with `UnicodeWidthStr::width()`, walk characters with `UnicodeWidthChar::width()`, and only append the ellipsis when it fits inside the requested width.
+
+**WRONG:**
+
+```rust
+if trimmed.chars().count() <= max_len {
+    trimmed.to_string()
+} else if max_len > 1 {
+    format!("{}…", trimmed.chars().take(max_len - 1).collect::<String>())
+} else {
+    "…".to_string()
+}
+```
+
+**CORRECT:**
+
+```rust
+if UnicodeWidthStr::width(trimmed) <= max_width {
+    return trimmed.to_string();
+}
+if max_width == 0 {
+    return String::new();
+}
+let content_width = max_width - ellipsis_width;
+```
+
+### Tool Result Reminder Blocks Must Be Removed In Place
+
+**Problem:** Tool output can contain hidden `<system-reminder>...</system-reminder>` blocks followed by real command output. Truncating at the first opening tag removes the hidden reminder, but it also hides legitimate output that appears after a closed block.
+
+**Solution:** Remove each closed reminder block in place and keep surrounding output. If an opening tag is unmatched, truncate from that tag because the remainder cannot be safely separated from hidden reminder text.
+
+**WRONG:**
+
+```rust
+let content = if let Some(start) = content.find("<system-reminder>") {
+    &content[..start]
+} else {
+    content.as_str()
+}
+.trim_end();
+```
+
+**CORRECT:**
+
+```rust
+let content = strip_system_reminder_blocks(&content);
+let content = content.trim_end();
+```
+
+### Tool Call Click Hitboxes Must Use Display Columns
+
+**Problem:** Tool-call file paths can contain wide Unicode characters. If clickable path regions use `chars().count()` or byte length, the mouse hitbox ends before the rendered path does, so clicks on the visible tail of a CJK or emoji path miss the file link.
+
+**Solution:** Compute both the prefix start column and the wrapped path end column with terminal display width helpers.
+
+**WRONG:**
+
+```rust
+let prefix_len = 3 + 2 + display_name.len() + 2;
+let start_col = prefix_len;
+let end_col = start_col + wrapped.chars().count();
+```
+
+**CORRECT:**
+
+```rust
+let prefix_width = tool_call_prefix_width(indicator, display_name);
+let start_col = prefix_width;
+let end_col = start_col + display_width(&wrapped);
+```
+
+### Tool Parameter Extraction Must Share Path-Key Fallbacks
+
+**Problem:** Tool-call preview payloads can use provider-specific path keys such as `notebook_path`, `target_file`, `relative_path`, or `filePath`. Checking only `file_path` and `path` makes the session pane render a blank tool parameter even though a usable file path is present.
+
+**Solution:** Centralize path-like key lookup and reuse it for explicit file tools, LSP paths, notebook edits, and unknown-tool fallbacks.
+
+**WRONG:**
+
+```rust
+input
+    .get("file_path")
+    .or_else(|| input.get("path"))
+    .or_else(|| input.get("command"))
+    .and_then(|v| v.as_str())
+```
+
+**CORRECT:**
+
+```rust
+path_field(input)
+    .or_else(|| first_string_field(input, &["command", "cmd", "query", "pattern"]))
+```
+
+### Issue Panel Title Budgets Must Use Display Width
+
+**Problem:** GitHub issue titles and labels can contain Unicode. Truncating titles with byte offsets derived from terminal column budgets can panic inside multi-byte characters, and label budgets based on byte length can leave wide labels overlapping the title.
+
+**Solution:** Compute label and title budgets with display-width helpers, then truncate issue titles by walking characters.
+
+**WRONG:**
+
+```rust
+let label_len: usize = issue.labels.iter().map(|l| l.len() + 3).sum();
+let avail = inner_w.saturating_sub(10 + label_len);
+let title_display = if issue.title.len() > avail && avail > 3 {
+    format!("{}...", &issue.title[..avail - 3])
+} else {
+    issue.title.clone()
+};
+```
+
+**CORRECT:**
+
+```rust
+let label_len = issue_labels_width(&issue.labels);
+let avail = inner_w.saturating_sub(ISSUE_ROW_PREFIX_WIDTH + label_len);
+let title_display = truncate_text_to_width(&issue.title, avail);
+```
+
+### File Tree Action Wrapping Must Use Display Width
+
+**Problem:** File tree action bars can include Unicode filenames or typed paths. Wrapping by `chars().count()` treats CJK and emoji as one column even when the terminal renders them wider, so action text can overflow or wrap too late.
+
+**Solution:** Measure tokens with `UnicodeWidthStr::width()` and hard-break long tokens by accumulating `UnicodeWidthChar::width()` display columns.
+
+**WRONG:**
+
+```rust
+let len = token.chars().count();
+if col + len <= max_width {
+    current_spans.push(Span::styled(token.to_string(), style));
+    col += len;
+}
+```
+
+**CORRECT:**
+
+```rust
+let len = UnicodeWidthStr::width(token);
+if col + len <= max_width {
+    current_spans.push(Span::styled(token.to_string(), style));
+    col += len;
+}
+```
+
+### Session List Names And Previews Must Use Display Width
+
+**Problem:** Session names, search previews, and suffix padding are rendered into fixed terminal row budgets. Measuring them with `chars().count()` lets CJK, emoji, and other wide glyphs overflow into timestamps or message badges.
+
+**Solution:** Compute row budgets with display-width helpers, truncate by walking characters, and derive padding from the rendered display width of the truncated text.
+
+**WRONG:**
+
+```rust
+let prefix_len = name_display.chars().count() + 4;
+let preview_space = inner_width.saturating_sub(prefix_len);
+let trunc_preview: String = preview.chars().take(preview_space).collect();
+let pad = name_space.saturating_sub(truncated_name.chars().count());
+```
+
+**CORRECT:**
+
+```rust
+let prefix_len = display_width(&name_display) + 4;
+let preview_space = inner_width.saturating_sub(prefix_len);
+let trunc_preview = truncate_text_to_width(preview, preview_space);
+let pad = name_space.saturating_sub(display_width(&truncated_name));
+```
+
+### Viewer Wrap Break Fast Paths Must Use Display Width
+
+**Problem:** Viewer wrapping uses break offsets for both display rows and cursor/scroll math. If the no-wrap fast path checks `chars().count() <= max_width`, short CJK or emoji text can skip wrapping even though it exceeds the available terminal columns.
+
+**Solution:** Gate the no-wrap fast path with `UnicodeWidthStr::width()`, while still storing returned break offsets as character indices for span slicing and cursor mapping.
+
+**WRONG:**
+
+```rust
+let char_count = text.chars().count();
+if char_count <= max_width {
+    return vec![0];
+}
+```
+
+**CORRECT:**
+
+```rust
+if UnicodeWidthStr::width(text) <= max_width {
+    return vec![0];
+}
 ```
 
 # REFERENCES

@@ -60,7 +60,7 @@ impl App {
         );
         if self
             .file_tree_selected
-            .map_or(true, |i| i >= self.file_tree_entries.len())
+            .is_none_or(|i| i >= self.file_tree_entries.len())
         {
             self.file_tree_selected = if self.file_tree_entries.is_empty() {
                 None

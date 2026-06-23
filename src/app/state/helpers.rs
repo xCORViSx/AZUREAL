@@ -1,9 +1,25 @@
 //! Helper functions for session naming and file tree building
 
 use std::collections::HashSet;
+use std::ffi::OsString;
+use std::fs::DirEntry;
 use std::path::PathBuf;
 
 use super::FileTreeEntry;
+
+/// Cached filesystem metadata used while sorting file-tree entries.
+struct FileTreeBuildEntry {
+    /// Directory entry supplied by `read_dir`.
+    entry: DirEntry,
+    /// Native filename used to preserve the existing platform sort order.
+    file_name: OsString,
+    /// Lossy display name used by the UI and hidden-entry filters.
+    display_name: String,
+    /// Whether the entry is a directory according to its file type metadata.
+    is_dir: bool,
+    /// Whether the entry name begins with a dot.
+    is_hidden_name: bool,
+}
 
 /// Build file tree entries for a directory (respects expanded state)
 pub fn build_file_tree(
@@ -30,47 +46,52 @@ fn build_file_tree_recursive(
     };
 
     let mut items: Vec<_> = read_dir
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file_name = entry.file_name();
+            let display_name = file_name.to_string_lossy().to_string();
             // Hide entries configured in Filetree Options overlay
-            if hidden_dirs.contains(&name) {
-                return false;
+            if hidden_dirs.contains(&display_name) {
+                return None;
             }
-            true
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let is_hidden_name = display_name.starts_with('.');
+            Some(FileTreeBuildEntry {
+                entry,
+                file_name,
+                display_name,
+                is_dir,
+                is_hidden_name,
+            })
         })
         .collect();
 
     // Sort: directories first, then hidden last within each category, then alphabetically
-    items.sort_by(|a, b| {
-        let a_is_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let b_is_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let a_name = a.file_name().to_string_lossy().to_string();
-        let b_name = b.file_name().to_string_lossy().to_string();
-        let a_hidden = a_name.starts_with('.');
-        let b_hidden = b_name.starts_with('.');
-
-        match (a_is_dir, b_is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => match (a_hidden, b_hidden) {
-                (false, true) => std::cmp::Ordering::Less,
-                (true, false) => std::cmp::Ordering::Greater,
-                _ => a.file_name().cmp(&b.file_name()),
-            },
-        }
+    items.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => match (a.is_hidden_name, b.is_hidden_name) {
+            (false, true) => std::cmp::Ordering::Less,
+            (true, false) => std::cmp::Ordering::Greater,
+            _ => a.file_name.cmp(&b.file_name),
+        },
     });
 
     for item in items {
-        let path = item.path();
-        let name = item.file_name().to_string_lossy().to_string();
-        let is_dir = item.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let FileTreeBuildEntry {
+            entry,
+            display_name,
+            is_dir,
+            is_hidden_name,
+            ..
+        } = item;
+        let path = entry.path();
         // Item is hidden if it starts with '.' OR if parent was hidden
-        let is_hidden = parent_hidden || name.starts_with('.');
+        let is_hidden = parent_hidden || is_hidden_name;
 
         entries.push(FileTreeEntry {
             path: path.clone(),
-            name,
+            name: display_name,
             is_dir,
             depth,
             is_hidden,
@@ -83,6 +104,7 @@ fn build_file_tree_recursive(
     }
 }
 
+/// Tests for file-tree construction, filtering, sorting, and hidden-state propagation.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +136,7 @@ mod tests {
 
     // ── build_file_tree: basic structure ──
 
+    /// Verifies build file tree returns entries.
     #[test]
     fn test_build_file_tree_returns_entries() {
         let tmp = make_test_tree();
@@ -124,6 +147,7 @@ mod tests {
         assert!(!entries.is_empty());
     }
 
+    /// Verifies build file tree top level only when collapsed.
     #[test]
     fn test_build_file_tree_top_level_only_when_collapsed() {
         let tmp = make_test_tree();
@@ -137,6 +161,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree dirs before files.
     #[test]
     fn test_build_file_tree_dirs_before_files() {
         let tmp = make_test_tree();
@@ -151,6 +176,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree hidden files after non hidden.
     #[test]
     fn test_build_file_tree_hidden_files_after_non_hidden() {
         let tmp = make_test_tree();
@@ -167,6 +193,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree expansion adds children.
     #[test]
     fn test_build_file_tree_expansion_adds_children() {
         let tmp = make_test_tree();
@@ -179,6 +206,7 @@ mod tests {
         assert!(!children.is_empty(), "expanding src should reveal children");
     }
 
+    /// Verifies build file tree expanded children depth.
     #[test]
     fn test_build_file_tree_expanded_children_depth() {
         let tmp = make_test_tree();
@@ -194,6 +222,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree non expanded dir no children.
     #[test]
     fn test_build_file_tree_non_expanded_dir_no_children() {
         let tmp = make_test_tree();
@@ -207,6 +236,7 @@ mod tests {
         assert!(!has_src_child, "collapsed src should not show children");
     }
 
+    /// Verifies build file tree skips target dir.
     #[test]
     fn test_build_file_tree_skips_target_dir() {
         let tmp = make_test_tree();
@@ -221,6 +251,7 @@ mod tests {
         );
     }
 
+    /// Verifies build file tree skips node modules.
     #[test]
     fn test_build_file_tree_skips_node_modules() {
         let tmp = make_test_tree();
@@ -231,6 +262,7 @@ mod tests {
         assert!(!entries.iter().any(|e| e.name == "node_modules"));
     }
 
+    /// Verifies build file tree hidden dirs filter.
     #[test]
     fn test_build_file_tree_hidden_dirs_filter() {
         let tmp = make_test_tree();
@@ -244,6 +276,7 @@ mod tests {
         );
     }
 
+    /// Verifies build file tree hidden dirs filter multiple.
     #[test]
     fn test_build_file_tree_hidden_dirs_filter_multiple() {
         let tmp = make_test_tree();
@@ -255,6 +288,7 @@ mod tests {
         assert!(!entries.iter().any(|e| e.name == "docs" || e.name == "src"));
     }
 
+    /// Verifies build file tree empty dir.
     #[test]
     fn test_build_file_tree_empty_dir() {
         let tmp = TempDir::new().unwrap();
@@ -262,6 +296,7 @@ mod tests {
         assert!(entries.is_empty());
     }
 
+    /// Verifies build file tree is dir flag.
     #[test]
     fn test_build_file_tree_is_dir_flag() {
         let tmp = make_test_tree();
@@ -277,6 +312,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree is hidden dot prefix.
     #[test]
     fn test_build_file_tree_is_hidden_dot_prefix() {
         let tmp = make_test_tree();
@@ -289,6 +325,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree non dot not hidden at root.
     #[test]
     fn test_build_file_tree_non_dot_not_hidden_at_root() {
         let tmp = make_test_tree();
@@ -301,6 +338,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree children of hidden dir are hidden.
     #[test]
     fn test_build_file_tree_children_of_hidden_dir_are_hidden() {
         let tmp = make_test_tree();
@@ -315,6 +353,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree path is absolute.
     #[test]
     fn test_build_file_tree_path_is_absolute() {
         let tmp = make_test_tree();
@@ -329,6 +368,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree name matches filename.
     #[test]
     fn test_build_file_tree_name_matches_filename() {
         let tmp = make_test_tree();
@@ -340,6 +380,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree alphabetical within category.
     #[test]
     fn test_build_file_tree_alphabetical_within_category() {
         let tmp = TempDir::new().unwrap();
@@ -352,6 +393,7 @@ mod tests {
         assert_eq!(names, vec!["apple.txt", "mango.txt", "zebra.txt"]);
     }
 
+    /// Verifies build file tree dirs alphabetical.
     #[test]
     fn test_build_file_tree_dirs_alphabetical() {
         let tmp = TempDir::new().unwrap();
@@ -364,6 +406,7 @@ mod tests {
         assert_eq!(names, vec!["aaa", "mmm", "zzz"]);
     }
 
+    /// Verifies build file tree nested expansion.
     #[test]
     fn test_build_file_tree_nested_expansion() {
         let tmp = TempDir::new().unwrap();
@@ -379,6 +422,7 @@ mod tests {
         assert_eq!(deep.unwrap().depth, 2);
     }
 
+    /// Verifies build file tree partial expansion.
     #[test]
     fn test_build_file_tree_partial_expansion() {
         let tmp = TempDir::new().unwrap();
@@ -396,6 +440,7 @@ mod tests {
         );
     }
 
+    /// Verifies build file tree nonexistent root.
     #[test]
     fn test_build_file_tree_nonexistent_root() {
         let entries = build_file_tree(
@@ -406,6 +451,7 @@ mod tests {
         assert!(entries.is_empty());
     }
 
+    /// Verifies build file tree hidden dir does not affect sibling.
     #[test]
     fn test_build_file_tree_hidden_dir_does_not_affect_sibling() {
         let tmp = TempDir::new().unwrap();
@@ -424,6 +470,7 @@ mod tests {
         assert!(b.is_hidden, "child of .hidden dir should be hidden");
     }
 
+    /// Verifies build file tree mixed dirs and files sorting.
     #[test]
     fn test_build_file_tree_mixed_dirs_and_files_sorting() {
         let tmp = TempDir::new().unwrap();
@@ -438,6 +485,7 @@ mod tests {
         assert_eq!(names, vec!["adir", "zdir", "afile.txt", "zfile.txt"]);
     }
 
+    /// Verifies build file tree hidden files sort after non hidden files.
     #[test]
     fn test_build_file_tree_hidden_files_sort_after_non_hidden_files() {
         let tmp = TempDir::new().unwrap();
@@ -450,6 +498,7 @@ mod tests {
         assert_eq!(names[1], ".hidden");
     }
 
+    /// Verifies build file tree hidden dirs sort after non hidden dirs.
     #[test]
     fn test_build_file_tree_hidden_dirs_sort_after_non_hidden_dirs() {
         let tmp = TempDir::new().unwrap();
@@ -462,6 +511,7 @@ mod tests {
         assert_eq!(names[1], ".hdir");
     }
 
+    /// Verifies build file tree entry count no expansion.
     #[test]
     fn test_build_file_tree_entry_count_no_expansion() {
         let tmp = make_test_tree();
@@ -471,6 +521,7 @@ mod tests {
         assert_eq!(entries.len(), 6);
     }
 
+    /// Verifies build file tree expand src adds 2.
     #[test]
     fn test_build_file_tree_expand_src_adds_2() {
         let tmp = make_test_tree();
@@ -483,6 +534,7 @@ mod tests {
         assert_eq!(with_src.len(), collapsed.len() + 2);
     }
 
+    /// Verifies build file tree expand all dirs.
     #[test]
     fn test_build_file_tree_expand_all_dirs() {
         let tmp = make_test_tree();
@@ -499,6 +551,7 @@ mod tests {
         assert_eq!(entries.len(), 10);
     }
 
+    /// Verifies build file tree hidden dir name exact match.
     #[test]
     fn test_build_file_tree_hidden_dir_name_exact_match() {
         let tmp = TempDir::new().unwrap();
@@ -511,6 +564,7 @@ mod tests {
         assert!(!entries.iter().any(|e| e.name == "target"));
     }
 
+    /// Verifies file tree entry fields.
     #[test]
     fn test_file_tree_entry_fields() {
         let entry = FileTreeEntry {
@@ -527,6 +581,7 @@ mod tests {
         assert!(!entry.is_hidden);
     }
 
+    /// Verifies file tree entry clone.
     #[test]
     fn test_file_tree_entry_clone() {
         let entry = FileTreeEntry {
@@ -544,6 +599,7 @@ mod tests {
         assert_eq!(entry.is_hidden, cloned.is_hidden);
     }
 
+    /// Verifies file tree entry debug.
     #[test]
     fn test_file_tree_entry_debug() {
         let entry = FileTreeEntry {
@@ -557,6 +613,7 @@ mod tests {
         assert!(dbg.contains("FileTreeEntry"));
     }
 
+    /// Verifies build file tree symlinks not crash.
     #[test]
     fn test_build_file_tree_symlinks_not_crash() {
         // Ensure the function doesn't crash on dirs with special files
@@ -568,6 +625,7 @@ mod tests {
         assert_eq!(entries[0].name, "normal.txt");
     }
 
+    /// Verifies build file tree deeply nested.
     #[test]
     fn test_build_file_tree_deeply_nested() {
         let tmp = TempDir::new().unwrap();
@@ -584,6 +642,7 @@ mod tests {
         assert_eq!(leaf.depth, 4);
     }
 
+    /// Verifies build file tree expanding nonexistent dir is noop.
     #[test]
     fn test_build_file_tree_expanding_nonexistent_dir_is_noop() {
         let tmp = TempDir::new().unwrap();
@@ -595,6 +654,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
     }
 
+    /// Verifies build file tree unicode filenames.
     #[test]
     fn test_build_file_tree_unicode_filenames() {
         let tmp = TempDir::new().unwrap();
@@ -605,6 +665,7 @@ mod tests {
         assert_eq!(entries.len(), 2);
     }
 
+    /// Verifies build file tree hidden files via custom config.
     #[test]
     fn test_build_file_tree_hidden_files_via_custom_config() {
         let tmp = TempDir::new().unwrap();
@@ -618,6 +679,7 @@ mod tests {
         assert_eq!(entries[0].name, "keep.txt");
     }
 
+    /// Verifies build file tree empty expanded set.
     #[test]
     fn test_build_file_tree_empty_expanded_set() {
         let tmp = TempDir::new().unwrap();
@@ -631,6 +693,7 @@ mod tests {
         assert_eq!(entries[0].name, "dir");
     }
 
+    /// Verifies build file tree empty hidden set.
     #[test]
     fn test_build_file_tree_empty_hidden_set() {
         let tmp = TempDir::new().unwrap();
@@ -640,6 +703,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
     }
 
+    /// Verifies build file tree only hidden files.
     #[test]
     fn test_build_file_tree_only_hidden_files() {
         let tmp = TempDir::new().unwrap();
@@ -654,6 +718,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree only dirs no files.
     #[test]
     fn test_build_file_tree_only_dirs_no_files() {
         let tmp = TempDir::new().unwrap();
@@ -667,6 +732,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree only files no dirs.
     #[test]
     fn test_build_file_tree_only_files_no_dirs() {
         let tmp = TempDir::new().unwrap();
@@ -679,6 +745,7 @@ mod tests {
         }
     }
 
+    /// Verifies build file tree many files sorted.
     #[test]
     fn test_build_file_tree_many_files_sorted() {
         let tmp = TempDir::new().unwrap();
@@ -694,6 +761,7 @@ mod tests {
         assert_eq!(names, sorted);
     }
 
+    /// Verifies build file tree multiple hidden dirs in hidden set.
     #[test]
     fn test_build_file_tree_multiple_hidden_dirs_in_hidden_set() {
         let tmp = TempDir::new().unwrap();
@@ -709,6 +777,7 @@ mod tests {
         assert_eq!(entries[0].name, "keep");
     }
 
+    /// Verifies build file tree target filter applies to files too.
     #[test]
     fn test_build_file_tree_target_filter_applies_to_files_too() {
         let tmp = TempDir::new().unwrap();
@@ -722,6 +791,7 @@ mod tests {
         assert_eq!(entries[0].name, "other.txt");
     }
 
+    /// Verifies build file tree special characters in name.
     #[test]
     fn test_build_file_tree_special_characters_in_name() {
         let tmp = TempDir::new().unwrap();
@@ -733,6 +803,7 @@ mod tests {
         assert_eq!(entries.len(), 3);
     }
 
+    /// Verifies build file tree three level depth.
     #[test]
     fn test_build_file_tree_three_level_depth() {
         let tmp = TempDir::new().unwrap();
@@ -749,6 +820,7 @@ mod tests {
         assert_eq!(entries[3].depth, 3);
     }
 
+    /// Verifies build file tree node modules filter applies to files too.
     #[test]
     fn test_build_file_tree_node_modules_filter_applies_to_files_too() {
         let tmp = TempDir::new().unwrap();

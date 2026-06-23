@@ -178,7 +178,7 @@ impl App {
     /// Return true when the currently rendered session is the same store row.
     fn displayed_store_session_matches(&self, session_id: i64, wt_path: &std::path::Path) -> bool {
         self.current_session_id == Some(session_id)
-            && self.session_store_path.as_ref().map(|p| p.as_path()) == Some(wt_path)
+            && self.session_store_path.as_deref() == Some(wt_path)
     }
 
     /// Refresh the visible pane from SQLite after exit-time ingestion succeeds.
@@ -228,16 +228,15 @@ impl App {
         }
         let events = self.display_events[events_offset..end].to_vec();
 
-        let append_result =
-            if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path) {
-                match self.session_store.as_ref() {
-                    Some(store) => store.append_events(session_id, &events),
-                    None => Err(anyhow::anyhow!("session store is not open")),
-                }
-            } else {
-                crate::app::session_store::SessionStore::open(&wt_path)
-                    .and_then(|store| store.append_events(session_id, &events))
-            };
+        let append_result = if self.session_store_path.as_deref() == Some(wt_path.as_path()) {
+            match self.session_store.as_ref() {
+                Some(store) => store.append_events(session_id, &events),
+                None => Err(anyhow::anyhow!("session store is not open")),
+            }
+        } else {
+            crate::app::session_store::SessionStore::open(&wt_path)
+                .and_then(|store| store.append_events(session_id, &events))
+        };
 
         match append_result {
             Ok(_) => {
@@ -394,7 +393,7 @@ impl App {
         }
 
         let append_result: anyhow::Result<Option<usize>> = (|| {
-            if self.session_store_path.as_ref().map(|p| p.as_path()) == Some(wt_path.as_path()) {
+            if self.session_store_path.as_deref() == Some(wt_path.as_path()) {
                 match self.session_store.as_ref() {
                     Some(store) => {
                         store.append_events(session_id, &events)?;
@@ -433,13 +432,13 @@ impl App {
                 // compaction spawns since a valid boundary may now exist.
                 self.compaction_spawn_deferred = false;
                 // Check if compaction is needed (only if not already pending or in-flight)
-                if self.compaction_needed.is_none() && self.compaction_receivers.is_empty() {
-                    if chars_since_compaction
+                if self.compaction_needed.is_none()
+                    && self.compaction_receivers.is_empty()
+                    && chars_since_compaction
                         .map(|chars| chars >= crate::app::session_store::COMPACTION_THRESHOLD)
                         .unwrap_or(false)
-                    {
-                        self.compaction_needed = Some((session_id, wt_path));
-                    }
+                {
+                    self.compaction_needed = Some((session_id, wt_path));
                 }
                 if self.current_session_id == Some(session_id) {
                     // Update context percentage badge from store character count

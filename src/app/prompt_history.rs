@@ -4,7 +4,8 @@
 //! `UserMessage` events from the currently viewed transcript. That lets a fresh
 //! session recall prompts that were sent before the session was created.
 
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -93,9 +94,11 @@ impl PromptHistoryStore {
         let Some(prompt) = normalize_prompt(prompt) else {
             return Ok(false);
         };
-        self.entries.push(prompt);
-        self.enforce_limit();
-        self.save()?;
+        let mut entries = self.entries.clone();
+        entries.push(prompt);
+        enforce_limit_for_entries(&mut entries, self.limit);
+        self.save_entries(&entries)?;
+        self.entries = entries;
         Ok(true)
     }
 
@@ -108,27 +111,15 @@ impl PromptHistoryStore {
         }
     }
 
-    /// Drop oldest entries until the store fits within its configured limit.
-    fn enforce_limit(&mut self) {
-        if self.entries.len() > self.limit {
-            let drop_count = self.entries.len() - self.limit;
-            self.entries.drain(0..drop_count);
-        }
-    }
-
-    /// Persist the current entries if this store has a backing path.
-    fn save(&self) -> Result<()> {
+    /// Persist the supplied entries if this store has a backing path.
+    fn save_entries(&self, entries: &[String]) -> Result<()> {
         let Some(path) = self.path.as_ref() else {
             return Ok(());
         };
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let payload = PromptHistoryFile {
-            entries: self.entries.clone(),
+            entries: entries.to_vec(),
         };
-        std::fs::write(path, serde_json::to_string_pretty(&payload)?)?;
-        Ok(())
+        write_history_atomically(path, serde_json::to_string_pretty(&payload)?.as_bytes())
     }
 }
 
@@ -149,6 +140,15 @@ fn normalize_limit(limit: usize) -> usize {
 fn normalize_prompt(prompt: &str) -> Option<String> {
     let prompt = prompt.trim();
     (!prompt.is_empty()).then(|| prompt.to_string())
+}
+
+/// Drop oldest entries from a history vector until it fits within a normalized limit.
+fn enforce_limit_for_entries(entries: &mut Vec<String>, limit: usize) {
+    let limit = normalize_limit(limit);
+    if entries.len() > limit {
+        let drop_count = entries.len() - limit;
+        entries.drain(0..drop_count);
+    }
 }
 
 /// Parse history entries from any accepted disk format.
@@ -174,6 +174,51 @@ fn sanitize_entries(entries: Vec<String>, limit: usize) -> Vec<String> {
         entries.drain(0..drop_count);
     }
     entries
+}
+
+/// Write prompt history through a temporary sibling so interrupted saves do not corrupt the file.
+fn write_history_atomically(path: &Path, payload: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let temp_path = history_temp_path(path);
+    let write_result = (|| -> Result<()> {
+        let mut file = std::fs::File::create(&temp_path)?;
+        file.write_all(payload)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+
+    if let Err(err) = write_result {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(err);
+    }
+
+    #[cfg(windows)]
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+
+    if let Err(err) = std::fs::rename(&temp_path, path) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(err.into());
+    }
+
+    Ok(())
+}
+
+/// Build a unique temporary sibling path for a prompt history write.
+fn history_temp_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("prompt_history.json");
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    path.with_file_name(format!(".{file_name}.{}.{}.tmp", std::process::id(), nonce))
 }
 
 #[cfg(test)]
@@ -215,6 +260,51 @@ mod tests {
         assert_eq!(reloaded.entries(), &["build feature".to_string()]);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    /// Recording over an existing history file should replace it without leaving temp files.
+    #[test]
+    fn record_replaces_existing_file_without_temp_artifacts() {
+        let path = temp_history_path("replace");
+        std::fs::write(&path, r#"{"entries":["old"]}"#).unwrap();
+        let mut store = PromptHistoryStore::load_at(&path, 20).unwrap();
+
+        assert!(store.record("new").unwrap());
+
+        let reloaded = PromptHistoryStore::load_at(&path, 20).unwrap();
+        assert_eq!(reloaded.entries(), &["old".to_string(), "new".to_string()]);
+
+        let parent = path.parent().unwrap();
+        let file_name = path.file_name().unwrap().to_string_lossy();
+        let temp_prefix = format!(".{file_name}.");
+        let leftovers: Vec<_> = std::fs::read_dir(parent)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                name.starts_with(&temp_prefix) && name.ends_with(".tmp")
+            })
+            .collect();
+        assert!(leftovers.is_empty());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Failed persistence should leave the in-memory history unchanged.
+    #[test]
+    fn record_does_not_mutate_when_save_fails() {
+        let path = temp_history_path("save-fails");
+        std::fs::create_dir_all(&path).unwrap();
+        let mut store = PromptHistoryStore {
+            path: Some(path.clone()),
+            entries: vec!["old".to_string()],
+            limit: 20,
+        };
+
+        assert!(store.record("new").is_err());
+        assert_eq!(store.entries(), &["old".to_string()]);
+
+        let _ = std::fs::remove_dir(path);
     }
 
     /// Blank prompts should be ignored instead of creating empty history entries.

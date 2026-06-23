@@ -12,6 +12,8 @@ use crate::models::OutputType;
 use super::parse_todos_from_input;
 use crate::app::state::App;
 
+/// Remove parsed user-message confirmations that match optimistic prompts
+/// already inserted for the current turn.
 fn drop_confirmed_optimistic_user_messages(
     mut events: Vec<DisplayEvent>,
     existing_events: &[DisplayEvent],
@@ -27,11 +29,11 @@ fn drop_confirmed_optimistic_user_messages(
         return events;
     }
 
-    let optimistic_user_messages: std::collections::HashSet<String> = existing_events
+    let optimistic_user_messages: std::collections::HashSet<&str> = existing_events
         .iter()
         .skip(turn_events_offset.min(existing_events.len()))
         .filter_map(|event| match event {
-            DisplayEvent::UserMessage { content, .. } => Some(content.clone()),
+            DisplayEvent::UserMessage { content, .. } => Some(content.as_str()),
             _ => None,
         })
         .collect();
@@ -40,12 +42,15 @@ fn drop_confirmed_optimistic_user_messages(
     }
 
     events.retain(|event| match event {
-        DisplayEvent::UserMessage { content, .. } => !optimistic_user_messages.contains(content),
+        DisplayEvent::UserMessage { content, .. } => {
+            !optimistic_user_messages.contains(content.as_str())
+        }
         _ => true,
     });
     events
 }
 
+/// Live event handling methods for foreground and background agent output.
 impl App {
     /// Check if a slot's output should be displayed (active slot of viewed branch)
     pub fn is_viewing_slot(&self, slot_id: &str) -> bool {
@@ -471,6 +476,7 @@ impl App {
         }
     }
 
+    /// Fill missing Codex completion durations from the slot start time.
     fn apply_slot_turn_duration(&self, slot_id: &str, events: &mut [DisplayEvent]) {
         let Some(started_at) = self.codex_slot_started_at.get(slot_id) else {
             return;
@@ -487,10 +493,12 @@ impl App {
 }
 
 #[cfg(test)]
+/// Tests for live event handling and optimistic prompt reconciliation.
 mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// Build a minimal user-message event for reconciliation tests.
     fn user(content: &str) -> DisplayEvent {
         DisplayEvent::UserMessage {
             _uuid: String::new(),
@@ -498,6 +506,7 @@ mod tests {
         }
     }
 
+    /// Build a minimal assistant-message event for reconciliation tests.
     fn assistant(text: &str) -> DisplayEvent {
         DisplayEvent::AssistantText {
             _uuid: String::new(),
@@ -506,6 +515,7 @@ mod tests {
         }
     }
 
+    /// Parsed foreground output drops a prompt confirmation already shown optimistically.
     #[test]
     fn apply_parsed_output_drops_confirmed_optimistic_user_message() {
         let mut app = App::new();
@@ -547,6 +557,7 @@ mod tests {
         assert_eq!(assistant_texts, vec!["looking", "done"]);
     }
 
+    /// Matching prompt text from before the current turn boundary is preserved.
     #[test]
     fn apply_parsed_output_keeps_same_text_from_prior_turn_before_offset() {
         let mut app = App::new();
@@ -565,6 +576,7 @@ mod tests {
         assert_eq!(user_count, 2);
     }
 
+    /// Background live caches drop prompt confirmations the same way foreground output does.
     #[test]
     fn apply_background_parsed_output_drops_confirmation_from_live_cache() {
         let mut app = App::new();

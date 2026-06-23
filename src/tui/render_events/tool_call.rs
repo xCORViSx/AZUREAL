@@ -3,6 +3,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::{HashMap, HashSet};
+use unicode_width::UnicodeWidthStr;
 
 use crate::syntax::SyntaxHighlighter;
 use crate::tui::colorize::ORANGE;
@@ -15,6 +16,21 @@ use crate::tui::util::AZURE;
 
 use super::ClickablePath;
 
+/// Return the terminal display width for a rendered text fragment.
+fn display_width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+/// Return the rendered column count before the first tool parameter cell.
+fn tool_call_prefix_width(indicator: &str, display_name: &str) -> usize {
+    display_width(" ┣━")
+        + display_width(indicator)
+        + display_width(display_name)
+        + display_width("  ")
+}
+
+/// Render a tool invocation into session-pane lines and associated interactive regions.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_tool_call(
     lines: &mut Vec<Line<'static>>,
     animation_indices: &mut Vec<(usize, usize, String)>,
@@ -61,8 +77,8 @@ pub(super) fn render_tool_call(
 
     let display_name = tool_display_name(tool_name);
     let tool_line_max = bubble_width + 10;
-    let prefix_len = 3 + 2 + display_name.len() + 2;
-    let param_max = tool_line_max.saturating_sub(prefix_len);
+    let prefix_width = tool_call_prefix_width(indicator, display_name);
+    let param_max = tool_line_max.saturating_sub(prefix_width);
 
     // Edit/Read/Write tools get underlined file paths that are clickable
     let is_file_tool = matches!(tool_name, "Edit" | "Read" | "Write");
@@ -85,8 +101,8 @@ pub(super) fn render_tool_call(
             // Record clickable region for file tools — wrap_line_count tells highlight
             // how many cache lines the path spans (for multi-line highlight)
             if is_file_tool && !param_raw.is_empty() {
-                let start_col = prefix_len;
-                let end_col = start_col + wrapped.chars().count();
+                let start_col = prefix_width;
+                let end_col = start_col + display_width(&wrapped);
                 let (old_s, new_s) = if tool_name == "Edit" {
                     extract_edit_preview_strings(input)
                 } else {
@@ -135,7 +151,7 @@ pub(super) fn render_tool_call(
                 Span::styled(wrapped, path_style),
             ]));
         } else {
-            let indent = " ".repeat(prefix_len);
+            let indent = " ".repeat(prefix_width);
             lines.push(Line::from(vec![
                 Span::styled(indent, Style::default()),
                 Span::styled(wrapped, path_style),
@@ -149,5 +165,53 @@ pub(super) fn render_tool_call(
     }
     if tool_name == "Write" {
         render_write_preview(lines, input, tool_color, tool_max);
+    }
+}
+
+#[cfg(test)]
+/// Tests tool-call rendering metadata consumed by mouse hit-testing and highlights.
+mod tests {
+    use super::*;
+
+    /// Render one completed file-tool call and return its clickable path metadata.
+    fn render_file_tool_clickable_path(tool_name: &str, file_path: &str) -> ClickablePath {
+        let mut lines = Vec::new();
+        let mut animation_indices = Vec::new();
+        let mut clickable_paths = Vec::new();
+        let mut highlighter = SyntaxHighlighter::new();
+        render_tool_call(
+            &mut lines,
+            &mut animation_indices,
+            &mut clickable_paths,
+            tool_name,
+            &Some(file_path.to_string()),
+            &serde_json::json!({}),
+            "tool-1",
+            &HashSet::new(),
+            &HashSet::new(),
+            80,
+            &mut highlighter,
+            &HashMap::new(),
+            false,
+        );
+
+        assert!(!lines.is_empty());
+        clickable_paths
+            .into_iter()
+            .next()
+            .expect("file tool should produce a clickable path")
+    }
+
+    /// Verifies wide Unicode file paths get a display-width hitbox.
+    #[test]
+    fn clickable_file_path_columns_use_display_width() {
+        let path = "src/日本.rs";
+        let (_line, start, end, stored_path, _old, _new, wrap_count) =
+            render_file_tool_clickable_path("Read", path);
+
+        assert_eq!(stored_path, path);
+        assert_eq!(wrap_count, 1);
+        assert_eq!(start, tool_call_prefix_width("● ", "Read"));
+        assert_eq!(end, start + display_width(path));
     }
 }

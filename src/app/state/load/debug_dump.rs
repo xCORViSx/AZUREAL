@@ -2,38 +2,73 @@
 
 use super::super::App;
 
+/// Build the on-disk debug dump filename from optional user input.
+///
+/// The suffix is typed in-app, so treat it as untrusted: path separators and
+/// shell-special characters are normalized to underscores so the dump always
+/// stays inside the project `.azureal` directory.
+fn debug_dump_filename(name_suffix: &str) -> String {
+    let suffix = name_suffix.trim();
+    if suffix.is_empty() {
+        return "debug-output".to_string();
+    }
+
+    let safe_suffix: String = suffix
+        .chars()
+        .take(120)
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe_suffix = safe_suffix.trim_matches('_');
+    if safe_suffix.is_empty() {
+        "debug-output".to_string()
+    } else {
+        format!("debug-output_{}", safe_suffix)
+    }
+}
+
+/// Debug dump generation methods for application state.
 impl App {
     /// Dump debug output to .azureal/debug-output[_name] (triggered by ⌃d)
     /// All user/assistant content is obfuscated so the file can be shared in bug reports
     /// without exposing sensitive project details. Tool names, event types, and structural
     /// markers are preserved for diagnostic value. Optional name suffix appended after underscore.
     pub fn dump_debug_output(&mut self, name: &str) {
-        let suffix = name.trim();
-        if let Err(e) = self.dump_debug_output_inner(suffix) {
+        let filename = debug_dump_filename(name);
+        if let Err(e) = self.dump_debug_output_inner(&filename) {
             self.set_status(format!("Debug dump failed: {}", e));
         } else {
-            let filename = if suffix.is_empty() {
-                "debug-output".to_string()
-            } else {
-                format!("debug-output_{}", suffix)
-            };
             self.set_status(format!("Debug output saved to .azureal/{}", filename));
         }
     }
 
-    fn dump_debug_output_inner(&mut self, name_suffix: &str) -> anyhow::Result<()> {
+    /// Write the debug dump to an already-sanitized filename.
+    fn dump_debug_output_inner(&mut self, filename: &str) -> anyhow::Result<()> {
         use crate::events::DisplayEvent;
         use std::collections::HashMap;
         use std::io::Write;
 
+        /// Deterministic content obfuscator for shareable debug dumps.
+        ///
+        /// It keeps punctuation and structural markers while mapping repeated
+        /// words to stable fake words, preserving enough shape for diagnostics.
         // Deterministic word obfuscator: maps each unique word to a consistent fake word
         // so structural patterns are preserved (same word → same replacement every time).
         // Keeps punctuation, whitespace, numbers, file extensions, and structural tokens.
         struct Obfuscator {
+            /// Stable fake-word mapping keyed by lowercase source token.
             map: HashMap<String, String>,
+            /// Monotonic counter used to generate deterministic replacements.
             counter: usize,
         }
+        /// Content obfuscation operations used while writing the debug dump.
         impl Obfuscator {
+            /// Create an empty obfuscator with no prior token mappings.
             fn new() -> Self {
                 Self {
                     map: HashMap::new(),
@@ -41,6 +76,7 @@ impl App {
                 }
             }
 
+            /// Generate a deterministic fake word with roughly the requested length.
             // Generate a fake word from a counter (aaa, aab, aac, ... aba, abb, ...)
             fn fake_word(&mut self, len: usize) -> String {
                 let id = self.counter;
@@ -57,6 +93,7 @@ impl App {
                 }
             }
 
+            /// Obfuscate one word while preserving simple case patterns.
             // Obfuscate a word, preserving case pattern. Skips structural tokens.
             fn word(&mut self, w: &str) -> String {
                 if w.is_empty() {
@@ -94,6 +131,7 @@ impl App {
                 result
             }
 
+            /// Obfuscate prose while preserving punctuation and whitespace shape.
             // Obfuscate a full text string, preserving whitespace and punctuation structure
             fn text(&mut self, s: &str) -> String {
                 let mut result = String::with_capacity(s.len());
@@ -115,6 +153,7 @@ impl App {
                 result
             }
 
+            /// Obfuscate a path while keeping separators and extensions recognizable.
             // Obfuscate a file path, keeping / separators and file extensions
             fn path(&mut self, p: &str) -> String {
                 p.split('/')
@@ -139,12 +178,7 @@ impl App {
 
         let debug_dir = crate::config::ensure_project_data_dir()?
             .ok_or_else(|| anyhow::anyhow!("Not in a git repository"))?;
-        let filename = if name_suffix.is_empty() {
-            "debug-output".to_string()
-        } else {
-            format!("debug-output_{}", name_suffix)
-        };
-        let debug_path = debug_dir.join(&filename);
+        let debug_path = debug_dir.join(filename);
         let mut file = std::fs::File::create(&debug_path)?;
 
         // Diagnostic header — safe metadata (no content leaked)
@@ -183,13 +217,13 @@ impl App {
                 }
             }
         }
-        writeln!(file, "")?;
+        writeln!(file)?;
         writeln!(
             file,
             "JSONL lines: {} (parse errors: {})",
             self.parse_total_lines, self.parse_errors
         )?;
-        writeln!(file, "")?;
+        writeln!(file)?;
         writeln!(file, "=== ASSISTANT PARSING STATS ===")?;
         writeln!(
             file,
@@ -211,7 +245,7 @@ impl App {
             "  - Text blocks created: {}",
             self.assistant_text_blocks
         )?;
-        writeln!(file, "")?;
+        writeln!(file)?;
         writeln!(file, "Total display_events: {}", self.display_events.len())?;
 
         // Event type counts — no content leaked
@@ -238,7 +272,7 @@ impl App {
         writeln!(file, "  ToolResult: {}", tool_results)?;
         writeln!(file, "  Hook: {}", hooks)?;
         writeln!(file, "  Other: {}", other)?;
-        writeln!(file, "")?;
+        writeln!(file)?;
 
         // Last 5 events — content obfuscated, tool names preserved for diagnostics
         writeln!(file, "=== LAST 5 EVENTS ===")?;
@@ -291,7 +325,7 @@ impl App {
             };
             writeln!(file, "  [{}] {}", start + i, preview)?;
         }
-        writeln!(file, "")?;
+        writeln!(file)?;
 
         // Full rendered output — every line obfuscated
         writeln!(file, "=== RENDERED OUTPUT ===")?;
@@ -305,7 +339,7 @@ impl App {
             self.viewing_historic_session,
         );
         writeln!(file, "Total rendered lines: {}", rendered_lines.len())?;
-        writeln!(file, "")?;
+        writeln!(file)?;
 
         for line in rendered_lines.iter() {
             let text: String = line
@@ -317,5 +351,35 @@ impl App {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+/// Tests for debug dump filename safety and normalization.
+mod tests {
+    use super::debug_dump_filename;
+
+    /// Empty debug dump names use the default filename.
+    #[test]
+    fn debug_dump_filename_default_for_empty_suffix() {
+        assert_eq!(debug_dump_filename("   "), "debug-output");
+    }
+
+    /// Debug dump names normalize path traversal into a plain filename.
+    #[test]
+    fn debug_dump_filename_strips_path_separators() {
+        let filename = debug_dump_filename("../nested\\secret name");
+
+        assert_eq!(filename, "debug-output_.._nested_secret_name");
+        assert!(!filename.contains('/'));
+        assert!(!filename.contains('\\'));
+    }
+
+    /// Debug dump names cap untrusted suffixes to avoid filesystem limits.
+    #[test]
+    fn debug_dump_filename_caps_long_suffixes() {
+        let filename = debug_dump_filename(&"a".repeat(200));
+
+        assert_eq!(filename.len(), "debug-output_".len() + 120);
     }
 }

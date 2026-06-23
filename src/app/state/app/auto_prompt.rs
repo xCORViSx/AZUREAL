@@ -167,6 +167,7 @@ pub struct AutoPromptState {
 /// Methods for toggling, capturing, and scheduling per-session auto prompts.
 impl AutoPromptState {
     /// Return true when the target session currently has auto prompt enabled.
+    #[cfg(test)]
     pub fn is_enabled_for(&self, key: &AutoPromptKey) -> bool {
         self.entries.contains_key(key)
     }

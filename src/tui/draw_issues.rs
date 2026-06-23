@@ -8,10 +8,63 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::keybindings;
 use super::util::AZURE;
 use crate::app::App;
+
+/// Fixed display columns used before each issue title in the list row.
+const ISSUE_ROW_PREFIX_WIDTH: usize = 10;
+
+/// Return the terminal display width for a string.
+fn display_width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+/// Return the terminal display width for one character, treating unknown widths as one column.
+fn char_width(ch: char) -> usize {
+    UnicodeWidthChar::width(ch).unwrap_or(1)
+}
+
+/// Truncate text to a terminal display-width budget without slicing through Unicode characters.
+fn truncate_text_to_width(text: &str, max_width: usize) -> String {
+    if display_width(text) <= max_width {
+        return text.to_string();
+    }
+
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis = "...";
+    let ellipsis_width = display_width(ellipsis);
+    if max_width <= ellipsis_width {
+        return ellipsis.chars().take(max_width).collect();
+    }
+
+    let content_width = max_width - ellipsis_width;
+    let mut truncated = String::new();
+    let mut used_width = 0;
+    for ch in text.chars() {
+        let width = char_width(ch);
+        if used_width + width > content_width {
+            break;
+        }
+        truncated.push(ch);
+        used_width += width;
+    }
+    truncated.push_str(ellipsis);
+    truncated
+}
+
+/// Return the display width consumed by rendered issue labels, including separators and brackets.
+fn issue_labels_width(labels: &[String]) -> usize {
+    labels
+        .iter()
+        .map(|label| 1 + 2 + display_width(label))
+        .sum()
+}
 
 /// Draw the Issues panel as a centered modal overlay.
 pub fn draw_issues_panel(f: &mut Frame, app: &App) {
@@ -118,13 +171,11 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
                 Style::default().fg(Color::Rgb(100, 140, 180))
             } else if is_selected {
                 Style::default().fg(AZURE).add_modifier(Modifier::BOLD)
-            } else if is_closed {
-                Style::default().fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::DarkGray)
             };
             let title_style = if is_selected {
-                let s = if is_closed {
+                if is_closed {
                     Style::default()
                         .fg(Color::Rgb(160, 160, 160))
                         .add_modifier(Modifier::CROSSED_OUT)
@@ -132,8 +183,7 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD)
-                };
-                s
+                }
             } else if is_closed {
                 Style::default()
                     .fg(Color::DarkGray)
@@ -157,13 +207,9 @@ pub fn draw_issues_panel(f: &mut Frame, app: &App) {
             ];
 
             // Truncate title to fit
-            let label_len: usize = issue.labels.iter().map(|l| l.len() + 3).sum();
-            let avail = inner_w.saturating_sub(10 + label_len);
-            let title_display = if issue.title.len() > avail && avail > 3 {
-                format!("{}...", &issue.title[..avail - 3])
-            } else {
-                issue.title.clone()
-            };
+            let label_len = issue_labels_width(&issue.labels);
+            let avail = inner_w.saturating_sub(ISSUE_ROW_PREFIX_WIDTH + label_len);
+            let title_display = truncate_text_to_width(&issue.title, avail);
             spans.push(Span::styled(title_display, title_style));
 
             // Labels
@@ -267,5 +313,43 @@ fn label_color(label: &str) -> Color {
         "good first issue" => Color::Cyan,
         "help wanted" => Color::Yellow,
         _ => Color::DarkGray,
+    }
+}
+
+/// Unit tests for issue-panel rendering helpers.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies title truncation preserves character boundaries for wide Unicode text.
+    #[test]
+    fn truncate_text_to_width_handles_wide_unicode() {
+        let truncated = truncate_text_to_width("日本語issue-title", 8);
+
+        assert!(display_width(&truncated) <= 8);
+        assert!(truncated.ends_with("..."));
+    }
+
+    /// Verifies tiny title budgets never draw outside the requested width.
+    #[test]
+    fn truncate_text_to_width_handles_tiny_budgets() {
+        assert_eq!(truncate_text_to_width("abcdef", 0), "");
+        assert_eq!(truncate_text_to_width("abcdef", 1), ".");
+        assert_eq!(truncate_text_to_width("abcdef", 2), "..");
+        assert_eq!(truncate_text_to_width("abcdef", 3), "...");
+    }
+
+    /// Verifies text that already fits is preserved exactly.
+    #[test]
+    fn truncate_text_to_width_keeps_fitting_text() {
+        assert_eq!(truncate_text_to_width("fixed", 5), "fixed");
+    }
+
+    /// Verifies label budgets use terminal display width instead of byte length.
+    #[test]
+    fn issue_labels_width_counts_display_columns() {
+        let labels = vec!["bug".to_string(), "日本".to_string()];
+
+        assert_eq!(issue_labels_width(&labels), 13);
     }
 }

@@ -9,6 +9,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::keybindings;
 use crate::app::types::{HealthTab, ModuleStyleDialog, PythonModuleStyle, RustModuleStyle};
@@ -16,6 +17,54 @@ use crate::app::App;
 
 /// Health panel accent — bright green from the scope overlay
 const GF_GREEN: Color = Color::Rgb(80, 200, 80);
+
+/// Return the terminal display width of a string.
+fn display_width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+/// Return the display width of one character, treating unknown widths as one cell.
+fn char_width(ch: char) -> usize {
+    UnicodeWidthChar::width(ch).unwrap_or(1)
+}
+
+/// Truncate a path from the left so its tail fits in the requested terminal width.
+fn truncate_path_tail_to_width(path: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    if display_width(path) <= max_width {
+        return path.to_string();
+    }
+
+    let ellipsis = "…";
+    let ellipsis_width = display_width(ellipsis);
+    if max_width <= ellipsis_width {
+        return ellipsis.to_string();
+    }
+
+    let tail_width = max_width - ellipsis_width;
+    let mut used = 0usize;
+    let mut tail = Vec::new();
+    for ch in path.chars().rev() {
+        let width = char_width(ch);
+        if used + width > tail_width {
+            break;
+        }
+        used += width;
+        tail.push(ch);
+    }
+
+    tail.reverse();
+    format!("{ellipsis}{}", tail.into_iter().collect::<String>())
+}
+
+/// Convert a percentage to the number of filled cells in a fixed-width bar.
+fn filled_bar_cells(percent: f32, bar_width: usize) -> usize {
+    let normalized = if percent.is_finite() { percent } else { 0.0 };
+    let clamped = normalized.clamp(0.0, 100.0);
+    (clamped / 100.0 * bar_width as f32).round() as usize
+}
 
 /// Draw the Worktree Health panel as a centered modal overlay.
 /// Renders a tab bar at the top and tab-specific content below it.
@@ -190,16 +239,9 @@ fn draw_god_files_tab(
         };
         let line_count_str = format!(" {} lines", entry.line_count);
         let path_max = inner_w.saturating_sub(checkbox.len() + line_count_str.len() + 1);
-        let path_display = if entry.rel_path.len() > path_max {
-            format!(
-                "…{}",
-                &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..]
-            )
-        } else {
-            entry.rel_path.clone()
-        };
-        let padding =
-            inner_w.saturating_sub(checkbox.len() + path_display.len() + line_count_str.len());
+        let path_display = truncate_path_tail_to_width(&entry.rel_path, path_max);
+        let padding = inner_w
+            .saturating_sub(checkbox.len() + display_width(&path_display) + line_count_str.len());
         let pad_str = " ".repeat(padding);
         let (path_style, count_style) = if is_selected {
             (
@@ -338,7 +380,7 @@ fn draw_documentation_tab(
             Color::Red
         };
 
-        let filled = (entry.coverage_pct / 100.0 * bar_width as f32).round() as usize;
+        let filled = filled_bar_cells(entry.coverage_pct, bar_width);
         let bar: String = "█".repeat(filled) + &"░".repeat(bar_width - filled);
 
         let ratio = format!(" {}/{}", entry.documented_items, entry.total_items);
@@ -346,16 +388,14 @@ fn draw_documentation_tab(
         // Path — leave room for checkbox + pct + bar + ratio
         let fixed_width = checkbox.len() + pct_str.len() + 1 + bar_width + ratio.len() + 2;
         let path_max = inner_w.saturating_sub(fixed_width + 1);
-        let path_display = if entry.rel_path.len() > path_max {
-            format!(
-                "…{}",
-                &entry.rel_path[entry.rel_path.len().saturating_sub(path_max - 1)..]
-            )
-        } else {
-            entry.rel_path.clone()
-        };
+        let path_display = truncate_path_tail_to_width(&entry.rel_path, path_max);
         let padding = inner_w.saturating_sub(
-            checkbox.len() + path_display.len() + pct_str.len() + 1 + bar_width + ratio.len(),
+            checkbox.len()
+                + display_width(&path_display)
+                + pct_str.len()
+                + 1
+                + bar_width
+                + ratio.len(),
         );
         let pad_str = " ".repeat(padding);
 
@@ -497,6 +537,7 @@ fn draw_module_style_dialog(
 }
 
 #[cfg(test)]
+/// Unit tests for health-panel rendering helpers and layout constants.
 mod tests {
     use super::*;
     use crate::app::types::DocEntry;
@@ -504,10 +545,12 @@ mod tests {
 
     // ── GF_GREEN constant ──
 
+    /// Verifies gf green value.
     #[test]
     fn test_gf_green_value() {
         assert_eq!(GF_GREEN, Color::Rgb(80, 200, 80));
     }
+    /// Verifies gf green is rgb.
     #[test]
     fn test_gf_green_is_rgb() {
         matches!(GF_GREEN, Color::Rgb(_, _, _));
@@ -515,30 +558,36 @@ mod tests {
 
     // ── HealthTab ──
 
+    /// Verifies health tab god files.
     #[test]
     fn test_health_tab_god_files() {
         assert_eq!(HealthTab::GodFiles, HealthTab::GodFiles);
     }
+    /// Verifies health tab documentation.
     #[test]
     fn test_health_tab_documentation() {
         assert_eq!(HealthTab::Documentation, HealthTab::Documentation);
     }
+    /// Verifies health tab ne.
     #[test]
     fn test_health_tab_ne() {
         assert_ne!(HealthTab::GodFiles, HealthTab::Documentation);
     }
+    /// Verifies health tab copy.
     #[test]
     fn test_health_tab_copy() {
         let t = HealthTab::GodFiles;
         let c = t;
         assert_eq!(t, c);
     }
+    /// Verifies health tab clone.
     #[test]
     fn test_health_tab_clone() {
         let t = HealthTab::Documentation;
-        let c = t.clone();
+        let c = t;
         assert_eq!(t, c);
     }
+    /// Verifies health tab debug.
     #[test]
     fn test_health_tab_debug() {
         assert_eq!(format!("{:?}", HealthTab::GodFiles), "GodFiles");
@@ -546,18 +595,22 @@ mod tests {
 
     // ── RustModuleStyle ──
 
+    /// Verifies rust style file based.
     #[test]
     fn test_rust_style_file_based() {
         assert_eq!(RustModuleStyle::FileBased, RustModuleStyle::FileBased);
     }
+    /// Verifies rust style mod rs.
     #[test]
     fn test_rust_style_mod_rs() {
         assert_eq!(RustModuleStyle::ModRs, RustModuleStyle::ModRs);
     }
+    /// Verifies rust style ne.
     #[test]
     fn test_rust_style_ne() {
         assert_ne!(RustModuleStyle::FileBased, RustModuleStyle::ModRs);
     }
+    /// Verifies rust style labels file based.
     #[test]
     fn test_rust_style_labels_file_based() {
         let (label, hint) = match RustModuleStyle::FileBased {
@@ -567,6 +620,7 @@ mod tests {
         assert!(label.starts_with('●'));
         assert!(hint.starts_with('○'));
     }
+    /// Verifies rust style labels mod rs.
     #[test]
     fn test_rust_style_labels_mod_rs() {
         let (label, hint) = match RustModuleStyle::ModRs {
@@ -579,18 +633,22 @@ mod tests {
 
     // ── PythonModuleStyle ──
 
+    /// Verifies python style package.
     #[test]
     fn test_python_style_package() {
         assert_eq!(PythonModuleStyle::Package, PythonModuleStyle::Package);
     }
+    /// Verifies python style single.
     #[test]
     fn test_python_style_single() {
         assert_eq!(PythonModuleStyle::SingleFile, PythonModuleStyle::SingleFile);
     }
+    /// Verifies python style ne.
     #[test]
     fn test_python_style_ne() {
         assert_ne!(PythonModuleStyle::Package, PythonModuleStyle::SingleFile);
     }
+    /// Verifies python style labels package.
     #[test]
     fn test_python_style_labels_package() {
         let (label, _) = match PythonModuleStyle::Package {
@@ -602,6 +660,7 @@ mod tests {
 
     // ── ModuleStyleDialog ──
 
+    /// Verifies module style dialog rust only.
     #[test]
     fn test_module_style_dialog_rust_only() {
         let d = ModuleStyleDialog {
@@ -614,6 +673,7 @@ mod tests {
         assert!(d.has_rust);
         assert!(!d.has_python);
     }
+    /// Verifies module style dialog both.
     #[test]
     fn test_module_style_dialog_both() {
         let d = ModuleStyleDialog {
@@ -629,6 +689,7 @@ mod tests {
 
     // ── DocEntry ──
 
+    /// Verifies doc entry construction.
     #[test]
     fn test_doc_entry_construction() {
         let e = DocEntry {
@@ -641,6 +702,7 @@ mod tests {
         };
         assert_eq!(e.coverage_pct, 50.0);
     }
+    /// Verifies doc entry checked.
     #[test]
     fn test_doc_entry_checked() {
         let e = DocEntry {
@@ -653,6 +715,7 @@ mod tests {
         };
         assert!(e.checked);
     }
+    /// Verifies doc entry clone.
     #[test]
     fn test_doc_entry_clone() {
         let e = DocEntry {
@@ -669,6 +732,7 @@ mod tests {
 
     // ── Score color logic ──
 
+    /// Verifies score color high.
     #[test]
     fn test_score_color_high() {
         let score = 90.0f32;
@@ -681,6 +745,7 @@ mod tests {
         };
         assert_eq!(color, GF_GREEN);
     }
+    /// Verifies score color medium.
     #[test]
     fn test_score_color_medium() {
         let score = 60.0f32;
@@ -693,6 +758,7 @@ mod tests {
         };
         assert_eq!(color, Color::Yellow);
     }
+    /// Verifies score color low.
     #[test]
     fn test_score_color_low() {
         let score = 30.0f32;
@@ -705,6 +771,7 @@ mod tests {
         };
         assert_eq!(color, Color::Red);
     }
+    /// Verifies score color boundary 80.
     #[test]
     fn test_score_color_boundary_80() {
         let score = 80.0f32;
@@ -717,6 +784,7 @@ mod tests {
         };
         assert_eq!(color, GF_GREEN);
     }
+    /// Verifies score color boundary 50.
     #[test]
     fn test_score_color_boundary_50() {
         let score = 50.0f32;
@@ -732,6 +800,7 @@ mod tests {
 
     // ── Bar rendering ──
 
+    /// Verifies bar full.
     #[test]
     fn test_bar_full() {
         let pct = 100.0f32;
@@ -741,6 +810,7 @@ mod tests {
         assert_eq!(bar.chars().count(), 10);
         assert!(!bar.contains('\u{2591}'));
     }
+    /// Verifies bar empty.
     #[test]
     fn test_bar_empty() {
         let pct = 0.0f32;
@@ -750,16 +820,45 @@ mod tests {
         assert_eq!(bar.chars().count(), 10);
         assert!(!bar.contains('\u{2588}'));
     }
+    /// Verifies bar half.
     #[test]
     fn test_bar_half() {
         let pct = 50.0f32;
         let bw = 10;
-        let filled = (pct / 100.0 * bw as f32).round() as usize;
+        let filled = filled_bar_cells(pct, bw);
         assert_eq!(filled, 5);
+    }
+
+    /// Verifies bar clamps high percent.
+    #[test]
+    fn test_bar_clamps_high_percent() {
+        assert_eq!(filled_bar_cells(250.0, 10), 10);
+    }
+
+    /// Verifies bar treats nan as empty.
+    #[test]
+    fn test_bar_treats_nan_as_empty() {
+        assert_eq!(filled_bar_cells(f32::NAN, 10), 0);
+    }
+
+    /// Verifies path tail truncation respects unicode boundaries.
+    #[test]
+    fn test_path_tail_truncation_respects_unicode_boundaries() {
+        let path = "src/界面/設定/長いファイル名.rs";
+        let display = truncate_path_tail_to_width(path, 12);
+        assert!(display.starts_with('…'));
+        assert!(display_width(&display) <= 12);
+    }
+
+    /// Verifies path tail truncation handles zero width.
+    #[test]
+    fn test_path_tail_truncation_handles_zero_width() {
+        assert_eq!(truncate_path_tail_to_width("src/main.rs", 0), "");
     }
 
     // ── Ratio format ──
 
+    /// Verifies ratio format.
     #[test]
     fn test_ratio_format() {
         let s = format!(" {}/{}", 5, 10);
@@ -768,6 +867,7 @@ mod tests {
 
     // ── Tab bar styles ──
 
+    /// Verifies tab gf active.
     #[test]
     fn test_tab_gf_active() {
         let tab = HealthTab::GodFiles;
@@ -784,6 +884,7 @@ mod tests {
         assert_eq!(gf.fg, Some(GF_GREEN));
         assert_eq!(doc.fg, Some(Color::DarkGray));
     }
+    /// Verifies tab doc active.
     #[test]
     fn test_tab_doc_active() {
         let tab = HealthTab::Documentation;
@@ -803,21 +904,27 @@ mod tests {
 
     // ── Modal sizing ──
 
+    /// Verifies health modal w.
     #[test]
     fn test_health_modal_w() {
-        assert_eq!((100u16 * 55 / 100).max(50).min(100), 55);
+        let width = 100u16;
+        assert_eq!((width * 55 / 100).clamp(50, width), 55);
     }
+    /// Verifies health modal h.
     #[test]
     fn test_health_modal_h() {
-        assert_eq!((40u16 * 70 / 100).max(16).min(40), 28);
+        let height = 40u16;
+        assert_eq!((height * 70 / 100).clamp(16, height), 28);
     }
 
     // ── Visible items ──
 
+    /// Verifies gf visible items.
     #[test]
     fn test_gf_visible_items() {
         assert_eq!((30u16 as usize).saturating_sub(12), 18);
     }
+    /// Verifies doc visible items.
     #[test]
     fn test_doc_visible_items() {
         assert_eq!((30u16 as usize).saturating_sub(14), 16);
@@ -825,14 +932,17 @@ mod tests {
 
     // ── Percentage format ──
 
+    /// Verifies pct format.
     #[test]
     fn test_pct_format() {
         assert_eq!(format!("{:5.1}%", 75.5), " 75.5%");
     }
+    /// Verifies pct format 100.
     #[test]
     fn test_pct_format_100() {
         assert_eq!(format!("{:5.1}%", 100.0), "100.0%");
     }
+    /// Verifies pct format 0.
     #[test]
     fn test_pct_format_0() {
         assert_eq!(format!("{:5.1}%", 0.0), "  0.0%");
@@ -840,6 +950,7 @@ mod tests {
 
     // ── Score display ──
 
+    /// Verifies score display.
     #[test]
     fn test_score_display() {
         assert_eq!(format!("{:.1}%", 85.3f32), "85.3%");
@@ -847,6 +958,7 @@ mod tests {
 
     // ── Dialog cursor logic ──
 
+    /// Verifies dialog cursor selected.
     #[test]
     fn test_dialog_cursor_selected() {
         let selected = 0;
@@ -854,6 +966,7 @@ mod tests {
         let cursor = if is_selected { "\u{25b8} " } else { "  " };
         assert_eq!(cursor, "\u{25b8} ");
     }
+    /// Verifies dialog cursor not selected.
     #[test]
     fn test_dialog_cursor_not_selected() {
         let selected = 1;
@@ -864,6 +977,7 @@ mod tests {
 
     // ── Hint text ──
 
+    /// Verifies module style hint.
     #[test]
     fn test_module_style_hint() {
         let hint = "  Space to toggle  ·  Enter to confirm  ·  Esc to cancel";
@@ -874,6 +988,7 @@ mod tests {
 
     // ── DH session prefix ──
 
+    /// Verifies dh prefix.
     #[test]
     fn test_dh_prefix() {
         let msg = "  Sessions will be prefixed [DH] (Documentation Health)";
@@ -882,6 +997,7 @@ mod tests {
 
     // ── Scroll ──
 
+    /// Verifies doc scroll above.
     #[test]
     fn test_doc_scroll_above() {
         let selected: usize = 2;
@@ -896,6 +1012,7 @@ mod tests {
         };
         assert_eq!(new, 2);
     }
+    /// Verifies doc scroll below.
     #[test]
     fn test_doc_scroll_below() {
         let selected: usize = 20;
@@ -913,9 +1030,10 @@ mod tests {
 
     // ── Checked count ──
 
+    /// Verifies doc checked count.
     #[test]
     fn test_doc_checked_count() {
-        let entries = vec![
+        let entries = [
             DocEntry {
                 path: PathBuf::from("/a"),
                 rel_path: "a".into(),
@@ -936,6 +1054,7 @@ mod tests {
         assert_eq!(entries.iter().filter(|e| e.checked).count(), 1);
     }
 
+    /// Verifies gf green rgb green channel highest.
     #[test]
     fn test_gf_green_rgb_green_channel_highest() {
         if let Color::Rgb(r, g, b) = GF_GREEN {
@@ -945,6 +1064,7 @@ mod tests {
         }
     }
 
+    /// Verifies health tab ne variants.
     #[test]
     fn test_health_tab_ne_variants() {
         assert_ne!(HealthTab::GodFiles, HealthTab::Documentation);

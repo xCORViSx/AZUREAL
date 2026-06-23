@@ -2,6 +2,8 @@
 //!
 //! Renders summarized tool output (results, write previews) as styled TUI lines.
 
+use std::borrow::Cow;
+
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -10,10 +12,12 @@ use ratatui::{
 use super::tool_params::truncate_line;
 use crate::tui::util::AZURE;
 
+/// Returns whether a tool result should be summarized like terminal output.
 fn is_bash_like_tool(tool_name: &str) -> bool {
     matches!(tool_name, "Bash" | "bash" | "exec_command" | "write_stdin")
 }
 
+/// Normalizes wrapped command-runner output into the user-visible payload.
 fn normalize_bash_like_output(content: &str) -> String {
     if !content.starts_with("Chunk ID:") {
         return content.to_string();
@@ -48,6 +52,37 @@ fn normalize_bash_like_output(content: &str) -> String {
     content.to_string()
 }
 
+/// Removes system-reminder blocks while preserving real output after closed blocks.
+///
+/// Claude can append hidden reminder markup into tool streams. Closed blocks are
+/// removed in place, while an unmatched opening tag discards the rest of the
+/// content because the remaining text is no longer safely distinguishable from
+/// hidden reminder text.
+fn strip_system_reminder_blocks(content: &str) -> Cow<'_, str> {
+    /// Opening marker for hidden system reminder blocks.
+    const OPEN: &str = "<system-reminder>";
+    /// Closing marker for hidden system reminder blocks.
+    const CLOSE: &str = "</system-reminder>";
+
+    if !content.contains(OPEN) {
+        return Cow::Borrowed(content);
+    }
+
+    let mut stripped = String::with_capacity(content.len());
+    let mut remaining = content;
+    while let Some(start) = remaining.find(OPEN) {
+        stripped.push_str(&remaining[..start]);
+        let after_open = &remaining[start + OPEN.len()..];
+        let Some(end) = after_open.find(CLOSE) else {
+            return Cow::Owned(stripped);
+        };
+        remaining = &after_open[end + CLOSE.len()..];
+    }
+    stripped.push_str(remaining);
+
+    Cow::Owned(stripped)
+}
+
 /// Render tool result output based on tool type.
 /// Shows summarized output constrained to max_width.
 pub fn render_tool_result(
@@ -66,13 +101,8 @@ pub fn render_tool_result(
         content.to_string()
     };
 
-    // Filter out system-reminder blocks
-    let content = if let Some(start) = content.find("<system-reminder>") {
-        &content[..start]
-    } else {
-        content.as_str()
-    }
-    .trim_end();
+    let content = strip_system_reminder_blocks(&content);
+    let content = content.trim_end();
 
     let content_lines: Vec<&str> = content.lines().collect();
     let line_count = content_lines.len();
@@ -129,11 +159,11 @@ pub fn render_tool_result(
                 ]));
             } else {
                 // Single line - mark as last
-                lines.last_mut().map(|l| {
+                if let Some(l) = lines.last_mut() {
                     if let Some(span) = l.spans.first_mut() {
                         *span = Span::styled(" ┃  └─ ", result_style.fg(tool_color));
                     }
-                });
+                }
             }
         }
         "Bash" | "bash" | "exec_command" | "write_stdin" => {
@@ -295,10 +325,12 @@ pub fn render_write_preview(
 }
 
 #[cfg(test)]
+/// Regression coverage for tool-result summarization and write previews.
 mod tests {
     use super::*;
     use serde_json::json;
 
+    /// Collects a rendered line's spans into plain text for assertions.
     fn spans_text(line: &Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
@@ -307,6 +339,7 @@ mod tests {
     // render_tool_result — empty content
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result read empty content.
     #[test]
     fn render_result_read_empty_content() {
         let lines = render_tool_result("Read", None, "", false, 80);
@@ -315,6 +348,7 @@ mod tests {
         assert!(text.contains("empty file"));
     }
 
+    /// Verifies render result bash empty content.
     #[test]
     fn render_result_bash_empty_content() {
         let lines = render_tool_result("Bash", None, "", false, 80);
@@ -323,6 +357,7 @@ mod tests {
         assert!(text.contains("\u{2713}"));
     }
 
+    /// Verifies render result unknown empty content.
     #[test]
     fn render_result_unknown_empty_content() {
         let lines = render_tool_result("Unknown", None, "", false, 80);
@@ -335,6 +370,7 @@ mod tests {
     // render_tool_result — Read tool
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result read single line.
     #[test]
     fn render_result_read_single_line() {
         let lines = render_tool_result("Read", None, "one line", false, 80);
@@ -343,6 +379,7 @@ mod tests {
         assert!(text.contains("one line"));
     }
 
+    /// Verifies render result read two lines.
     #[test]
     fn render_result_read_two_lines() {
         let lines = render_tool_result("Read", None, "first\nlast", false, 80);
@@ -351,6 +388,7 @@ mod tests {
         assert!(spans_text(&lines[1]).contains("last"));
     }
 
+    /// Verifies render result read many lines.
     #[test]
     fn render_result_read_many_lines() {
         let content = (1..=10)
@@ -368,6 +406,7 @@ mod tests {
     // render_tool_result — Bash tool
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result bash single line.
     #[test]
     fn render_result_bash_single_line() {
         let lines = render_tool_result("Bash", None, "output", false, 80);
@@ -375,6 +414,7 @@ mod tests {
         assert!(spans_text(&lines[0]).contains("output"));
     }
 
+    /// Verifies render result bash multiple lines.
     #[test]
     fn render_result_bash_multiple_lines() {
         let lines = render_tool_result("Bash", None, "line1\nline2\nline3", false, 80);
@@ -383,6 +423,7 @@ mod tests {
         assert!(spans_text(&lines[1]).contains("line3"));
     }
 
+    /// Verifies render result bash skips empty lines.
     #[test]
     fn render_result_bash_skips_empty_lines() {
         let lines = render_tool_result("Bash", None, "result\n\n\n", false, 80);
@@ -390,6 +431,7 @@ mod tests {
         assert!(spans_text(&lines[0]).contains("result"));
     }
 
+    /// Verifies render result bash all empty lines.
     #[test]
     fn render_result_bash_all_empty_lines() {
         let lines = render_tool_result("Bash", None, "\n\n\n", false, 80);
@@ -397,6 +439,7 @@ mod tests {
         assert!(spans_text(&lines[0]).contains("\u{2713}"));
     }
 
+    /// Verifies render result exec command strips exec wrapper.
     #[test]
     fn render_result_exec_command_strips_exec_wrapper() {
         let content = "Chunk ID: 6bf9d8\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 7\nOutput:\n/Users/macbookpro/AZUREAL\n";
@@ -409,18 +452,21 @@ mod tests {
     // render_tool_result — Grep tool
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result grep few matches.
     #[test]
     fn render_result_grep_few_matches() {
         let lines = render_tool_result("Grep", None, "match1\nmatch2", false, 80);
         assert_eq!(lines.len(), 2);
     }
 
+    /// Verifies render result grep exactly three.
     #[test]
     fn render_result_grep_exactly_three() {
         let lines = render_tool_result("Grep", None, "a\nb\nc", false, 80);
         assert_eq!(lines.len(), 3);
     }
 
+    /// Verifies render result grep more than three.
     #[test]
     fn render_result_grep_more_than_three() {
         let content = "a\nb\nc\nd\ne";
@@ -434,6 +480,7 @@ mod tests {
     // render_tool_result — Glob tool
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result glob file count.
     #[test]
     fn render_result_glob_file_count() {
         let content = "file1.rs\nfile2.rs\nfile3.rs";
@@ -442,6 +489,7 @@ mod tests {
         assert!(spans_text(&lines[0]).contains("3 files"));
     }
 
+    /// Verifies render result glob single file.
     #[test]
     fn render_result_glob_single_file() {
         let lines = render_tool_result("Glob", None, "one.rs", false, 80);
@@ -453,12 +501,14 @@ mod tests {
     // render_tool_result — Task tool
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result task few lines.
     #[test]
     fn render_result_task_few_lines() {
         let lines = render_tool_result("Task", None, "line1\nline2", false, 80);
         assert_eq!(lines.len(), 2);
     }
 
+    /// Verifies render result task many lines.
     #[test]
     fn render_result_task_many_lines() {
         let content = (1..=10)
@@ -475,12 +525,14 @@ mod tests {
     // render_tool_result — Unknown/default tool
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result default few lines.
     #[test]
     fn render_result_default_few_lines() {
         let lines = render_tool_result("SomeTool", None, "a\nb", false, 80);
         assert_eq!(lines.len(), 2);
     }
 
+    /// Verifies render result default more than three.
     #[test]
     fn render_result_default_more_than_three() {
         let content = "a\nb\nc\nd\ne";
@@ -494,6 +546,7 @@ mod tests {
     // render_tool_result — failed state
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result failed uses red.
     #[test]
     fn render_result_failed_uses_red() {
         let lines = render_tool_result("Bash", None, "error occurred", true, 80);
@@ -505,6 +558,7 @@ mod tests {
         assert!(has_red);
     }
 
+    /// Verifies render result success uses azure.
     #[test]
     fn render_result_success_uses_azure() {
         let lines = render_tool_result("Bash", None, "ok", false, 80);
@@ -517,6 +571,7 @@ mod tests {
     // render_tool_result — system-reminder stripping
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result strips system reminder.
     #[test]
     fn render_result_strips_system_reminder() {
         let content = "real output\n<system-reminder>hidden stuff</system-reminder>";
@@ -527,6 +582,29 @@ mod tests {
         }
     }
 
+    /// Verifies render result preserves output after closed system reminder.
+    #[test]
+    fn render_result_preserves_output_after_closed_system_reminder() {
+        let content = "before\n<system-reminder>hidden stuff</system-reminder>\nafter reminder";
+        let lines = render_tool_result("Bash", None, content, false, 80);
+        let rendered = lines.iter().map(spans_text).collect::<Vec<_>>().join("\n");
+        assert!(rendered.contains("before"));
+        assert!(rendered.contains("after reminder"));
+        assert!(!rendered.contains("hidden"));
+    }
+
+    /// Verifies render result truncates unmatched system reminder tails.
+    #[test]
+    fn render_result_truncates_unmatched_system_reminder_tail() {
+        let content = "before\n<system-reminder>hidden stuff\nafter marker";
+        let lines = render_tool_result("Bash", None, content, false, 80);
+        let rendered = lines.iter().map(spans_text).collect::<Vec<_>>().join("\n");
+        assert!(rendered.contains("before"));
+        assert!(!rendered.contains("hidden"));
+        assert!(!rendered.contains("after marker"));
+    }
+
+    /// Verifies render result system reminder at start.
     #[test]
     fn render_result_system_reminder_at_start() {
         let content = "<system-reminder>all hidden</system-reminder>";
@@ -539,6 +617,7 @@ mod tests {
     // render_tool_result — max_width truncation
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies render result narrow width truncates.
     #[test]
     fn render_result_narrow_width_truncates() {
         let long_line = "a".repeat(200);
@@ -552,6 +631,7 @@ mod tests {
     // render_write_preview
     // ═══════════════════════════════════════════════════════════════════
 
+    /// Verifies write preview with content.
     #[test]
     fn write_preview_with_content() {
         let input = json!({"content": "// module doc\nfn main() {}\nreturn;\n"});
@@ -562,6 +642,7 @@ mod tests {
         assert!(text.contains("3 lines"));
     }
 
+    /// Verifies write preview shows purpose comment.
     #[test]
     fn write_preview_shows_purpose_comment() {
         let input = json!({"content": "// This is the purpose\nfn foo() {}\n"});
@@ -571,6 +652,7 @@ mod tests {
         assert!(text.contains("// This is the purpose"));
     }
 
+    /// Verifies write preview hash comment.
     #[test]
     fn write_preview_hash_comment() {
         let input = json!({"content": "# Python module\nimport os\n"});
@@ -580,6 +662,7 @@ mod tests {
         assert!(text.contains("# Python module"));
     }
 
+    /// Verifies write preview no comment shows first line.
     #[test]
     fn write_preview_no_comment_shows_first_line() {
         let input = json!({"content": "fn main() {}\nlet x = 1;\n"});
@@ -589,6 +672,7 @@ mod tests {
         assert!(text.contains("fn main()"));
     }
 
+    /// Verifies write preview no content field.
     #[test]
     fn write_preview_no_content_field() {
         let input = json!({"file_path": "/foo.rs"});
@@ -597,6 +681,7 @@ mod tests {
         assert!(lines.is_empty());
     }
 
+    /// Verifies write preview empty content.
     #[test]
     fn write_preview_empty_content() {
         let input = json!({"content": ""});
@@ -607,6 +692,7 @@ mod tests {
         assert!(text.contains("0 lines"));
     }
 
+    /// Verifies write preview checkmark.
     #[test]
     fn write_preview_checkmark() {
         let input = json!({"content": "hello\n"});
@@ -616,6 +702,7 @@ mod tests {
         assert!(text.contains("\u{2713}"));
     }
 
+    /// Verifies write preview triple slash comment.
     #[test]
     fn write_preview_triple_slash_comment() {
         let input = json!({"content": "some code\n/// Doc comment\nmore code\n"});
@@ -625,6 +712,7 @@ mod tests {
         assert!(text.contains("/// Doc comment"));
     }
 
+    /// Verifies write preview inner doc comment.
     #[test]
     fn write_preview_inner_doc_comment() {
         let input = json!({"content": "some code\n//! Inner doc\nmore code\n"});
@@ -634,6 +722,7 @@ mod tests {
         assert!(text.contains("//! Inner doc"));
     }
 
+    /// Verifies write preview block comment.
     #[test]
     fn write_preview_block_comment() {
         let input = json!({"content": "/* Block comment */\ncode\n"});
