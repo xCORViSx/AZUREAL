@@ -4,6 +4,7 @@ use super::super::App;
 use crate::backend::Backend;
 use crate::events::DisplayEvent;
 
+/// Session-file watch, parse, and display reconciliation methods.
 impl App {
     /// Tell the file watcher thread to watch the current session file and
     /// worktree directory. Called after session switch (from load_session_output).
@@ -136,15 +137,14 @@ impl App {
         if parsed.events.is_empty() && !self.display_events.is_empty() && parsed.end_offset == 0 {
             return;
         }
-        self.display_events = parsed.events;
-        // Full re-parse replaced ALL display_events — reset render counters so the
-        // incremental render path doesn't use stale counts that reference the old
-        // event array. Without this, submit_render_request can try to slice events
-        // at the old rendered_events_count, producing garbled or missing output.
         if was_full_reparse {
-            self.rendered_events_count = 0;
-            self.rendered_content_line_count = 0;
-            self.rendered_events_start = 0;
+            // Full re-parse replaced ALL display_events. Use the replacement
+            // helper so stale in-flight render results from the previous event
+            // array cannot append duplicate bubbles after this assignment.
+            self.replace_display_events_for_render(parsed.events);
+        } else {
+            self.display_events = parsed.events;
+            self.invalidate_render_cache();
         }
         self.pending_tool_calls = parsed.pending_tools;
         self.failed_tool_calls = parsed.failed_tools;
@@ -177,8 +177,6 @@ impl App {
             }
         }
 
-        self.invalidate_render_cache();
-
         // Activity detected from session file — reset compaction inactivity watcher
         self.last_session_event_time = std::time::Instant::now();
         self.compaction_banner_injected = false;
@@ -189,6 +187,8 @@ impl App {
         }
     }
 
+    /// Prefix a full Codex JSONL reparse with already-stored session events
+    /// so active-turn reparses do not hide earlier conversation history.
     fn merge_store_prefix_for_current_session(
         &self,
         parsed_events: Vec<DisplayEvent>,
@@ -212,6 +212,8 @@ impl App {
         merged
     }
 
+    /// Keep the optimistically rendered user prompt visible when a Codex full
+    /// reparse has not yet written that prompt into the JSONL session file.
     fn preserve_pending_user_message(
         &self,
         mut parsed_events: Vec<DisplayEvent>,
@@ -248,6 +250,7 @@ impl App {
         parsed_events
     }
 
+    /// Return the display-event index where the currently running turn began.
     fn active_turn_events_offset(&self) -> Option<usize> {
         let branch = self.current_worktree()?.branch_name.clone();
         let slot = self.active_slot.get(&branch)?;
@@ -258,13 +261,16 @@ impl App {
 }
 
 #[cfg(test)]
+/// Tests for session-file polling and active Codex reparse reconciliation.
 mod tests {
     use crate::app::state::app::App;
     use crate::events::DisplayEvent;
+    use ratatui::text::Line;
     use std::path::PathBuf;
 
     // ── check_session_file ──
 
+    /// Missing session paths leave the dirty flag unchanged.
     #[test]
     fn check_session_file_no_path_noop() {
         let mut app = App::new();
@@ -273,6 +279,7 @@ mod tests {
         assert!(!app.session_file_dirty);
     }
 
+    /// Nonexistent session files are ignored rather than marking a refresh.
     #[test]
     fn check_session_file_nonexistent_path_noop() {
         let mut app = App::new();
@@ -283,6 +290,7 @@ mod tests {
 
     // ── poll_session_file ──
 
+    /// Clean session-file state avoids unnecessary parser work.
     #[test]
     fn poll_session_file_not_dirty_returns_false() {
         let mut app = App::new();
@@ -290,6 +298,8 @@ mod tests {
         assert!(!app.poll_session_file());
     }
 
+    /// Active Codex sessions fully reparse JSONL so disk apply-patch payloads
+    /// replace the lighter live-stream edit placeholder.
     #[test]
     fn poll_session_file_reparses_active_codex_session_from_disk() {
         use std::io::Write;
@@ -370,6 +380,13 @@ mod tests {
         app.session_file_path = Some(session_path.clone());
         app.session_file_dirty = true;
         app.session_file_parse_offset = 999;
+        app.rendered_lines_cache = vec![Line::from("old rendered line")];
+        app.rendered_lines_dirty = false;
+        app.rendered_events_count = 1;
+        app.rendered_content_line_count = 1;
+        app.rendered_events_start = 1;
+        app.render_in_flight = true;
+        app.session_viewport_scroll = 5;
         app.display_events.push(DisplayEvent::ToolCall {
             _uuid: String::new(),
             tool_use_id: "call_live_patch".into(),
@@ -391,10 +408,22 @@ mod tests {
             }
             other => panic!("expected ToolCall, got {:?}", other),
         }
+        assert!(app.rendered_lines_dirty);
+        assert_eq!(app.rendered_events_count, 0);
+        assert_eq!(app.rendered_content_line_count, 0);
+        assert_eq!(app.rendered_events_start, 0);
+        assert!(!app.render_in_flight);
+        assert_eq!(app.session_viewport_scroll, usize::MAX);
+        assert_eq!(
+            app.rendered_lines_cache,
+            vec![Line::from("old rendered line")]
+        );
 
         let _ = std::fs::remove_file(&session_path);
     }
 
+    /// Active Codex full reparses keep the already-stored session history in
+    /// front of the current JSONL turn.
     #[test]
     fn poll_session_file_active_codex_preserves_store_prefix_after_full_reparse() {
         use std::io::Write;
@@ -534,6 +563,8 @@ mod tests {
         let _ = std::fs::remove_file(&session_path);
     }
 
+    /// Active Codex full reparses preserve the optimistic prompt bubble until
+    /// the session file confirms the visible user message.
     #[test]
     fn poll_session_file_active_codex_preserves_pending_user_prompt_after_full_reparse() {
         use std::io::Write;

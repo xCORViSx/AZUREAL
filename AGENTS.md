@@ -129,6 +129,28 @@ RenderRequest {
 }
 ```
 
+### Active Codex Full Reparses Must Reset In-Flight Renders
+
+**Problem:** Active Codex sessions force full JSONL reparses while a turn is still streaming so disk-parsed edit payloads can replace placeholder live events. If that path assigns `display_events` directly and only resets a few counters, an older in-flight incremental render can still land afterward and append already-rendered user/assistant bubbles to the pane.
+
+**Solution:** Any full reparse that replaces the whole `display_events` array must use `replace_display_events_for_render()`. That helper resets incremental counters, marks stale render results as already applied, and cancels the in-flight flag while keeping the previous lines visible until the full replacement render completes.
+
+**WRONG:**
+
+```rust
+self.display_events = parsed.events;
+self.rendered_events_count = 0;
+self.rendered_content_line_count = 0;
+self.rendered_events_start = 0;
+self.invalidate_render_cache();
+```
+
+**CORRECT:**
+
+```rust
+self.replace_display_events_for_render(parsed.events);
+```
+
 # REFERENCES
 
 (None fetched yet)
