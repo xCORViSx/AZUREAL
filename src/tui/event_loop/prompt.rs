@@ -134,6 +134,93 @@ fn spawn_with_retry_and_fallback(
     }
 }
 
+/// Return true when the prompt is a response to an agent pause/approval event.
+fn is_pause_response_prompt(actual_prompt: &str) -> bool {
+    actual_prompt.starts_with("[SYSTEM: You just called ExitPlanMode.")
+        || actual_prompt.starts_with("[SYSTEM: You just called AskUserQuestion.")
+}
+
+/// Track a successfully spawned prompt for auto-prompt repeat decisions.
+fn track_auto_prompt_spawn(
+    app: &mut App,
+    display_prompt: Option<&str>,
+    actual_prompt: &str,
+    pid: u32,
+    branch: &str,
+) {
+    let slot = pid.to_string();
+    if let Some(prompt) = display_prompt {
+        if !is_pause_response_prompt(actual_prompt) {
+            app.auto_prompt
+                .capture_prompt(prompt, slot, branch, app.current_session_id);
+        }
+    } else if actual_prompt == crate::app::context_injection::AUTO_CONTINUE_PROMPT {
+        app.auto_prompt.track_continuation_slot(slot);
+    }
+}
+
+/// Return true when a stopped slot is only waiting on an agent pause workflow.
+fn auto_prompt_blocked_by_pause(app: &App) -> bool {
+    app.awaiting_plan_approval
+        || app.awaiting_ask_user_question
+        || app.rcr_session.is_some()
+        || app.issue_session.is_some()
+}
+
+/// Stage the captured auto prompt when the tracked turn has really completed.
+fn stage_auto_prompt_if_ready(app: &mut App) -> bool {
+    if !app.auto_prompt.is_enabled() || app.staged_prompt.is_some() {
+        return false;
+    }
+
+    let Some(tracked_slot) = app.auto_prompt.tracked_slot().map(str::to_string) else {
+        return false;
+    };
+    let Some(tracked_branch) = app.auto_prompt.branch().map(str::to_string) else {
+        app.auto_prompt.clear_tracked_turn();
+        return false;
+    };
+    let tracked_session_id = app.auto_prompt.session_id();
+    let current_branch = app.current_worktree().map(|wt| wt.branch_name.clone());
+    if current_branch.as_deref() != Some(tracked_branch.as_str())
+        || app.current_session_id != tracked_session_id
+        || app.viewing_historic_session
+    {
+        return false;
+    }
+    if app.running_sessions.contains(&tracked_slot) {
+        return false;
+    }
+
+    let Some(exit_code) = app.agent_exit_codes.get(&tracked_slot).copied() else {
+        return false;
+    };
+    if exit_code != 0 {
+        app.auto_prompt.clear_tracked_turn();
+        return false;
+    }
+    if app.auto_continue_after_compaction {
+        return false;
+    }
+    if auto_prompt_blocked_by_pause(app) {
+        app.auto_prompt.clear_tracked_turn();
+        return false;
+    }
+    if app.compaction_needed.is_some()
+        || !app.compaction_receivers.is_empty()
+        || app.compaction_retry_needed.is_some()
+    {
+        app.auto_prompt.defer_for_compaction();
+        return false;
+    }
+
+    let Some(prompt) = app.auto_prompt.take_repeat_prompt() else {
+        return false;
+    };
+    app.staged_prompt = Some(prompt);
+    true
+}
+
 /// Send a prompt to the current worktree and optionally show it as a user message.
 pub(crate) fn send_prompt_to_current_worktree(
     app: &mut App,
@@ -178,11 +265,12 @@ pub(crate) fn send_prompt_to_current_worktree(
                 );
             }
             app.register_claude(
-                branch,
+                branch.clone(),
                 outcome.pid,
                 outcome.rx,
                 outcome.registration_model.as_deref(),
             );
+            track_auto_prompt_spawn(app, display_prompt, actual_prompt, outcome.pid, &branch);
             app.update_title_session_name();
             app.set_status(
                 outcome
@@ -200,8 +288,13 @@ use super::agent_events;
 /// Send staged prompt when no agent is running and no dialog is blocking.
 /// Returns true if a prompt was sent (needs redraw).
 pub fn send_staged_prompt(app: &mut App, claude_process: &AgentProcess) -> bool {
-    if app.staged_prompt.is_none() || app.is_active_slot_running() || app.new_session_dialog_active
-    {
+    if app.is_active_slot_running() || app.new_session_dialog_active {
+        return false;
+    }
+    if app.staged_prompt.is_none() {
+        stage_auto_prompt_if_ready(app);
+    }
+    if app.staged_prompt.is_none() {
         return false;
     }
 
@@ -301,9 +394,30 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
 }
 
 #[cfg(test)]
+/// Tests for prompt spawning, staging, and auto-prompt scheduling.
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
+    /// Build an app whose tracked auto-prompt slot has exited successfully.
+    fn app_with_tracked_auto_prompt() -> App {
+        let mut app = App::new();
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "feature".into(),
+            worktree_path: Some(PathBuf::from("/tmp/feature")),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(7);
+        app.auto_prompt.toggle();
+        app.auto_prompt
+            .capture_prompt("repeat me", "42", "feature", Some(7));
+        app.agent_exit_codes.insert("42".into(), 0);
+        app
+    }
+
+    /// Spawn failure messages include retry details and fallback failure text.
     #[test]
     fn format_spawn_failure_includes_attempts_and_fallback_error() {
         let msg = format_spawn_failure(
@@ -320,6 +434,7 @@ mod tests {
         assert!(msg.contains("claude fallback failed: missing claude binary"));
     }
 
+    /// Fallback notices report the backend that actually spawned successfully.
     #[test]
     fn format_fallback_notice_includes_real_backend_and_error() {
         let msg = format_fallback_notice(
@@ -332,5 +447,44 @@ mod tests {
             msg,
             "auto-continue after compaction via claude after gpt-5.4 spawn failed (argument list too long)."
         );
+    }
+
+    /// A zero-exit tracked turn queues the captured prompt for repeat.
+    #[test]
+    fn stage_auto_prompt_queues_after_completed_tracked_turn() {
+        let mut app = app_with_tracked_auto_prompt();
+
+        assert!(stage_auto_prompt_if_ready(&mut app));
+
+        assert_eq!(app.staged_prompt.as_deref(), Some("repeat me"));
+        assert!(app.auto_prompt.tracked_slot().is_none());
+    }
+
+    /// Compaction delays the repeat until the compaction request clears.
+    #[test]
+    fn stage_auto_prompt_defers_while_compaction_is_pending() {
+        let mut app = app_with_tracked_auto_prompt();
+        app.compaction_needed = Some((7, PathBuf::from("/tmp/feature")));
+
+        assert!(!stage_auto_prompt_if_ready(&mut app));
+
+        assert!(app.staged_prompt.is_none());
+        assert!(app.auto_prompt.is_pending_after_compaction());
+
+        app.compaction_needed = None;
+        assert!(stage_auto_prompt_if_ready(&mut app));
+        assert_eq!(app.staged_prompt.as_deref(), Some("repeat me"));
+    }
+
+    /// Agent pause workflows suppress repeats instead of treating the pause as completion.
+    #[test]
+    fn stage_auto_prompt_suppresses_agent_pause_turns() {
+        let mut app = app_with_tracked_auto_prompt();
+        app.awaiting_plan_approval = true;
+
+        assert!(!stage_auto_prompt_if_ready(&mut app));
+
+        assert!(app.staged_prompt.is_none());
+        assert!(app.auto_prompt.tracked_slot().is_none());
     }
 }

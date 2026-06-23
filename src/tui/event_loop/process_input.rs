@@ -3,7 +3,7 @@
 //! Routes crossterm events (key, mouse, resize) to the appropriate handlers.
 
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind};
 
 use crate::app::{App, Focus};
 use crate::backend::AgentProcess;
@@ -13,6 +13,32 @@ use super::super::input_projects::handle_projects_paste;
 use super::actions::handle_key_event;
 use super::coords::{screen_to_cache_pos, screen_to_edit_pos, screen_to_input_char};
 use super::mouse::{handle_mouse_click, handle_mouse_drag};
+
+/// Return true when a key event is the auto-prompt toggle shortcut.
+fn is_auto_prompt_toggle_key(key: crossterm::event::KeyEvent) -> bool {
+    let allowed_modifiers = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+    key.modifiers.contains(KeyModifiers::CONTROL)
+        && key.modifiers.difference(allowed_modifiers).is_empty()
+        && matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&'a'))
+}
+
+/// Return true when an active mode already owns Ctrl+A semantics.
+fn ctrl_a_belongs_to_existing_mode(app: &App) -> bool {
+    app.rcr_session.is_some()
+        || app.issue_session.is_some()
+        || (app.terminal_mode && app.prompt_mode && app.focus == Focus::Input)
+}
+
+/// Toggle auto prompt and update the status bar with the new state.
+fn toggle_auto_prompt(app: &mut App) {
+    let enabled = app.auto_prompt.toggle();
+    let status = if enabled {
+        "Auto prompt ON - next prompt will repeat"
+    } else {
+        "Auto prompt OFF"
+    };
+    app.set_status(status);
+}
 
 /// Process a single input event from the reader thread channel.
 /// Dispatches key, mouse, and resize events to the appropriate handlers.
@@ -33,7 +59,12 @@ pub fn process_input_event(
         Event::Key(key) => {
             // Input thread already filters to Press/Repeat only
             if !matches!(key.code, KeyCode::Modifier(_)) {
-                handle_key_event(key, app, claude_process)?;
+                if is_auto_prompt_toggle_key(key) && !ctrl_a_belongs_to_existing_mode(app) {
+                    toggle_auto_prompt(app);
+                    *needs_redraw = true;
+                } else {
+                    handle_key_event(key, app, claude_process)?;
+                }
                 *had_key_event = true;
             }
         }
@@ -193,14 +224,16 @@ pub fn process_input_event(
 }
 
 #[cfg(test)]
+/// Tests for input event dispatch behavior.
 mod tests {
     use super::*;
     use crate::app::types::{ProjectsPanel, RunCommandDialog};
     use crate::backend::AgentProcess;
     use crate::config::Config;
-    use crossterm::event::Event;
+    use crossterm::event::{Event, KeyEvent, KeyModifiers};
 
-    fn dispatch_paste(app: &mut App, text: &str) -> (bool, bool) {
+    /// Dispatch one synthetic input event and return redraw/key flags.
+    fn dispatch_event(app: &mut App, event: Event) -> (bool, bool) {
         let claude_process = AgentProcess::new(Config::default());
         let mut needs_redraw = false;
         let mut scroll_delta = 0;
@@ -211,7 +244,7 @@ mod tests {
         let mut cached_height = 24;
 
         process_input_event(
-            Event::Paste(text.to_string()),
+            event,
             app,
             &claude_process,
             &mut needs_redraw,
@@ -227,6 +260,12 @@ mod tests {
         (needs_redraw, had_key_event)
     }
 
+    /// Dispatch a synthetic paste event and return redraw/key flags.
+    fn dispatch_paste(app: &mut App, text: &str) -> (bool, bool) {
+        dispatch_event(app, Event::Paste(text.to_string()))
+    }
+
+    /// Paste events route to the active Projects add input.
     #[test]
     fn paste_goes_to_projects_panel_input() {
         let mut app = App::new();
@@ -245,6 +284,7 @@ mod tests {
         assert!(had_key_event);
     }
 
+    /// Paste events route to the run-command dialog command field.
     #[test]
     fn paste_goes_to_run_command_dialog() {
         let mut app = App::new();
@@ -263,6 +303,7 @@ mod tests {
         assert!(had_key_event);
     }
 
+    /// Paste in Projects browse mode is consumed without mutating prompt input.
     #[test]
     fn paste_in_projects_browse_mode_is_consumed() {
         let mut app = App::new();
@@ -275,6 +316,42 @@ mod tests {
         assert!(!app.prompt_mode);
         assert!(app.projects_panel.as_ref().unwrap().input.is_empty());
         assert!(needs_redraw);
+        assert!(had_key_event);
+    }
+
+    /// Ctrl+A toggles auto prompt outside modes that own the shortcut.
+    #[test]
+    fn ctrl_a_toggles_auto_prompt() {
+        let mut app = App::new();
+
+        let (needs_redraw, had_key_event) = dispatch_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+        );
+
+        assert!(app.auto_prompt.is_enabled());
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Auto prompt ON - next prompt will repeat")
+        );
+        assert!(needs_redraw);
+        assert!(had_key_event);
+    }
+
+    /// Ctrl+A stays available to the embedded terminal in type mode.
+    #[test]
+    fn ctrl_a_terminal_type_mode_does_not_toggle_auto_prompt() {
+        let mut app = App::new();
+        app.focus = Focus::Input;
+        app.terminal_mode = true;
+        app.prompt_mode = true;
+
+        let (_needs_redraw, had_key_event) = dispatch_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+        );
+
+        assert!(!app.auto_prompt.is_enabled());
         assert!(had_key_event);
     }
 }

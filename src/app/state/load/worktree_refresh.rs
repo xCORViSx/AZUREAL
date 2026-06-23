@@ -164,6 +164,7 @@ pub fn compute_worktree_refresh(
     })
 }
 
+/// Project loading and worktree refresh behavior for the application state.
 impl App {
     /// Load project and sessions from git (stateless discovery).
     /// If cwd is a git repo, auto-register it in ~/.azureal/projects.txt and load it.
@@ -188,7 +189,7 @@ impl App {
         // Auto-register this repo in ~/.azureal/projects.txt (no-op if already there)
         crate::config::register_project(&repo_root);
 
-        // Ensure worktrees/ is gitignored so new worktrees don't inherit the folder
+        // Ensure Azureal runtime dirs are ignored through Git's local exclude file.
         Git::ensure_worktrees_gitignored(&repo_root);
 
         let main_branch = Git::get_main_branch(&repo_root)?;
@@ -200,10 +201,6 @@ impl App {
         // Load filetree hidden dirs from project azufig (persisted Options overlay state)
         let az = crate::azufig::load_project_azufig(&repo_root);
         self.file_tree_hidden_dirs = az.filetree.hidden.into_iter().collect();
-
-        // Untrack any files that match .gitignore but are still in the index
-        // (e.g. .DS_Store committed before gitignore was added).
-        Git::untrack_gitignored_files(&repo_root);
 
         let prefix = self
             .project
@@ -308,11 +305,13 @@ impl App {
         self.invalidate_file_tree();
     }
 
+    /// Refresh worktree state synchronously using the same path as startup loading.
     pub fn refresh_worktrees(&mut self) -> anyhow::Result<()> {
         self.load_worktrees()
     }
 }
 
+/// Tests for loading and applying worktree state without running the TUI.
 #[cfg(test)]
 mod tests {
     use super::super::super::App;
@@ -321,6 +320,7 @@ mod tests {
 
     // ── load_file_tree state reset ──
 
+    /// Loading the file tree without an active worktree clears stale entries.
     #[test]
     fn load_file_tree_clears_when_no_worktree() {
         let mut app = App::new();
@@ -342,12 +342,14 @@ mod tests {
 
     // ── refresh_worktrees ──
 
+    /// Refreshing worktrees is a no-op when no project has been loaded.
     #[test]
     fn refresh_worktrees_no_project_ok() {
         let mut app = App::new();
         assert!(app.refresh_worktrees().is_ok());
     }
 
+    /// Applying refreshed worktrees reloads persisted auto-rebase flags from each worktree.
     #[test]
     fn apply_worktree_result_reloads_auto_rebase_from_worktree_config() {
         let tmp = TempDir::new().unwrap();
@@ -388,6 +390,7 @@ mod tests {
 
     // ── load_file_tree: with worktree but nonexistent path ──
 
+    /// Missing worktree paths produce an empty file tree without panicking.
     #[test]
     fn load_file_tree_nonexistent_worktree_path() {
         let mut app = App::new();

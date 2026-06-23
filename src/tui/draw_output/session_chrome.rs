@@ -173,6 +173,31 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
         }
     }
 
+    // Auto-prompt indicator on bottom-left, opposite the model indicator.
+    if app.auto_prompt.is_enabled() {
+        let auto_label = if app.auto_prompt.prompt().is_some() {
+            "AUTO"
+        } else {
+            "AUTO:next"
+        };
+        let auto_color = if app.auto_prompt.is_pending_after_compaction() {
+            Color::Yellow
+        } else {
+            Color::Green
+        };
+        block = block.title_bottom(
+            Line::from(vec![
+                Span::styled(" Ctrl+a", Style::default().fg(Color::DarkGray)),
+                Span::styled(":", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("{} ", auto_label),
+                    Style::default().fg(auto_color).add_modifier(Modifier::BOLD),
+                ),
+            ])
+            .alignment(Alignment::Left),
+        );
+    }
+
     // Model indicator on bottom border (right-aligned)
     {
         let model_name = app.display_model_name();

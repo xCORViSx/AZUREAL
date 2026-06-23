@@ -8,13 +8,24 @@
 //! - `stt`: Speech-to-text integration
 //! - `todo`: Todo item types from Claude's TodoWrite tool call
 
+/// Auto-prompt repeat state.
+mod auto_prompt;
+/// Render cache invalidation and file tree refresh helpers.
+mod cache;
+/// CPU usage sampling helpers.
 mod cpu;
+/// Deferred action state used after loading indicators render.
 mod deferred;
+/// Model selection, backend selection, and token badge helpers.
 pub(crate) mod model;
+/// Project, worktree, and running-session query helpers.
 mod queries;
+/// Speech-to-text state helpers.
 mod stt;
+/// Todo item types and parsing helpers.
 mod todo;
 
+pub use auto_prompt::AutoPromptState;
 pub(crate) use cpu::get_cpu_time_micros;
 pub use deferred::DeferredAction;
 pub use todo::{TodoItem, TodoStatus};
@@ -68,6 +79,8 @@ pub struct App {
     pub pending_user_message: Option<String>,
     /// Prompt staged to send after cancelling current Claude process
     pub staged_prompt: Option<String>,
+    /// Repeat-prompt toggle and tracked turn state for auto prompt mode.
+    pub auto_prompt: AutoPromptState,
     pub event_parser: EventParser,
     pub selected_event: Option<usize>,
     pub input: String,
@@ -682,6 +695,7 @@ impl App {
             display_events: Vec::new(),
             pending_user_message: None,
             staged_prompt: None,
+            auto_prompt: AutoPromptState::default(),
             event_parser: EventParser::new(),
             selected_event: None,
             input: String::new(),
@@ -946,47 +960,5 @@ impl App {
             claude_available: true,
             codex_available: true,
         }
-    }
-
-    /// Mark rendered lines cache as dirty (call when display_events change)
-    pub fn invalidate_render_cache(&mut self) {
-        self.rendered_lines_dirty = true;
-    }
-
-    /// Mark sidebar cache as dirty (call when worktrees/selection/expansion changes)
-    pub fn invalidate_sidebar(&mut self) {
-        // Sidebar replaced by worktree tab row — no cache to invalidate
-    }
-
-    /// Mark file tree cache as dirty
-    pub fn invalidate_file_tree(&mut self) {
-        self.file_tree_dirty = true;
-    }
-
-    /// Rebuild file tree entries from disk (preserves expanded set, resets selection)
-    pub fn refresh_file_tree(&mut self) {
-        let Some(wt) = self.current_worktree() else {
-            return;
-        };
-        let Some(ref worktree_path) = wt.worktree_path else {
-            return;
-        };
-        let wt_path = worktree_path.clone();
-        self.file_tree_entries = super::helpers::build_file_tree(
-            &wt_path,
-            &self.file_tree_expanded,
-            &self.file_tree_hidden_dirs,
-        );
-        if self
-            .file_tree_selected
-            .map_or(true, |i| i >= self.file_tree_entries.len())
-        {
-            self.file_tree_selected = if self.file_tree_entries.is_empty() {
-                None
-            } else {
-                Some(0)
-            };
-        }
-        self.invalidate_file_tree();
     }
 }

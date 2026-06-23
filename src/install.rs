@@ -7,11 +7,10 @@ use std::path::PathBuf;
 /// Check if the binary needs installation. If so, install and return true (caller should exit).
 /// Returns false for normal startup (already installed or running from cargo build dir).
 pub fn maybe_self_install() -> bool {
-    let exe =
-        match std::env::current_exe().and_then(|p| dunce::canonicalize(&p).map_err(Into::into)) {
-            Ok(p) => p,
-            Err(_) => return false,
-        };
+    let exe = match std::env::current_exe().and_then(|p| dunce::canonicalize(&p)) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
 
     // Skip if running from a cargo build directory (development)
     let exe_str = exe.to_string_lossy();
@@ -122,7 +121,7 @@ fn do_install(exe: &Path) -> bool {
         println!("  \x1b[33mRun manually:\x1b[0m  azureal");
         println!();
         wait_for_enter();
-        return true;
+        true
     }
 
     // Windows/Linux: copy binary directly to PATH
@@ -326,8 +325,8 @@ fn pick_install_dir() -> PathBuf {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 /// Test if a directory is writable by creating a temp file.
+#[cfg(not(target_os = "macos"))]
 fn is_dir_writable(path: &Path) -> bool {
     let test = path.join(".azureal_write_test");
     match std::fs::write(&test, b"") {
@@ -371,6 +370,7 @@ fn try_copy(src: &Path, dst: &Path) -> bool {
 }
 
 /// Check if a directory is currently in PATH (runtime check).
+#[cfg(not(target_os = "macos"))]
 fn is_in_path_dir(dir: &Path) -> bool {
     if let Some(path_var) = std::env::var_os("PATH") {
         for d in std::env::split_paths(&path_var) {
@@ -388,8 +388,8 @@ fn is_in_path_dir(dir: &Path) -> bool {
     false
 }
 
-#[cfg(not(target_os = "macos"))]
 /// Ensure the install directory is in PATH. Returns true if PATH was modified.
+#[cfg(not(target_os = "macos"))]
 fn ensure_in_path(dir: &Path) -> bool {
     // Check if already in PATH
     let dir_str = dir.to_string_lossy();
@@ -435,6 +435,7 @@ fn add_to_windows_path(dir: &str) -> bool {
     }
 }
 
+/// Stub used on Unix platforms where Windows PATH editing is not available.
 #[cfg(all(not(windows), not(target_os = "macos")))]
 fn add_to_windows_path(_dir: &str) -> bool {
     false
@@ -545,10 +546,12 @@ fn wait_for_enter() {
     let _ = std::io::stdin().read(&mut [0u8]);
 }
 
+/// Tests for installer path detection and platform-specific destination selection.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Current executable PATH checks should tolerate test binary paths.
     #[test]
     fn test_is_in_path_with_current_exe() {
         // The test binary IS in the cargo target dir which IS in PATH for the test runner
@@ -557,6 +560,7 @@ mod tests {
         let _ = is_in_path(&exe);
     }
 
+    /// Non-macOS install destinations should be absolute paths.
     #[test]
     #[cfg(not(target_os = "macos"))]
     fn test_pick_install_dir_returns_absolute_path() {
@@ -564,6 +568,7 @@ mod tests {
         assert!(dir.is_absolute());
     }
 
+    /// Unix install destinations should prefer `/usr/local/bin` or the user-local bin dir.
     #[test]
     #[cfg(not(target_os = "macos"))]
     fn test_pick_install_dir_unix_paths() {
@@ -578,6 +583,7 @@ mod tests {
         }
     }
 
+    /// A temporary directory should be writable by the installer helper.
     #[test]
     #[cfg(not(target_os = "macos"))]
     fn test_is_dir_writable_temp() {
@@ -585,12 +591,14 @@ mod tests {
         assert!(is_dir_writable(&tmp));
     }
 
+    /// A nonexistent directory should not be reported as writable.
     #[test]
     #[cfg(not(target_os = "macos"))]
     fn test_is_dir_writable_nonexistent() {
         assert!(!is_dir_writable(Path::new("/nonexistent/path/xyz")));
     }
 
+    /// Test binaries under Cargo target directories should skip self-installation.
     #[test]
     fn test_maybe_self_install_skips_in_cargo_target() {
         // When running tests, exe is in target/debug — should skip

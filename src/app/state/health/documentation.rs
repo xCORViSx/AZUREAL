@@ -142,6 +142,7 @@ impl App {
 
     /// Open checked doc entries as viewer tabs (same pattern as god_file_view_checked)
     pub fn doc_view_checked(&mut self) {
+        /// Maximum number of viewer tabs the action will open at once.
         const MAX_TABS: usize = 12;
         let paths: Vec<PathBuf> = match self.health_panel {
             Some(ref panel) => panel
@@ -172,7 +173,7 @@ impl App {
                 skipped_cap += paths.len() - opened - skipped_dup - skipped_cap;
                 break;
             }
-            let content = match std::fs::read_to_string(&path) {
+            let content = match std::fs::read_to_string(path) {
                 Ok(c) => c,
                 Err(_) => continue,
             };
@@ -261,10 +262,9 @@ impl App {
 
             // Create a dedicated store session for this DH file
             let store_id = self.session_store.as_ref().and_then(|store| {
-                store.create_session(&branch).ok().map(|id| {
-                    let _ = store.rename_session(id, &session_name);
-                    id
-                })
+                let id = store.create_session(&branch).ok()?;
+                let _ = store.rename_session(id, &session_name);
+                Some(id)
             });
 
             match claude_process.spawn(&wt_path, &prompt, None, Some(selected_model.as_str())) {
@@ -344,7 +344,7 @@ fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
     };
     let lines: Vec<String> = BufReader::new(file)
         .lines()
-        .filter_map(|l| l.ok())
+        .map_while(Result::ok)
         .collect();
 
     let mut total = 0usize;
@@ -390,6 +390,7 @@ fn scan_file_doc_coverage(path: &Path) -> (usize, usize) {
     (total, documented)
 }
 
+/// Return true when a trimmed Rust source line starts a documentable item.
 fn is_documentable_item_line(trimmed: &str) -> bool {
     let Some(after_visibility) = strip_rust_visibility(trimmed) else {
         return false;
@@ -407,6 +408,7 @@ fn is_documentable_item_line(trimmed: &str) -> bool {
         || starts_with_impl_keyword(item)
 }
 
+/// Strip a Rust visibility modifier and return the remaining item prefix.
 fn strip_rust_visibility(trimmed: &str) -> Option<&str> {
     if let Some(rest) = trimmed.strip_prefix("pub ") {
         return Some(rest.trim_start());
@@ -420,6 +422,7 @@ fn strip_rust_visibility(trimmed: &str) -> Option<&str> {
     Some(trimmed)
 }
 
+/// Remove item modifiers that may appear between visibility and the item keyword.
 fn strip_rust_item_modifiers(mut line: &str) -> &str {
     loop {
         if let Some(rest) = line.strip_prefix("async ") {
@@ -432,6 +435,7 @@ fn strip_rust_item_modifiers(mut line: &str) -> &str {
     }
 }
 
+/// Check whether a line begins with a Rust keyword followed by an item boundary.
 fn starts_with_rust_keyword(line: &str, keyword: &str) -> bool {
     let Some(rest) = line.strip_prefix(keyword) else {
         return false;
@@ -442,6 +446,7 @@ fn starts_with_rust_keyword(line: &str, keyword: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Check whether a line begins with an `impl` block declaration.
 fn starts_with_impl_keyword(line: &str) -> bool {
     let Some(rest) = line.strip_prefix("impl") else {
         return false;
@@ -452,6 +457,7 @@ fn starts_with_impl_keyword(line: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Return true for Rust documentation comment syntaxes accepted by the scanner.
 fn is_doc_comment_line(trimmed: &str) -> bool {
     trimmed.starts_with("///")
         || trimmed.starts_with("//!")
@@ -459,6 +465,7 @@ fn is_doc_comment_line(trimmed: &str) -> bool {
         || trimmed.starts_with("/*!")
 }
 
+/// Return true for ordinary comments that should not count as documentation.
 fn is_plain_comment_line(trimmed: &str) -> bool {
     (trimmed.starts_with("//") && !is_doc_comment_line(trimmed))
         || (trimmed.starts_with("/*") && !is_doc_comment_line(trimmed))
@@ -495,6 +502,7 @@ fn build_doc_health_prompt(rel_path: &str, documented: usize, total: usize) -> S
     )
 }
 
+/// Regression tests for documentation coverage scanning and prompt construction.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,6 +519,7 @@ mod tests {
 
     // ── scan_file_doc_coverage: basic ──
 
+    /// Empty files report no documentable items.
     #[test]
     fn test_scan_empty_file() {
         let (total, documented) = scan_content("");
@@ -518,6 +527,7 @@ mod tests {
         assert_eq!(documented, 0);
     }
 
+    /// A private function with a `///` comment is counted as documented.
     #[test]
     fn test_scan_single_documented_fn() {
         let (total, documented) = scan_content("/// Does something\nfn foo() {}");
@@ -525,6 +535,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// A private function without a doc comment is counted as undocumented.
     #[test]
     fn test_scan_single_undocumented_fn() {
         let (total, documented) = scan_content("fn foo() {}");
@@ -532,6 +543,7 @@ mod tests {
         assert_eq!(documented, 0);
     }
 
+    /// A public function with a doc comment is counted as documented.
     #[test]
     fn test_scan_pub_fn() {
         let (total, documented) = scan_content("/// Documented\npub fn bar() {}");
@@ -539,6 +551,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Restricted visibility does not prevent function documentation detection.
     #[test]
     fn test_scan_restricted_visibility_fn() {
         let (total, documented) =
@@ -547,6 +560,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Public functions without doc comments remain undocumented.
     #[test]
     fn test_scan_pub_fn_undocumented() {
         let (total, documented) = scan_content("pub fn bar() {}");
@@ -556,6 +570,7 @@ mod tests {
 
     // ── scan_file_doc_coverage: struct/enum/trait ──
 
+    /// Struct declarations with doc comments are counted as documented.
     #[test]
     fn test_scan_struct_documented() {
         let (total, documented) = scan_content("/// A struct\nstruct Foo {}");
@@ -563,6 +578,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Struct declarations without docs are counted as undocumented.
     #[test]
     fn test_scan_struct_undocumented() {
         let (total, documented) = scan_content("struct Foo {}");
@@ -570,6 +586,7 @@ mod tests {
         assert_eq!(documented, 0);
     }
 
+    /// Public structs with doc comments are counted as documented.
     #[test]
     fn test_scan_pub_struct() {
         let (total, documented) = scan_content("/// Public struct\npub struct Bar {}");
@@ -577,6 +594,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Enum declarations with doc comments are counted as documented.
     #[test]
     fn test_scan_enum_documented() {
         let (total, documented) = scan_content("/// An enum\nenum Color { Red, Blue }");
@@ -584,6 +602,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Public enum declarations without docs are counted as undocumented.
     #[test]
     fn test_scan_pub_enum_undocumented() {
         let (total, documented) = scan_content("pub enum Color { Red }");
@@ -591,6 +610,7 @@ mod tests {
         assert_eq!(documented, 0);
     }
 
+    /// Trait declarations with doc comments are counted as documented.
     #[test]
     fn test_scan_trait_documented() {
         let (total, documented) = scan_content("/// A trait\ntrait Drawable {}");
@@ -598,6 +618,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Public trait declarations with doc comments are counted as documented.
     #[test]
     fn test_scan_pub_trait() {
         let (total, documented) = scan_content("/// Public trait\npub trait Drawable {}");
@@ -607,6 +628,7 @@ mod tests {
 
     // ── scan_file_doc_coverage: const/static/type/impl/mod ──
 
+    /// Constants with doc comments are counted as documented.
     #[test]
     fn test_scan_const_documented() {
         let (total, documented) = scan_content("/// A constant\nconst MAX: u32 = 100;");
@@ -614,6 +636,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Constants without doc comments are counted as undocumented.
     #[test]
     fn test_scan_const_undocumented() {
         let (total, documented) = scan_content("const MAX: u32 = 100;");
@@ -621,6 +644,7 @@ mod tests {
         assert_eq!(documented, 0);
     }
 
+    /// Static items with doc comments are counted as documented.
     #[test]
     fn test_scan_static_documented() {
         let (total, documented) = scan_content("/// A static\nstatic COUNT: u32 = 0;");
@@ -628,6 +652,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Type aliases with doc comments are counted as documented.
     #[test]
     fn test_scan_type_alias_documented() {
         let (total, documented) =
@@ -636,6 +661,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Impl blocks with doc comments are counted as documented.
     #[test]
     fn test_scan_impl_block() {
         let (total, documented) = scan_content("/// Impl block\nimpl Foo {}");
@@ -643,6 +669,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Module declarations with doc comments are counted as documented.
     #[test]
     fn test_scan_mod_declaration() {
         let (total, documented) = scan_content("/// A module\nmod utils;");
@@ -650,6 +677,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Public module declarations without docs are counted as undocumented.
     #[test]
     fn test_scan_pub_mod() {
         let (total, documented) = scan_content("pub mod utils;");
@@ -659,6 +687,7 @@ mod tests {
 
     // ── scan_file_doc_coverage: async/unsafe ──
 
+    /// Async functions with doc comments are counted as documented.
     #[test]
     fn test_scan_async_fn() {
         let (total, documented) = scan_content("/// Async function\nasync fn fetch() {}");
@@ -666,6 +695,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Public async functions without docs are counted as undocumented.
     #[test]
     fn test_scan_pub_async_fn() {
         let (total, documented) = scan_content("pub async fn fetch() {}");
@@ -673,6 +703,7 @@ mod tests {
         assert_eq!(documented, 0);
     }
 
+    /// Restricted visibility before `async fn` is handled correctly.
     #[test]
     fn test_scan_restricted_visibility_async_fn() {
         let (total, documented) = scan_content("/// Fetch data\npub(super) async fn fetch() {}");
@@ -680,6 +711,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Unsafe functions with doc comments are counted as documented.
     #[test]
     fn test_scan_unsafe_fn() {
         let (total, documented) = scan_content("/// Unsafe function\nunsafe fn danger() {}");
@@ -687,6 +719,7 @@ mod tests {
         assert_eq!(documented, 1);
     }
 
+    /// Public unsafe functions without docs are counted as undocumented.
     #[test]
     fn test_scan_pub_unsafe_fn() {
         let (total, documented) = scan_content("pub unsafe fn danger() {}");
@@ -696,6 +729,7 @@ mod tests {
 
     // ── scan_file_doc_coverage: multiple items ──
 
+    /// Mixed source reports documented and undocumented items separately.
     #[test]
     fn test_scan_mixed_documented_and_not() {
         let content = "\
@@ -712,6 +746,7 @@ struct Baz {}
         assert_eq!(documented, 2);
     }
 
+    /// Fully documented source reports all items as documented.
     #[test]
     fn test_scan_all_documented() {
         let content = "\
@@ -731,6 +766,7 @@ const E: i32 = 0;
         assert_eq!(documented, 5);
     }
 
+    /// Source with only bare items reports zero documented items.
     #[test]
     fn test_scan_none_documented() {
         let content = "\
@@ -747,6 +783,7 @@ const E: i32 = 0;
 
     // ── scan_file_doc_coverage: doc comment variants ──
 
+    /// Module-level `//!` comments immediately before an item count as docs.
     #[test]
     fn test_scan_module_doc_comment_counts() {
         let content = "\
@@ -759,6 +796,7 @@ fn foo() {}
         assert_eq!(documented, 1);
     }
 
+    /// Consecutive line doc comments are accepted before an item.
     #[test]
     fn test_scan_multiline_doc_comment() {
         let content = "\
@@ -772,6 +810,7 @@ fn well_documented() {}
         assert_eq!(documented, 1);
     }
 
+    /// Attributes between a doc comment and item do not break detection.
     #[test]
     fn test_scan_attribute_between_doc_and_fn() {
         let content = "\
@@ -784,6 +823,7 @@ fn optimized() {}
         assert_eq!(documented, 1);
     }
 
+    /// Blank lines between a doc comment and item do not break detection.
     #[test]
     fn test_scan_blank_line_between_doc_and_fn() {
         let content = "\
@@ -797,6 +837,7 @@ fn separated() {}
         assert_eq!(documented, 1);
     }
 
+    /// Ordinary comments after a doc comment do not hide the doc comment.
     #[test]
     fn test_scan_plain_comment_between_doc_and_item() {
         let content = "\
@@ -809,6 +850,7 @@ pub(crate) const FOO: u32 = 1;
         assert_eq!(documented, 1);
     }
 
+    /// Windows platform patterns with macros and local constants are counted correctly.
     #[test]
     fn test_scan_windows_platform_patterns_from_external_project() {
         let content = "\
@@ -842,6 +884,7 @@ fn configure_window() {
 
     // ── scan_file_doc_coverage: skipped lines ──
 
+    /// Use statements are skipped instead of counted as documentable items.
     #[test]
     fn test_scan_skips_use_statements() {
         let content = "\
@@ -852,6 +895,7 @@ fn actual() {}
         assert_eq!(total, 1); // only fn, not use
     }
 
+    /// Extern crate statements are skipped instead of counted as documentable items.
     #[test]
     fn test_scan_skips_extern() {
         let content = "\
@@ -862,6 +906,7 @@ fn actual() {}
         assert_eq!(total, 1);
     }
 
+    /// Ordinary comments do not count as documentation comments.
     #[test]
     fn test_scan_skips_regular_comments() {
         let content = "\
@@ -874,6 +919,7 @@ fn foo() {}
         assert_eq!(documented, 0);
     }
 
+    /// A plain comment alone does not document a following item.
     #[test]
     fn test_scan_plain_comment_without_doc_stays_undocumented() {
         let content = "\
@@ -885,6 +931,7 @@ pub(crate) const FOO: u32 = 1;
         assert_eq!(documented, 0);
     }
 
+    /// Closing braces are skipped while following function declarations are counted.
     #[test]
     fn test_scan_skips_closing_braces() {
         let content = "\
@@ -898,6 +945,7 @@ fn bar() {}
 
     // ── scan_file_doc_coverage: edge cases ──
 
+    /// Missing files return zero coverage counts instead of failing.
     #[test]
     fn test_scan_nonexistent_file() {
         let (total, documented) = scan_file_doc_coverage(Path::new("/nonexistent/file.rs"));
@@ -905,6 +953,21 @@ fn bar() {}
         assert_eq!(documented, 0);
     }
 
+    /// Invalid UTF-8 stops line collection without panicking or looping forever.
+    #[test]
+    fn test_scan_invalid_utf8_stops_without_looping() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("invalid.rs");
+        fs::write(&path, b"/// Valid prefix\nfn before_invalid() {}\n\xff\nfn after_invalid() {}\n")
+            .unwrap();
+
+        let (total, documented) = scan_file_doc_coverage(&path);
+
+        assert_eq!(total, 1);
+        assert_eq!(documented, 1);
+    }
+
+    /// Files containing only comments report no documentable items.
     #[test]
     fn test_scan_file_only_comments() {
         let content = "\
@@ -916,6 +979,7 @@ fn bar() {}
         assert_eq!(total, 0);
     }
 
+    /// Files containing only use statements report no documentable items.
     #[test]
     fn test_scan_file_only_use_statements() {
         let content = "\
@@ -926,6 +990,7 @@ use std::path::Path;
         assert_eq!(total, 0);
     }
 
+    /// Indented doc comments and items are detected after trimming.
     #[test]
     fn test_scan_indented_fn() {
         let content = "\
@@ -937,6 +1002,7 @@ use std::path::Path;
         assert_eq!(documented, 1);
     }
 
+    /// Public static items without docs are counted as undocumented.
     #[test]
     fn test_scan_pub_static_undocumented() {
         let (total, documented) = scan_content("pub static GLOBAL: i32 = 42;");
@@ -944,6 +1010,7 @@ use std::path::Path;
         assert_eq!(documented, 0);
     }
 
+    /// Public constants with docs are counted as documented.
     #[test]
     fn test_scan_pub_const_documented() {
         let (total, documented) = scan_content("/// A public const\npub const SIZE: usize = 10;");
@@ -951,6 +1018,7 @@ use std::path::Path;
         assert_eq!(documented, 1);
     }
 
+    /// Restricted visibility constants and statics are detected.
     #[test]
     fn test_scan_restricted_visibility_consts_and_statics() {
         let content = "\
@@ -965,6 +1033,7 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
         assert_eq!(documented, 2);
     }
 
+    /// Public type aliases without docs are counted as undocumented.
     #[test]
     fn test_scan_pub_type_alias() {
         let (total, documented) = scan_content("pub type MyResult<T> = Result<T, MyError>;");
@@ -974,42 +1043,49 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
 
     // ── build_doc_health_prompt ──
 
+    /// Documentation prompts include the target file path.
     #[test]
     fn test_doc_prompt_contains_file_path() {
         let prompt = build_doc_health_prompt("src/app.rs", 5, 10);
         assert!(prompt.contains("src/app.rs"));
     }
 
+    /// Documentation prompts include current documented and total item counts.
     #[test]
     fn test_doc_prompt_contains_coverage_counts() {
         let prompt = build_doc_health_prompt("lib.rs", 3, 10);
         assert!(prompt.contains("3/10 items documented"));
     }
 
+    /// Documentation prompts include a formatted coverage percentage.
     #[test]
     fn test_doc_prompt_contains_percentage() {
         let prompt = build_doc_health_prompt("lib.rs", 5, 10);
         assert!(prompt.contains("50.0%"));
     }
 
+    /// Documentation prompts treat files with zero items as fully covered.
     #[test]
     fn test_doc_prompt_zero_total() {
         let prompt = build_doc_health_prompt("empty.rs", 0, 0);
         assert!(prompt.contains("100.0%"));
     }
 
+    /// Documentation prompts report all-documented files as fully covered.
     #[test]
     fn test_doc_prompt_all_documented() {
         let prompt = build_doc_health_prompt("good.rs", 10, 10);
         assert!(prompt.contains("100.0%"));
     }
 
+    /// Documentation prompts report zero documented items as zero percent.
     #[test]
     fn test_doc_prompt_none_documented() {
         let prompt = build_doc_health_prompt("bad.rs", 0, 10);
         assert!(prompt.contains("0.0%"));
     }
 
+    /// Documentation prompts name accepted Rust doc comment syntaxes.
     #[test]
     fn test_doc_prompt_mentions_doc_comments() {
         let prompt = build_doc_health_prompt("lib.rs", 0, 5);
@@ -1017,18 +1093,21 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
         assert!(prompt.contains("//!"));
     }
 
+    /// Documentation prompts prohibit executable code changes.
     #[test]
     fn test_doc_prompt_mentions_no_code_modification() {
         let prompt = build_doc_health_prompt("lib.rs", 0, 5);
         assert!(prompt.contains("Do NOT modify any executable code"));
     }
 
+    /// Documentation prompts prohibit unrelated reformatting.
     #[test]
     fn test_doc_prompt_mentions_no_reformatting() {
         let prompt = build_doc_health_prompt("lib.rs", 0, 5);
         assert!(prompt.contains("Do NOT reformat"));
     }
 
+    /// Documentation prompts tell the agent to read the target file first.
     #[test]
     fn test_doc_prompt_mentions_read_file() {
         let prompt = build_doc_health_prompt("lib.rs", 0, 5);
@@ -1037,6 +1116,7 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
 
     // ── DocEntry struct ──
 
+    /// DocEntry fields preserve path, count, coverage, and check state values.
     #[test]
     fn test_doc_entry_construction() {
         let entry = DocEntry {
@@ -1053,6 +1133,7 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
         assert!(!entry.checked);
     }
 
+    /// DocEntry checked state can be toggled by callers.
     #[test]
     fn test_doc_entry_checked_toggle() {
         let mut entry = DocEntry {
@@ -1067,6 +1148,7 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
         assert!(entry.checked);
     }
 
+    /// DocEntry supports explicit zero-percent coverage values.
     #[test]
     fn test_doc_entry_zero_coverage() {
         let entry = DocEntry {
@@ -1080,6 +1162,7 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
         assert_eq!(entry.coverage_pct, 0.0);
     }
 
+    /// DocEntry supports explicit full-coverage values.
     #[test]
     fn test_doc_entry_full_coverage() {
         let entry = DocEntry {
@@ -1093,6 +1176,7 @@ pub(in crate::platform) static ICON_BIG: u32 = 2;
         assert_eq!(entry.coverage_pct, 100.0);
     }
 
+    /// Cloned DocEntry values retain identity and selection data.
     #[test]
     fn test_doc_entry_clone() {
         let entry = DocEntry {
