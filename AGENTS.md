@@ -54,6 +54,81 @@ For process management specifically:
 - `kill_process_tree` / `kill_process_tree_force` are OS-level calls — tested via integration (spawn a process, kill it, verify it's gone)
 - `commit_gen_pids` registration/deregistration tested in `src/app/state/app.rs` tests
 
+# VIZIA GOTCHAS
+
+### Render Cache Replacement Is Not Append Invalidation
+
+**Problem:** When exit-time JSONL reconciliation replaces `display_events` for the viewed session, the session pane renderer must not keep incremental counters from the old event array. Keeping `rendered_events_count` makes the render thread treat the replacement as an append-only tail, so final turn content can disappear when a session completes or when the user returns after switching worktrees.
+
+**Solution:** Use a replacement helper that resets render bookkeeping, drops any in-flight render result from the old event array, and keeps the previous rendered lines visible until the full replacement render lands.
+
+**WRONG:**
+
+```rust
+self.display_events = prefix_events;
+self.display_events.extend(events.clone());
+self.invalidate_render_cache();
+```
+
+**CORRECT:**
+
+```rust
+let mut display_events = prefix_events;
+display_events.extend(events.clone());
+self.replace_display_events_for_render(display_events);
+```
+
+### Parsed JSONL Must Not Drop Optimistic User Prompts
+
+**Problem:** Codex/Claude JSONL can contain richer final assistant/tool output than the live stream while missing the optimistic `UserMessage` Azureal inserted on submit. Choosing the parsed suffix solely because it has more recovered text makes the submitted prompt disappear on completion.
+
+**Solution:** Before choosing or displaying parsed reconciliation events, copy any missing live/cache `UserMessage` events into the parsed suffix so the final richer answer still keeps the submitted prompt bubble.
+
+**WRONG:**
+
+```rust
+if parsed_message_chars >= live_message_chars {
+    parsed_events
+} else {
+    live_events
+}
+```
+
+**CORRECT:**
+
+```rust
+let parsed_events = preserve_live_user_messages(parsed_events, &live_events);
+if parsed_message_chars >= live_message_chars {
+    parsed_events
+} else {
+    live_events
+}
+```
+
+### Assistant Headers Need Model State For Event Slices
+
+**Problem:** Deferred or incremental renders can start at an `AssistantText` event without a preceding `Init` or `ModelSwitch`. If the renderer falls back to no model state, Codex responses can render with the Claude header/color.
+
+**Solution:** Seed render requests with the selected/restored session model when the scanned event prefix has not provided a model yet.
+
+**WRONG:**
+
+```rust
+RenderRequest {
+    pre_scan: PreScanState::default(),
+    // ...
+}
+```
+
+**CORRECT:**
+
+```rust
+RenderRequest {
+    pre_scan: pre_scan_events_with_fallback(&events, app.display_model_name()),
+    // ...
+}
+```
+
 # REFERENCES
 
 (None fetched yet)

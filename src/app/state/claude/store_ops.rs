@@ -11,12 +11,14 @@ use crate::app::state::App;
 use crate::backend::Backend;
 use crate::events::DisplayEvent;
 
+/// Return true when a batch already contains terminal turn metadata.
 fn has_completion(events: &[DisplayEvent]) -> bool {
     events
         .iter()
         .any(|event| matches!(event, DisplayEvent::Complete { .. }))
 }
 
+/// Clone the last completion event from a richer source batch, if any.
 fn last_completion(events: &[DisplayEvent]) -> Option<DisplayEvent> {
     events
         .iter()
@@ -25,6 +27,7 @@ fn last_completion(events: &[DisplayEvent]) -> Option<DisplayEvent> {
         .cloned()
 }
 
+/// Count unique user and assistant message characters in a candidate event batch.
 fn unique_message_chars(events: &[DisplayEvent]) -> usize {
     let mut seen = std::collections::HashSet::new();
     let mut chars = 0usize;
@@ -45,6 +48,55 @@ fn unique_message_chars(events: &[DisplayEvent]) -> usize {
     chars
 }
 
+/// Return true when an event batch already contains a visible user message.
+fn has_user_message(events: &[DisplayEvent], content: &str) -> bool {
+    events
+        .iter()
+        .any(|event| matches!(event, DisplayEvent::UserMessage { content: existing, .. } if existing == content))
+}
+
+/// Find where reconciled live prompts should be inserted in a parsed suffix.
+fn user_message_insert_index(events: &[DisplayEvent]) -> usize {
+    events
+        .iter()
+        .position(|event| {
+            !matches!(
+                event,
+                DisplayEvent::Init { .. }
+                    | DisplayEvent::Hook { .. }
+                    | DisplayEvent::ModelSwitch { .. }
+            )
+        })
+        .unwrap_or(events.len())
+}
+
+/// Copy live user prompts into parsed events when the parser recovered the
+/// richer answer but not the optimistic prompt Azureal showed on submit.
+fn preserve_live_user_messages(
+    mut parsed_events: Vec<DisplayEvent>,
+    live_events: &[DisplayEvent],
+) -> Vec<DisplayEvent> {
+    let mut insert_idx = user_message_insert_index(&parsed_events);
+    for event in live_events {
+        let DisplayEvent::UserMessage { content, .. } = event else {
+            continue;
+        };
+        if has_user_message(&parsed_events, content) {
+            continue;
+        }
+        parsed_events.insert(
+            insert_idx,
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: content.clone(),
+            },
+        );
+        insert_idx += 1;
+    }
+    parsed_events
+}
+
+/// Add completion metadata from another batch when the preferred content lacks it.
 fn with_completion_from(
     mut events: Vec<DisplayEvent>,
     completion_source: &[DisplayEvent],
@@ -72,6 +124,7 @@ fn choose_store_events(
         return parsed_events;
     }
 
+    let parsed_events = preserve_live_user_messages(parsed_events, &live_events);
     let parsed_message_chars = unique_message_chars(&parsed_events);
     let live_message_chars = unique_message_chars(&live_events);
     if live_message_chars > parsed_message_chars {
@@ -90,7 +143,9 @@ fn choose_store_events(
     parsed_events
 }
 
+/// Session-store append and recovery behavior attached to the application state.
 impl App {
+    /// Reconstruct pending and failed tool status sets from a display event list.
     fn tool_status_from_events(
         events: &[crate::events::DisplayEvent],
     ) -> (
@@ -249,12 +304,12 @@ impl App {
                         events = choose_store_events(parsed_suffix, events);
                     }
                     if !events.is_empty() && self.session_file_path.as_ref() == Some(path) {
-                        self.display_events = prefix_events;
-                        self.display_events.extend(events.clone());
+                        let mut display_events = prefix_events;
+                        display_events.extend(events.clone());
+                        self.replace_display_events_for_render(display_events);
                         let (pending, failed) = Self::tool_status_from_events(&self.display_events);
                         self.pending_tool_calls = pending;
                         self.failed_tool_calls = failed;
-                        self.invalidate_render_cache();
                     }
                 }
             }
@@ -276,12 +331,12 @@ impl App {
                         events = choose_store_events(parsed_suffix, events);
                     }
                     if !events.is_empty() && self.session_file_path.as_ref() == Some(path) {
-                        self.display_events = prefix_events;
-                        self.display_events.extend(events.clone());
+                        let mut display_events = prefix_events;
+                        display_events.extend(events.clone());
+                        self.replace_display_events_for_render(display_events);
                         let (pending, failed) = Self::tool_status_from_events(&self.display_events);
                         self.pending_tool_calls = pending;
                         self.failed_tool_calls = failed;
-                        self.invalidate_render_cache();
                     }
                 }
             }
@@ -486,5 +541,195 @@ impl App {
                 parsed_events.into_iter().skip(overlap).collect()
             }
         }
+    }
+}
+
+#[cfg(test)]
+/// Tests for exit-time session store append and render reconciliation behavior.
+mod tests {
+    use super::*;
+    use ratatui::text::Line;
+    use std::io::Write;
+
+    /// Encode a worktree path the same way Claude's project directory lookup does.
+    fn encode_project_path(path: &std::path::Path) -> String {
+        path.to_string_lossy()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect()
+    }
+
+    /// Build a minimal assistant text display event.
+    fn assistant_text(text: &str) -> DisplayEvent {
+        DisplayEvent::AssistantText {
+            _uuid: String::new(),
+            _message_id: String::new(),
+            text: text.to_string(),
+        }
+    }
+
+    /// Build a minimal visible user prompt event.
+    fn user_message(content: &str) -> DisplayEvent {
+        DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: content.to_string(),
+        }
+    }
+
+    /// Parsed JSONL can be richer than live output while still missing the
+    /// optimistic prompt; reconciliation must keep that prompt.
+    #[test]
+    fn choose_store_events_preserves_live_user_prompt_in_parsed_suffix() {
+        let parsed = vec![
+            DisplayEvent::Init {
+                _session_id: "sid".into(),
+                cwd: "/tmp/project".into(),
+                model: "gpt-5.4".into(),
+            },
+            assistant_text("complete final answer with substantially more recovered content"),
+            DisplayEvent::Complete {
+                _session_id: "sid".into(),
+                success: true,
+                duration_ms: 1000,
+                cost_usd: 0.0,
+            },
+        ];
+        let live = vec![
+            user_message("please fix the bug"),
+            assistant_text("partial"),
+        ];
+
+        let chosen = choose_store_events(parsed, live);
+
+        let user_idx = chosen
+            .iter()
+            .position(|event| {
+                matches!(event, DisplayEvent::UserMessage { content, .. } if content == "please fix the bug")
+            })
+            .expect("prompt should be preserved");
+        let assistant_idx = chosen
+            .iter()
+            .position(|event| {
+                matches!(event, DisplayEvent::AssistantText { text, .. } if text.starts_with("complete final answer"))
+            })
+            .expect("parsed assistant text should be kept");
+        assert!(user_idx < assistant_idx);
+    }
+
+    /// Write a Claude session JSONL file containing a prompt, final answer, and completion.
+    fn write_claude_jsonl(
+        wt_path: &std::path::Path,
+        claude_session_id: &str,
+        answer: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".claude")
+            .join("projects")
+            .join(encode_project_path(wt_path));
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("{}.jsonl", claude_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "user",
+                "message": { "content": "Prompt" },
+                "timestamp": "2026-01-01T00:00:00Z",
+                "uuid": "user-1",
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{ "type": "text", "text": answer }],
+                    "model": "claude-opus-4-6",
+                },
+                "timestamp": "2026-01-01T00:00:01Z",
+                "uuid": "assistant-1",
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "result",
+                "durationMs": 1000,
+                "costUsd": 0.01,
+                "sessionId": claude_session_id,
+                "timestamp": "2026-01-01T00:00:02Z",
+            })
+        )
+        .unwrap();
+        (session_dir, session_path)
+    }
+
+    /// Exit-time JSONL reconciliation replaces the visible turn and therefore
+    /// must force a full render instead of appending from stale render counters.
+    #[test]
+    fn store_append_from_jsonl_viewed_replacement_resets_render_state() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::path::PathBuf::from(format!(
+            "/tmp/azureal-render-replacement-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+
+        let claude_session_id = format!("abcdef12-1234-1234-1234-{:012x}", unique & 0xffffffffffff);
+        let (session_dir, session_path) =
+            write_claude_jsonl(&wt_path, &claude_session_id, "complete response");
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(sid);
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), claude_session_id.clone());
+        app.session_file_path = Some(session_path.clone());
+        app.display_events = vec![assistant_text("partial response")];
+        app.rendered_lines_cache = vec![Line::from("partial response")];
+        app.rendered_lines_dirty = false;
+        app.rendered_events_count = 1;
+        app.rendered_content_line_count = 1;
+        app.rendered_events_start = 1;
+        app.render_in_flight = true;
+        app.session_viewport_scroll = 3;
+
+        assert!(app.store_append_from_jsonl("55", Backend::Claude));
+
+        assert!(app
+            .display_events
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::AssistantText { text, .. } if text == "complete response")));
+        assert!(app.rendered_lines_dirty);
+        assert_eq!(app.rendered_events_count, 0);
+        assert_eq!(app.rendered_content_line_count, 0);
+        assert_eq!(app.rendered_events_start, 0);
+        assert!(!app.render_in_flight);
+        assert_eq!(app.session_viewport_scroll, usize::MAX);
+        assert_eq!(app.rendered_lines_cache.len(), 1);
+        assert!(!session_path.exists());
+
+        let _ = std::fs::remove_dir(&session_dir);
     }
 }

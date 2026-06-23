@@ -68,6 +68,22 @@ fn pre_scan_events(events: &[DisplayEvent]) -> PreScanState {
     s
 }
 
+/// Scan a rendered prefix and fall back to the session model when no event
+/// supplied model state for assistant bubble identity.
+fn pre_scan_events_with_fallback(events: &[DisplayEvent], fallback_model: &str) -> PreScanState {
+    let mut state = pre_scan_events(events);
+    if state
+        .current_model
+        .as_deref()
+        .filter(|model| !model.is_empty())
+        .is_none()
+        && !fallback_model.is_empty()
+    {
+        state.current_model = Some(fallback_model.to_string());
+    }
+    state
+}
+
 /// Submit a render request to the background thread (NON-BLOCKING).
 /// The main event loop calls this when `rendered_lines_dirty` is true.
 /// The actual rendering happens on the render thread — the main thread
@@ -78,6 +94,7 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
     }
 
     let inner_width = session_width.saturating_sub(2);
+    let fallback_model = app.display_model_name().to_string();
 
     // Deferred render: if user scrolled to top and there are unrendered early events,
     // expand to full render now (they want to see old messages).
@@ -111,7 +128,10 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
         // Pre-compute state flags by scanning existing events (zero-cost: just
         // reads references in main thread's own memory). This eliminates the need
         // to clone ALL display_events — render thread only gets new events.
-        let pre_scan = pre_scan_events(&app.display_events[..app.rendered_events_count]);
+        let pre_scan = pre_scan_events_with_fallback(
+            &app.display_events[..app.rendered_events_count],
+            &fallback_model,
+        );
 
         // Only clone NEW events (from rendered_events_count onwards).
         let new_events = app.display_events[app.rendered_events_count..].to_vec();
@@ -147,9 +167,9 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
             0
         };
         let pre_scan = if deferred_start > 0 {
-            pre_scan_events(&app.display_events[..deferred_start])
+            pre_scan_events_with_fallback(&app.display_events[..deferred_start], &fallback_model)
         } else {
-            PreScanState::default()
+            pre_scan_events_with_fallback(&[], &fallback_model)
         };
 
         // Clone only the events we'll actually render (from deferred_start onwards).
@@ -246,6 +266,7 @@ pub fn poll_render_result(app: &mut App) -> bool {
 }
 
 #[cfg(test)]
+/// Tests for render request submission and render result polling.
 mod tests {
     use super::*;
     use crate::events::DisplayEvent;
@@ -275,6 +296,7 @@ mod tests {
 
     // ── 1. DEFERRED_RENDER_TAIL constant ──
 
+    /// Verifies deferred render tail is 200.
     #[test]
     fn test_deferred_render_tail_is_200() {
         assert_eq!(DEFERRED_RENDER_TAIL, 200);
@@ -282,6 +304,7 @@ mod tests {
 
     // ── 2. pre_scan_events: empty input ──
 
+    /// Verifies pre-scan empty events.
     #[test]
     fn test_pre_scan_empty_events() {
         let state = pre_scan_events(&[]);
@@ -297,6 +320,7 @@ mod tests {
 
     // ── 3. pre_scan_events: Init event ──
 
+    /// Verifies pre-scan init sets saw init.
     #[test]
     fn test_pre_scan_init_sets_saw_init() {
         let events = vec![DisplayEvent::Init {
@@ -309,6 +333,7 @@ mod tests {
         assert_eq!(state.current_model.as_deref(), Some("opus"));
     }
 
+    /// Verifies pre-scan init does not set content.
     #[test]
     fn test_pre_scan_init_does_not_set_content() {
         let events = vec![DisplayEvent::Init {
@@ -320,6 +345,7 @@ mod tests {
         assert!(!state.saw_content);
     }
 
+    /// Verifies pre-scan last init model wins.
     #[test]
     fn test_pre_scan_last_init_model_wins() {
         let events = vec![
@@ -340,6 +366,7 @@ mod tests {
 
     // ── 4. pre_scan_events: Hook event ──
 
+    /// Verifies pre-scan hook sets last hook.
     #[test]
     fn test_pre_scan_hook_sets_last_hook() {
         let events = vec![DisplayEvent::Hook {
@@ -350,6 +377,7 @@ mod tests {
         assert_eq!(state.last_hook, Some(("PreTool".into(), "allowed".into())));
     }
 
+    /// Verifies pre-scan hook does not set content.
     #[test]
     fn test_pre_scan_hook_does_not_set_content() {
         let events = vec![DisplayEvent::Hook {
@@ -362,6 +390,7 @@ mod tests {
 
     // ── 5. pre_scan_events: UserMessage event ──
 
+    /// Verifies pre-scan user message sets content.
     #[test]
     fn test_pre_scan_user_message_sets_content() {
         let events = vec![DisplayEvent::UserMessage {
@@ -372,6 +401,7 @@ mod tests {
         assert!(state.saw_content);
     }
 
+    /// Verifies pre-scan user message clears last hook.
     #[test]
     fn test_pre_scan_user_message_clears_last_hook() {
         let events = vec![
@@ -390,6 +420,7 @@ mod tests {
 
     // ── 6. pre_scan_events: AssistantText event ──
 
+    /// Verifies pre-scan assistant text sets content.
     #[test]
     fn test_pre_scan_assistant_text_sets_content() {
         let events = vec![DisplayEvent::AssistantText {
@@ -403,6 +434,7 @@ mod tests {
 
     // ── 7. pre_scan_events: Plan event ──
 
+    /// Verifies pre-scan plan sets content.
     #[test]
     fn test_pre_scan_plan_sets_content() {
         let events = vec![DisplayEvent::Plan {
@@ -415,6 +447,7 @@ mod tests {
 
     // ── 8. pre_scan_events: ToolCall ExitPlanMode ──
 
+    /// Verifies pre-scan tool call exit plan mode.
     #[test]
     fn test_pre_scan_tool_call_exit_plan_mode() {
         let events = vec![tool_call("ExitPlanMode", json!({}))];
@@ -423,6 +456,7 @@ mod tests {
         assert!(!state.saw_user_after_exit_plan);
     }
 
+    /// Verifies pre-scan exit plan then user.
     #[test]
     fn test_pre_scan_exit_plan_then_user() {
         let events = vec![
@@ -439,6 +473,7 @@ mod tests {
 
     // ── 9. pre_scan_events: ToolCall AskUserQuestion ──
 
+    /// Verifies pre-scan ask user question.
     #[test]
     fn test_pre_scan_ask_user_question() {
         let input = json!({"question": "pick one"});
@@ -449,6 +484,7 @@ mod tests {
         assert_eq!(state.last_ask_input, Some(input));
     }
 
+    /// Verifies pre-scan ask user then user message.
     #[test]
     fn test_pre_scan_ask_user_then_user_message() {
         let events = vec![
@@ -465,6 +501,7 @@ mod tests {
 
     // ── 10. pre_scan_events: ToolResult sets content ──
 
+    /// Verifies pre-scan tool result sets content.
     #[test]
     fn test_pre_scan_tool_result_sets_content() {
         let events = vec![tool_result("Read", "file contents")];
@@ -474,6 +511,7 @@ mod tests {
 
     // ── 11. pre_scan_events: multiple hooks, last wins ──
 
+    /// Verifies pre-scan multiple hooks last wins.
     #[test]
     fn test_pre_scan_multiple_hooks_last_wins() {
         let events = vec![
@@ -492,6 +530,7 @@ mod tests {
 
     // ── 12. pre_scan_events: content after hook clears hook ──
 
+    /// Verifies pre-scan content clears hook.
     #[test]
     fn test_pre_scan_content_clears_hook() {
         let events = vec![
@@ -511,6 +550,7 @@ mod tests {
 
     // ── 13. pre_scan_events: non-ExitPlanMode tool call ──
 
+    /// Verifies pre-scan non exit plan tool call.
     #[test]
     fn test_pre_scan_non_exit_plan_tool_call() {
         let events = vec![tool_call("Read", json!({"path": "/foo"}))];
@@ -522,6 +562,7 @@ mod tests {
 
     // ── 14. pre_scan_events: Compacting/Compacted/MayBeCompacting fallthrough ──
 
+    /// Verifies pre-scan compacting no effect.
     #[test]
     fn test_pre_scan_compacting_no_effect() {
         let events = vec![DisplayEvent::Compacting];
@@ -531,6 +572,7 @@ mod tests {
         assert!(state.last_hook.is_none());
     }
 
+    /// Verifies pre-scan compacted no effect.
     #[test]
     fn test_pre_scan_compacted_no_effect() {
         let events = vec![DisplayEvent::Compacted];
@@ -538,6 +580,7 @@ mod tests {
         assert!(!state.saw_content);
     }
 
+    /// Verifies pre-scan may be compacting no effect.
     #[test]
     fn test_pre_scan_may_be_compacting_no_effect() {
         let events = vec![DisplayEvent::MayBeCompacting];
@@ -547,6 +590,7 @@ mod tests {
 
     // ── 15. pre_scan_events: Command event fallthrough ──
 
+    /// Verifies pre-scan command no effect.
     #[test]
     fn test_pre_scan_command_no_effect() {
         let events = vec![DisplayEvent::Command {
@@ -558,6 +602,7 @@ mod tests {
 
     // ── 16. pre_scan_events: multiple ExitPlanMode ──
 
+    /// Verifies pre-scan multiple exit plan mode.
     #[test]
     fn test_pre_scan_multiple_exit_plan_mode() {
         let events = vec![
@@ -571,6 +616,7 @@ mod tests {
 
     // ── 17. pre_scan_events: user after ask, then another ask resets ──
 
+    /// Verifies pre-scan ask then user then ask resets user after.
     #[test]
     fn test_pre_scan_ask_then_user_then_ask_resets_user_after() {
         let events = vec![
@@ -589,6 +635,7 @@ mod tests {
 
     // ── 18. submit_render_request: empty display_events is a no-op ──
 
+    /// Verifies submit empty events noop.
     #[test]
     fn test_submit_empty_events_noop() {
         let mut app = App::new();
@@ -600,6 +647,7 @@ mod tests {
 
     // ── 19. submit_render_request: not dirty and same width is no-op ──
 
+    /// Verifies submit not dirty same width noop.
     #[test]
     fn test_submit_not_dirty_same_width_noop() {
         let mut app = App::new();
@@ -615,6 +663,7 @@ mod tests {
 
     // ── 20. poll_render_result: no result returns false ──
 
+    /// Verifies poll no result returns false.
     #[test]
     fn test_poll_no_result_returns_false() {
         let mut app = App::new();
@@ -624,6 +673,7 @@ mod tests {
 
     // ── 21. pre_scan default state ──
 
+    /// Verifies pre-scan default.
     #[test]
     fn test_pre_scan_default() {
         let state = PreScanState::default();
@@ -639,6 +689,7 @@ mod tests {
 
     // ── 22. pre_scan with Init then Hook then Content ──
 
+    /// Verifies pre-scan init hook content sequence.
     #[test]
     fn test_pre_scan_init_hook_content_sequence() {
         let events = vec![
@@ -665,6 +716,7 @@ mod tests {
 
     // ── 23. pre_scan: exit_plan then user then another user ──
 
+    /// Verifies pre-scan exit plan then two users.
     #[test]
     fn test_pre_scan_exit_plan_then_two_users() {
         let events = vec![
@@ -684,6 +736,7 @@ mod tests {
 
     // ── 24. pre_scan: last_ask_input tracks latest ──
 
+    /// Verifies pre-scan last ask input tracks latest.
     #[test]
     fn test_pre_scan_last_ask_input_tracks_latest() {
         let events = vec![
@@ -696,6 +749,7 @@ mod tests {
 
     // ── 25. pre_scan: saw_init persists across events ──
 
+    /// Verifies pre-scan init persists.
     #[test]
     fn test_pre_scan_init_persists() {
         let events = vec![
@@ -719,6 +773,7 @@ mod tests {
 
     // ── 26. pre_scan: hook after content sets last_hook ──
 
+    /// Verifies pre-scan hook after content.
     #[test]
     fn test_pre_scan_hook_after_content() {
         let events = vec![
@@ -738,6 +793,7 @@ mod tests {
 
     // ── 27. submit_render_request: dirty flag cleared after submit ──
 
+    /// Verifies submit clears dirty flag.
     #[test]
     fn test_submit_clears_dirty_flag() {
         let mut app = App::new();
@@ -752,6 +808,7 @@ mod tests {
 
     // ── 28. submit_render_request: sets render_in_flight ──
 
+    /// Verifies submit sets render in flight.
     #[test]
     fn test_submit_sets_render_in_flight() {
         let mut app = App::new();
@@ -766,6 +823,7 @@ mod tests {
 
     // ── 29. pre_scan: ToolCall sets saw_content ──
 
+    /// Verifies pre-scan tool call sets content.
     #[test]
     fn test_pre_scan_tool_call_sets_content() {
         let events = vec![tool_call("Write", json!({}))];
@@ -775,6 +833,7 @@ mod tests {
 
     // ── 30. pre_scan: single user message ──
 
+    /// Verifies pre-scan single user saw content true.
     #[test]
     fn test_pre_scan_single_user_saw_content_true() {
         let events = vec![DisplayEvent::UserMessage {
@@ -788,6 +847,7 @@ mod tests {
 
     // ── 31. pre_scan: Filtered event is no-op ──
 
+    /// Verifies pre-scan filtered event no effect.
     #[test]
     fn test_pre_scan_filtered_event_no_effect() {
         let events = vec![DisplayEvent::Filtered];
@@ -798,6 +858,7 @@ mod tests {
 
     // ── 32. pre_scan: Complete event is no-op ──
 
+    /// Verifies pre-scan complete event no effect.
     #[test]
     fn test_pre_scan_complete_event_no_effect() {
         let events = vec![DisplayEvent::Complete {
@@ -812,6 +873,7 @@ mod tests {
 
     // ── 33. submit_render_request: deferred start on large event count ──
 
+    /// Verifies submit large events triggers deferred.
     #[test]
     fn test_submit_large_events_triggers_deferred() {
         let mut app = App::new();
@@ -830,6 +892,7 @@ mod tests {
         assert!(app.render_in_flight);
     }
 
+    /// Verifies submit deferred codex tail preserves model identity.
     #[test]
     fn test_submit_deferred_codex_tail_preserves_model_identity() {
         use ratatui::style::Color;
@@ -872,8 +935,44 @@ mod tests {
         assert_eq!(codex_header, Some(Some(Color::Cyan)));
     }
 
+    /// Verifies submit codex model fallback labels assistant only slice.
+    #[test]
+    fn test_submit_codex_model_fallback_labels_assistant_only_slice() {
+        use ratatui::style::Color;
+
+        let mut app = App::new();
+        app.selected_model = Some("gpt-5.4".into());
+        app.display_events.push(DisplayEvent::AssistantText {
+            _uuid: "a1".into(),
+            _message_id: "m1".into(),
+            text: "assistant-only slice".into(),
+        });
+        app.rendered_lines_dirty = true;
+
+        submit_render_request(&mut app, 80);
+
+        let mut applied = false;
+        for _ in 0..100 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            if poll_render_result(&mut app) {
+                applied = true;
+                break;
+            }
+        }
+
+        assert!(applied, "expected render result");
+        let codex_header = app.rendered_lines_cache.iter().find_map(|line| {
+            line.spans
+                .iter()
+                .find(|span| span.content.contains("Codex"))
+                .map(|span| span.style.bg)
+        });
+        assert_eq!(codex_header, Some(Some(Color::Cyan)));
+    }
+
     // ── 34. submit_render_request: width=0 saturating sub ──
 
+    /// Verifies submit zero width no panic.
     #[test]
     fn test_submit_zero_width_no_panic() {
         let mut app = App::new();
@@ -888,6 +987,7 @@ mod tests {
 
     // ── 35. submit_render_request: width=1 saturating sub ──
 
+    /// Verifies submit width 1 no panic.
     #[test]
     fn test_submit_width_1_no_panic() {
         let mut app = App::new();
@@ -902,6 +1002,7 @@ mod tests {
 
     // ── 36. pre_scan: exit_plan without user message after ──
 
+    /// Verifies pre-scan exit plan no user after.
     #[test]
     fn test_pre_scan_exit_plan_no_user_after() {
         let events = vec![
@@ -919,6 +1020,7 @@ mod tests {
 
     // ── 37. pre_scan: ask_user without user after ──
 
+    /// Verifies pre-scan ask user no user after.
     #[test]
     fn test_pre_scan_ask_user_no_user_after() {
         let events = vec![
@@ -936,6 +1038,7 @@ mod tests {
 
     // ── 38. pre_scan: ToolResult clears last_hook ──
 
+    /// Verifies pre-scan tool result clears hook.
     #[test]
     fn test_pre_scan_tool_result_clears_hook() {
         let events = vec![
@@ -951,6 +1054,7 @@ mod tests {
 
     // ── 39. pre_scan: many events stress test ──
 
+    /// Verifies pre-scan large event list.
     #[test]
     fn test_pre_scan_large_event_list() {
         let mut events = Vec::new();
@@ -966,6 +1070,7 @@ mod tests {
 
     // ── 40. pre_scan: interleaved hooks and content ──
 
+    /// Verifies pre-scan interleaved hooks content.
     #[test]
     fn test_pre_scan_interleaved_hooks_content() {
         let events = vec![
@@ -998,6 +1103,7 @@ mod tests {
 
     // ── 41. poll_render_result: called twice returns false both times ──
 
+    /// Verifies poll twice returns false.
     #[test]
     fn test_poll_twice_returns_false() {
         let mut app = App::new();
@@ -1007,6 +1113,7 @@ mod tests {
 
     // ── 42. submit with session_scroll at 0 triggers deferred expansion ──
 
+    /// Verifies submit scroll zero triggers expansion.
     #[test]
     fn test_submit_scroll_zero_triggers_expansion() {
         let mut app = App::new();
@@ -1026,6 +1133,7 @@ mod tests {
 
     // ── 43. pre_scan: exit_plan then user then exit_plan resets user flag ──
 
+    /// Verifies pre-scan exit plan user exit plan resets.
     #[test]
     fn test_pre_scan_exit_plan_user_exit_plan_resets() {
         let events = vec![
@@ -1044,6 +1152,7 @@ mod tests {
 
     // ── 44. pre_scan: Plan clears last_hook ──
 
+    /// Verifies pre-scan plan clears hook.
     #[test]
     fn test_pre_scan_plan_clears_hook() {
         let events = vec![
@@ -1062,6 +1171,7 @@ mod tests {
 
     // ── 45. pre_scan: ToolCall with file_path ──
 
+    /// Verifies pre-scan tool call with file path.
     #[test]
     fn test_pre_scan_tool_call_with_file_path() {
         let events = vec![DisplayEvent::ToolCall {
@@ -1077,6 +1187,7 @@ mod tests {
 
     // ── 46. pre_scan: ToolResult with file_path ──
 
+    /// Verifies pre-scan tool result with file path.
     #[test]
     fn test_pre_scan_tool_result_with_file_path() {
         let events = vec![DisplayEvent::ToolResult {
@@ -1092,6 +1203,7 @@ mod tests {
 
     // ── 47. pre_scan: all saw_* flags can be true simultaneously ──
 
+    /// Verifies pre-scan all flags true.
     #[test]
     fn test_pre_scan_all_flags_true() {
         let events = vec![
@@ -1118,6 +1230,7 @@ mod tests {
 
     // ── 48. pre_scan: only hooks, no content ──
 
+    /// Verifies pre-scan only hooks no content.
     #[test]
     fn test_pre_scan_only_hooks_no_content() {
         let events = vec![
@@ -1141,6 +1254,7 @@ mod tests {
 
     // ── 49. submit: incremental path when rendered_events_count > 0 ──
 
+    /// Verifies submit incremental path.
     #[test]
     fn test_submit_incremental_path() {
         let mut app = App::new();
@@ -1161,6 +1275,7 @@ mod tests {
 
     // ── 50. submit: rendered_events_start > 0 and scroll == 0 expansion ──
 
+    /// Verifies submit deferred expansion resets counts.
     #[test]
     fn test_submit_deferred_expansion_resets_counts() {
         let mut app = App::new();
@@ -1189,6 +1304,7 @@ mod tests {
     // again (event_count > DEFERRED_RENDER_TAIL), creating an infinite loop
     // where the user could never scroll to see early messages.
 
+    /// Verifies expansion does not redefer large sessions.
     #[test]
     fn test_expansion_does_not_redefer_large_sessions() {
         let mut app = App::new();
@@ -1217,6 +1333,7 @@ mod tests {
         assert!(app.render_in_flight);
     }
 
+    /// Verifies submit does not render inline edit patch preview.
     #[test]
     fn test_submit_does_not_render_inline_edit_patch_preview() {
         let mut app = App::new();
