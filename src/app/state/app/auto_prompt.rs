@@ -227,6 +227,19 @@ impl AutoPromptState {
             .and_then(AutoPromptEntry::take_repeat_prompt)
     }
 
+    /// Disable one auto-prompt entry when a manual prompt differs from its captured repeat text.
+    pub(crate) fn cancel_if_prompt_differs(&mut self, key: &AutoPromptKey, prompt: &str) -> bool {
+        let should_cancel = self
+            .entries
+            .get(key)
+            .and_then(AutoPromptEntry::prompt)
+            .is_some_and(|repeat_prompt| repeat_prompt != prompt);
+        if should_cancel {
+            self.entries.remove(key);
+        }
+        should_cancel
+    }
+
     /// Return keys that currently watch an agent slot for completion.
     pub fn tracked_keys(&self) -> Vec<AutoPromptKey> {
         self.entries
@@ -376,5 +389,46 @@ mod tests {
         let entry = state.entry_for(first.key()).unwrap();
         assert_eq!(entry.prompt(), Some("loop"));
         assert!(entry.tracked_slot().is_none());
+    }
+
+    /// A different visible prompt disables the captured auto-prompt loop.
+    #[test]
+    fn cancel_if_prompt_differs_removes_captured_entry() {
+        let mut state = AutoPromptState::default();
+        let first = target(1);
+        state.toggle(first.clone());
+        state.capture_prompt(first.clone(), "loop", "10");
+
+        assert!(state.cancel_if_prompt_differs(first.key(), "manual override"));
+
+        assert!(!state.is_enabled_for(first.key()));
+    }
+
+    /// The matching repeat prompt keeps auto prompt enabled for another loop.
+    #[test]
+    fn cancel_if_prompt_differs_keeps_matching_entry() {
+        let mut state = AutoPromptState::default();
+        let first = target(1);
+        state.toggle(first.clone());
+        state.capture_prompt(first.clone(), "loop", "10");
+
+        assert!(!state.cancel_if_prompt_differs(first.key(), "loop"));
+
+        let entry = state.entry_for(first.key()).unwrap();
+        assert_eq!(entry.prompt(), Some("loop"));
+        assert_eq!(entry.tracked_slot(), Some("10"));
+    }
+
+    /// The first prompt after enabling auto prompt is captured instead of cancelled.
+    #[test]
+    fn cancel_if_prompt_differs_waits_for_first_capture() {
+        let mut state = AutoPromptState::default();
+        let first = target(1);
+        state.toggle(first.clone());
+
+        assert!(!state.cancel_if_prompt_differs(first.key(), "first loop"));
+
+        assert!(state.is_enabled_for(first.key()));
+        assert!(state.entry_for(first.key()).unwrap().prompt().is_none());
     }
 }

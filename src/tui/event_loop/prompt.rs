@@ -134,12 +134,6 @@ fn spawn_with_retry_and_fallback(
     }
 }
 
-/// Return true when the prompt is a response to an agent pause/approval event.
-fn is_pause_response_prompt(actual_prompt: &str) -> bool {
-    actual_prompt.starts_with("[SYSTEM: You just called ExitPlanMode.")
-        || actual_prompt.starts_with("[SYSTEM: You just called AskUserQuestion.")
-}
-
 /// Build a context-injected prompt for a specific session target.
 fn build_context_prompt_for_target(app: &App, target: &AutoPromptTarget, prompt: &str) -> String {
     let is_current_target = app
@@ -285,14 +279,24 @@ fn track_auto_prompt_spawn(
 ) {
     let slot = pid.to_string();
     if let Some(prompt) = display_prompt {
-        if is_pause_response_prompt(actual_prompt) {
-            app.auto_prompt.track_continuation_slot(target.key(), slot);
-        } else {
-            app.auto_prompt.capture_prompt(target.clone(), prompt, slot);
-        }
+        app.auto_prompt.capture_prompt(target.clone(), prompt, slot);
     } else if actual_prompt == crate::app::context_injection::AUTO_CONTINUE_PROMPT {
         app.auto_prompt.track_continuation_slot(target.key(), slot);
     }
+}
+
+/// Cancel the current auto-prompt loop when a manual prompt changes the repeat text.
+fn cancel_auto_prompt_if_prompt_changed(
+    app: &mut App,
+    target: &AutoPromptTarget,
+    display_prompt: Option<&str>,
+) -> bool {
+    display_prompt
+        .map(|prompt| {
+            app.auto_prompt
+                .cancel_if_prompt_differs(target.key(), prompt)
+        })
+        .unwrap_or(false)
 }
 
 /// Return true when events contain a pause tool call without a later user response.
@@ -472,6 +476,13 @@ pub(crate) fn send_prompt_to_current_worktree(
     default_status: &str,
 ) -> bool {
     if let Some(target) = app.current_auto_prompt_target() {
+        let cancelled_auto_prompt =
+            cancel_auto_prompt_if_prompt_changed(app, &target, display_prompt);
+        let default_status = if cancelled_auto_prompt {
+            "Auto prompt cancelled; running..."
+        } else {
+            default_status
+        };
         return send_prompt_to_target(
             app,
             claude_process,
@@ -1005,27 +1016,50 @@ mod tests {
         assert!(auto_prompt_ready_for_key(&mut app, &second_key));
     }
 
-    /// A user response to a pause tracks the continuation without replacing the repeat prompt.
+    /// A manual prompt that changes the loop text disables auto prompt before spawn.
     #[test]
-    fn auto_prompt_pause_response_tracks_continuation_slot() {
+    fn changed_manual_prompt_cancels_auto_prompt_loop() {
         let (mut app, key) = app_with_tracked_auto_prompt();
         let target = app.current_auto_prompt_target().unwrap();
 
-        track_auto_prompt_spawn(
+        assert!(cancel_auto_prompt_if_prompt_changed(
             &mut app,
             &target,
-            Some("1"),
-            "[SYSTEM: You just called ExitPlanMode.]\n\nUser response: 1",
-            77,
-        );
+            Some("manual override")
+        ));
 
-        let entry = app.auto_prompt.entry_for(&key).unwrap();
-        assert_eq!(entry.prompt(), Some("repeat me"));
-        assert!(app
-            .auto_prompt
-            .entry_for(&key)
-            .unwrap()
-            .tracked_slot()
-            .is_some_and(|slot| slot == "77"));
+        assert!(!app.auto_prompt.is_enabled_for(&key));
+    }
+
+    /// Resending the loop prompt keeps auto prompt enabled for the next repeat.
+    #[test]
+    fn repeated_manual_prompt_keeps_auto_prompt_loop() {
+        let (mut app, key) = app_with_tracked_auto_prompt();
+        let target = app.current_auto_prompt_target().unwrap();
+
+        assert!(!cancel_auto_prompt_if_prompt_changed(
+            &mut app,
+            &target,
+            Some("repeat me")
+        ));
+
+        assert!(app.auto_prompt.is_enabled_for(&key));
+        assert_eq!(
+            app.auto_prompt.entry_for(&key).unwrap().tracked_slot(),
+            Some("42")
+        );
+    }
+
+    /// Hidden continuation prompts do not cancel the visible auto-prompt loop.
+    #[test]
+    fn hidden_prompt_does_not_cancel_auto_prompt_loop() {
+        let (mut app, key) = app_with_tracked_auto_prompt();
+        let target = app.current_auto_prompt_target().unwrap();
+
+        assert!(!cancel_auto_prompt_if_prompt_changed(
+            &mut app, &target, None
+        ));
+
+        assert!(app.auto_prompt.is_enabled_for(&key));
     }
 }
