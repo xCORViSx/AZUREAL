@@ -203,7 +203,23 @@ pub fn poll_render_result(app: &mut App) -> bool {
         return false;
     };
 
-    // Discard stale results (a newer request was already applied)
+    // Discard stale results (a newer request has already been submitted).
+    // This can happen during streaming: the event loop queues a newer render
+    // while the worker is still rendering an older snapshot. Applying the older
+    // incremental result would extend the cache with bubbles from stale events.
+    if result.seq < app.render_thread.current_seq() {
+        return false;
+    }
+
+    // A dirty cache means display_events changed after this snapshot was
+    // submitted. The existing cache is less wrong than applying a render that
+    // does not include the newest user prompt or assistant chunk.
+    if app.rendered_lines_dirty {
+        return false;
+    }
+
+    // Discard stale results (a newer request was already applied or a display
+    // event replacement advanced the applied watermark to cancel in-flight work).
     if result.seq <= app.render_seq_applied {
         return false;
     }
@@ -1109,6 +1125,60 @@ mod tests {
         let mut app = App::new();
         assert!(!poll_render_result(&mut app));
         assert!(!poll_render_result(&mut app));
+    }
+
+    /// Verifies submit can queue a newer snapshot while an older render is in flight.
+    #[test]
+    fn test_submit_advances_render_thread_sequence() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::UserMessage {
+            _uuid: "u1".into(),
+            content: "first".into(),
+        });
+        app.rendered_lines_dirty = true;
+        submit_render_request(&mut app, 80);
+        let first_seq = app.render_thread.current_seq();
+
+        app.display_events.push(DisplayEvent::UserMessage {
+            _uuid: "u2".into(),
+            content: "second".into(),
+        });
+        app.rendered_lines_dirty = true;
+        app.render_in_flight = false;
+        submit_render_request(&mut app, 80);
+
+        assert!(app.render_in_flight);
+        assert!(app.render_thread.current_seq() > first_seq);
+        assert!(!app.rendered_lines_dirty);
+    }
+
+    /// Verifies dirty render results do not populate the visible cache.
+    #[test]
+    fn test_poll_discards_dirty_render_result() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::UserMessage {
+            _uuid: "u1".into(),
+            content: "stale".into(),
+        });
+        app.rendered_lines_dirty = true;
+        submit_render_request(&mut app, 80);
+        app.display_events.push(DisplayEvent::UserMessage {
+            _uuid: "u2".into(),
+            content: "fresh".into(),
+        });
+        app.invalidate_render_cache();
+
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            if poll_render_result(&mut app) {
+                break;
+            }
+        }
+
+        assert!(!app.render_in_flight);
+        assert!(app.rendered_lines_dirty);
+        assert!(app.rendered_lines_cache.is_empty());
+        assert_eq!(app.render_seq_applied, 0);
     }
 
     // ── 42. submit with session_scroll at 0 triggers deferred expansion ──

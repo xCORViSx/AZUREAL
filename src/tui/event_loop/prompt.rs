@@ -581,6 +581,75 @@ fn send_ready_auto_prompts(app: &mut App, claude_process: &AgentProcess) -> bool
 
 use super::agent_events;
 
+/// Remove repeated trailing compaction banners caused by retry spawns.
+fn collapse_trailing_compaction_banner(app: &mut App) {
+    let mut removed = false;
+    while app.display_events.len() >= 2 {
+        let last = app.display_events.last();
+        let prev = app
+            .display_events
+            .get(app.display_events.len().saturating_sub(2));
+        if matches!(
+            (prev, last),
+            (
+                Some(DisplayEvent::MayBeCompacting),
+                Some(DisplayEvent::MayBeCompacting)
+            )
+        ) {
+            app.display_events.pop();
+            removed = true;
+        } else {
+            break;
+        }
+    }
+    if removed {
+        app.invalidate_render_cache();
+    }
+}
+
+/// Clear a failed compaction retry and prevent unsafe hidden continuation.
+fn stop_empty_compaction_retry(app: &mut App, status: impl Into<String>) {
+    app.compaction_retry_needed = None;
+    app.auto_continue_after_compaction = false;
+    app.compaction_spawn_deferred = true;
+    app.set_status(status.into());
+}
+
+/// Claim the single allowed empty-summary retry for a compaction request.
+fn take_empty_compaction_retry(app: &mut App) -> Option<(i64, std::path::PathBuf)> {
+    let retry = app.compaction_retry_needed.as_ref()?;
+    if app.compaction_spawn_deferred {
+        stop_empty_compaction_retry(
+            app,
+            "Compaction stopped: summary retry also produced no text. Switch models if needed, then send a new prompt to retry.",
+        );
+        return None;
+    }
+
+    let (session_id, wt_path) = (retry.0, retry.1.clone());
+    app.compaction_spawn_deferred = true;
+    Some((session_id, wt_path))
+}
+
+/// Release the empty-summary retry latch after a successful compaction.
+fn clear_completed_compaction_retry_latch(app: &mut App) {
+    if app.compaction_spawn_deferred
+        && app.compaction_retry_needed.is_none()
+        && app.compaction_receivers.is_empty()
+        && app.chars_since_compaction < crate::app::session_store::COMPACTION_THRESHOLD
+    {
+        app.compaction_spawn_deferred = false;
+        app.set_status("Compaction complete.");
+    }
+}
+
+/// Return true when a mid-turn compaction is ready to resume the interrupted turn.
+fn compaction_auto_continue_is_ready(app: &App) -> bool {
+    app.auto_continue_after_compaction
+        && app.compaction_receivers.is_empty()
+        && app.compaction_retry_needed.is_none()
+}
+
 /// Send staged prompt when no agent is running and no dialog is blocking.
 /// Returns true if a prompt was sent (needs redraw).
 pub fn send_staged_prompt(app: &mut App, claude_process: &AgentProcess) -> bool {
@@ -630,6 +699,7 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
 
     // Poll compaction agents (background summarization, invisible to UI)
     agent_events::poll_compaction_agents(app);
+    clear_completed_compaction_retry_latch(app);
 
     // Spawn compaction agent when threshold is crossed (mid-turn or post-exit).
     // Only consume the trigger if spawn succeeds — failed spawns set
@@ -639,43 +709,33 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
             let (sid, wtp) = (*session_id, wt_path.clone());
             if agent_events::spawn_compaction_agent(app, claude_process, sid, &wtp) {
                 app.compaction_needed = None;
+                collapse_trailing_compaction_banner(app);
             } else {
                 app.compaction_spawn_deferred = true;
             }
         }
     }
 
-    // Retry compaction if the primary produced no output
-    if let Some((session_id, wt_path)) = app.compaction_retry_needed.as_ref() {
-        let (sid, wtp) = (*session_id, wt_path.clone());
+    // Retry compaction once if the primary produced no output.
+    if let Some((sid, wtp)) = take_empty_compaction_retry(app) {
         if agent_events::spawn_compaction_agent(app, claude_process, sid, &wtp) {
             app.compaction_retry_needed = None;
+            collapse_trailing_compaction_banner(app);
+        } else {
+            stop_empty_compaction_retry(
+                app,
+                "Compaction stopped: summary retry failed to spawn. Switch models if needed, then send a new prompt to retry.",
+            );
         }
     }
 
     // Auto-continue after mid-turn compaction: once all compaction agents finish
     // (no receivers, no retry pending), spawn a hidden "continue" prompt with
     // fresh context injection (includes the new compaction summary). No user
-    // bubble — the conversation resumes transparently.
-    //
-    // Safety net: if a Complete event appeared in display_events (the agent
-    // finished before or during the compaction), skip the auto-continue —
-    // there's nothing to continue.
-    if app.auto_continue_after_compaction
-        && app.compaction_receivers.is_empty()
-        && app.compaction_retry_needed.is_none()
-    {
-        let session_completed = app
-            .display_events
-            .iter()
-            .rev()
-            .take(20)
-            .any(|e| matches!(e, crate::events::DisplayEvent::Complete { .. }));
-        if session_completed {
-            app.auto_continue_after_compaction = false;
-            app.set_status("Compaction complete — session already finished.");
-            return true;
-        }
+    // bubble — the conversation resumes transparently. Do not treat a later
+    // Complete banner as natural completion here: Codex can emit one while
+    // finalizing the turn Azureal intentionally killed for compaction.
+    if compaction_auto_continue_is_ready(app) {
         app.auto_continue_after_compaction = false;
         redraw |= send_prompt_to_current_worktree(
             app,
@@ -746,6 +806,101 @@ mod tests {
             msg,
             "auto-continue after compaction via claude after gpt-5.4 spawn failed (argument list too long)."
         );
+    }
+
+    /// Duplicate retry banners collapse to one visible compaction notice.
+    #[test]
+    fn collapse_trailing_compaction_banner_removes_retry_duplicate() {
+        let mut app = App::new();
+        app.display_events.push(DisplayEvent::UserMessage {
+            _uuid: String::new(),
+            content: "hello".into(),
+        });
+        app.display_events.push(DisplayEvent::MayBeCompacting);
+        app.display_events.push(DisplayEvent::MayBeCompacting);
+
+        collapse_trailing_compaction_banner(&mut app);
+
+        assert_eq!(app.display_events.len(), 2);
+        assert!(matches!(
+            app.display_events.last(),
+            Some(DisplayEvent::MayBeCompacting)
+        ));
+    }
+
+    /// Empty compaction summaries get exactly one retry budget.
+    #[test]
+    fn take_empty_compaction_retry_stops_after_budget_spent() {
+        let mut app = App::new();
+        app.compaction_retry_needed = Some((7, PathBuf::from("/tmp/feature")));
+        app.auto_continue_after_compaction = true;
+
+        let retry = take_empty_compaction_retry(&mut app);
+
+        assert_eq!(retry, Some((7, PathBuf::from("/tmp/feature"))));
+        assert!(app.compaction_spawn_deferred);
+        assert!(app.compaction_retry_needed.is_some());
+
+        let retry = take_empty_compaction_retry(&mut app);
+
+        assert!(retry.is_none());
+        assert!(app.compaction_retry_needed.is_none());
+        assert!(!app.auto_continue_after_compaction);
+        assert!(app.compaction_spawn_deferred);
+        assert!(app
+            .status_message
+            .as_deref()
+            .is_some_and(|status| status.contains("Compaction stopped")));
+    }
+
+    /// A successful compaction releases the retry latch once the badge drops.
+    #[test]
+    fn clear_completed_compaction_retry_latch_releases_after_success() {
+        let mut app = App::new();
+        app.compaction_spawn_deferred = true;
+        app.chars_since_compaction = crate::app::session_store::COMPACTION_THRESHOLD - 1;
+
+        clear_completed_compaction_retry_latch(&mut app);
+
+        assert!(!app.compaction_spawn_deferred);
+        assert_eq!(app.status_message.as_deref(), Some("Compaction complete."));
+    }
+
+    /// A still-over-threshold session keeps the retry latch set.
+    #[test]
+    fn clear_completed_compaction_retry_latch_keeps_failed_high_context_latch() {
+        let mut app = App::new();
+        app.compaction_spawn_deferred = true;
+        app.chars_since_compaction = crate::app::session_store::COMPACTION_THRESHOLD;
+
+        clear_completed_compaction_retry_latch(&mut app);
+
+        assert!(app.compaction_spawn_deferred);
+    }
+
+    /// Killed Codex turns can leave a completion banner but still need hidden resume.
+    #[test]
+    fn compaction_auto_continue_ignores_completion_banner_from_interrupted_turn() {
+        let mut app = App::new();
+        app.auto_continue_after_compaction = true;
+        app.display_events.push(DisplayEvent::Complete {
+            _session_id: String::new(),
+            success: true,
+            duration_ms: 0,
+            cost_usd: 0.0,
+        });
+
+        assert!(compaction_auto_continue_is_ready(&app));
+    }
+
+    /// Pending compaction retries still block hidden continuation.
+    #[test]
+    fn compaction_auto_continue_waits_for_empty_summary_retry() {
+        let mut app = App::new();
+        app.auto_continue_after_compaction = true;
+        app.compaction_retry_needed = Some((7, PathBuf::from("/tmp/feature")));
+
+        assert!(!compaction_auto_continue_is_ready(&app));
     }
 
     /// A zero-exit tracked turn queues the captured prompt for repeat.

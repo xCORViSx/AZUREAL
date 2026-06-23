@@ -151,6 +151,120 @@ self.invalidate_render_cache();
 self.replace_display_events_for_render(parsed.events);
 ```
 
+### Active Codex Reparses Must Preserve Live Pre-Turn Events
+
+**Problem:** Active Codex JSONL reparses rebuild the pane from SQLite plus the current rollout file. SQLite can lag behind the pane by one live turn, so rebuilding from store-only history can make the newly submitted prompt appear before the prior live prompt until exit-time storage catches up.
+
+**Solution:** During active Codex full reparses, merge the stored prefix, any in-memory events before the current prompt, and then the parsed current-turn events. If the JSONL has not emitted the user prompt yet, recover the prompt from the last matching pending message in the previous display snapshot.
+
+**WRONG:**
+
+```rust
+parsed.events = self.merge_store_prefix_for_current_session(parsed.events);
+parsed.events = self.preserve_pending_user_message(parsed.events);
+```
+
+**CORRECT:**
+
+```rust
+parsed.events =
+    self.merge_live_prefix_for_active_codex_reparse(parsed.events, &previous_display_events);
+parsed.events = self.preserve_pending_user_message(parsed.events, turn_events_offset);
+```
+
+### Empty Compaction Retries Must Not Re-Banner Forever
+
+**Problem:** When a background compaction agent exits without assistant summary text, setting `compaction_retry_needed` on every empty completion lets the event loop respawn compaction on every tick. Each retry can append another `MayBeCompacting` event, creating an endless stream of compaction banners while the status bar repeats "produced no summary text — retrying".
+
+**Solution:** Treat an empty-summary retry as a bounded lifecycle. Use a retry latch before the retry spawn, collapse duplicate trailing compaction banners, and disable hidden auto-continue if the retry also produces no summary text.
+
+**WRONG:**
+
+```rust
+if let Some((session_id, wt_path)) = app.compaction_retry_needed.as_ref() {
+    if spawn_compaction_agent(app, process, *session_id, wt_path) {
+        app.compaction_retry_needed = None;
+    }
+}
+```
+
+**CORRECT:**
+
+```rust
+if let Some((session_id, wt_path)) = take_empty_compaction_retry(app) {
+    if spawn_compaction_agent(app, process, session_id, &wt_path) {
+        app.compaction_retry_needed = None;
+        collapse_trailing_compaction_banner(app);
+    } else {
+        stop_empty_compaction_retry(app, "Compaction stopped: summary retry failed to spawn.");
+    }
+}
+```
+
+### Compaction Auto-Continue Must Ignore Killed-Turn Completion Banners
+
+**Problem:** Mid-turn compaction intentionally kills the active Codex process and then starts a hidden continuation after the compaction summary is stored. Codex can still leave a `Complete` event while finalizing the killed turn, and older turns can also have recent completion banners. Treating any recent `Complete` as "session already finished" strands the interrupted turn after compaction.
+
+**Solution:** Let `auto_continue_after_compaction` be the source of truth. That flag is set only when Azureal crossed the threshold before seeing a natural completion and then killed the active process. After compaction receivers and retries clear, send the hidden continuation regardless of rendered completion banners.
+
+**WRONG:**
+
+```rust
+if app.auto_continue_after_compaction && app.compaction_receivers.is_empty() {
+    if app.display_events.iter().rev().take(20).any(|e| matches!(e, DisplayEvent::Complete { .. })) {
+        app.auto_continue_after_compaction = false;
+        return true;
+    }
+    send_prompt_to_current_worktree(app, process, None, AUTO_CONTINUE_PROMPT, "...", "...");
+}
+```
+
+**CORRECT:**
+
+```rust
+if app.auto_continue_after_compaction
+    && app.compaction_receivers.is_empty()
+    && app.compaction_retry_needed.is_none()
+{
+    app.auto_continue_after_compaction = false;
+    send_prompt_to_current_worktree(app, process, None, AUTO_CONTINUE_PROMPT, "...", "...");
+}
+```
+
+### Render Results Must Not Apply After A Newer Submit
+
+**Problem:** Large live sessions can have a full or deferred render in flight when a new user prompt or assistant chunk arrives. If the event loop refuses to submit the newer snapshot until the old render completes, live turns can remain invisible. If the old result is then applied after a newer snapshot was queued, an incremental result can append stale bubbles and duplicate prompts.
+
+**Solution:** When display events change, mark the current in-flight render snapshot ineligible so the event loop can submit a replacement under its normal throttle. While polling results, discard any result older than the render thread's newest submitted sequence or any result that arrives while the cache is dirty.
+
+**WRONG:**
+
+```rust
+if app.rendered_lines_dirty && !app.render_in_flight {
+    submit_render_request(app, session_w);
+}
+
+if result.seq <= app.render_seq_applied {
+    return false;
+}
+```
+
+**CORRECT:**
+
+```rust
+pub fn invalidate_render_cache(&mut self) {
+    self.rendered_lines_dirty = true;
+    self.render_in_flight = false;
+}
+
+if result.seq < app.render_thread.current_seq()
+    || app.rendered_lines_dirty
+    || result.seq <= app.render_seq_applied
+{
+    return false;
+}
+```
+
 # REFERENCES
 
 (None fetched yet)

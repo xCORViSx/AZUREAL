@@ -85,6 +85,7 @@ impl App {
         let Some(path) = self.session_file_path.clone() else {
             return;
         };
+        let previous_display_events = self.display_events.clone();
 
         // Track if we were at bottom before refresh (usize::MAX = follow mode)
         let was_at_bottom = self.session_scroll == usize::MAX;
@@ -113,22 +114,32 @@ impl App {
         parsed.events =
             crate::app::context_injection::strip_injected_context_from_events(parsed.events);
         if was_full_reparse && parse_backend == Backend::Codex {
-            parsed.events = self.merge_store_prefix_for_current_session(parsed.events);
+            parsed.events = self.merge_live_prefix_for_active_codex_reparse(
+                parsed.events,
+                &previous_display_events,
+            );
         }
+        let turn_events_offset =
+            self.active_turn_events_offset_for_display(&previous_display_events);
         let pending_confirmed_by_parse =
             self.pending_user_message.as_ref().is_some_and(|pending| {
-                let start_idx = self.active_turn_events_offset().unwrap_or(0);
+                let start_idx = turn_events_offset.unwrap_or(0);
                 parsed
-                .events
-                .iter()
-                .enumerate()
-                .skip(start_idx)
-                .any(|(_, event)| {
-                    matches!(event, DisplayEvent::UserMessage { content, .. } if content == pending)
-                })
+                    .events
+                    .iter()
+                    .enumerate()
+                    .skip(start_idx)
+                    .any(|(_, event)| match event {
+                        DisplayEvent::UserMessage { content, .. } => content == pending,
+                        _ => false,
+                    })
             });
         if was_full_reparse && parse_backend == Backend::Codex {
-            parsed.events = self.preserve_pending_user_message(parsed.events);
+            parsed.events = self.preserve_pending_user_message(parsed.events, turn_events_offset);
+            parsed.events = Self::preserve_live_suffix_when_reparse_lags(
+                parsed.events,
+                &previous_display_events,
+            );
         }
         // Guard: if the parse returned empty events but we already had content,
         // the file was likely temporarily unavailable (locked, atomic rewrite,
@@ -187,27 +198,35 @@ impl App {
         }
     }
 
-    /// Prefix a full Codex JSONL reparse with already-stored session events
-    /// so active-turn reparses do not hide earlier conversation history.
-    fn merge_store_prefix_for_current_session(
+    /// Prefix a full Codex JSONL reparse with stored and live-only pre-turn
+    /// events so active-turn reparses do not reorder prompts while SQLite lags.
+    fn merge_live_prefix_for_active_codex_reparse(
         &self,
         parsed_events: Vec<DisplayEvent>,
+        previous_display_events: &[DisplayEvent],
     ) -> Vec<DisplayEvent> {
-        let Some(session_id) = self.current_session_id else {
-            return parsed_events;
-        };
-        let Some(store) = self.session_store.as_ref() else {
-            return parsed_events;
-        };
-        let Ok(store_events) = store.load_events(session_id) else {
-            return parsed_events;
-        };
-        if store_events.is_empty() {
-            return parsed_events;
+        let turn_events_offset =
+            self.active_turn_events_offset_for_display(previous_display_events);
+        let store_events = self
+            .current_session_id
+            .and_then(|session_id| {
+                self.session_store
+                    .as_ref()
+                    .and_then(|store| store.load_events(session_id).ok())
+            })
+            .unwrap_or_default();
+
+        let mut merged = store_events;
+        if let Some(turn_events_offset) = turn_events_offset {
+            let live_prefix_end = turn_events_offset.min(previous_display_events.len());
+            let live_prefix = &previous_display_events[..live_prefix_end];
+            let overlap = crate::app::session_store::overlap_prefix_len(&merged, live_prefix);
+            if overlap == merged.len() {
+                merged.extend(live_prefix.iter().skip(overlap).cloned());
+            }
         }
 
-        let overlap = crate::app::session_store::overlap_prefix_len(&store_events, &parsed_events);
-        let mut merged = store_events;
+        let overlap = crate::app::session_store::overlap_prefix_len(&merged, &parsed_events);
         merged.extend(parsed_events.into_iter().skip(overlap));
         merged
     }
@@ -217,18 +236,13 @@ impl App {
     fn preserve_pending_user_message(
         &self,
         mut parsed_events: Vec<DisplayEvent>,
+        turn_events_offset: Option<usize>,
     ) -> Vec<DisplayEvent> {
         let Some(pending) = self.pending_user_message.as_ref() else {
             return parsed_events;
         };
 
-        let insert_idx = self
-            .active_turn_events_offset()
-            .or_else(|| {
-                self.display_events.iter().rposition(|event| {
-                    matches!(event, DisplayEvent::UserMessage { content, .. } if content == pending)
-                })
-            })
+        let insert_idx = turn_events_offset
             .unwrap_or(parsed_events.len())
             .min(parsed_events.len());
 
@@ -250,6 +264,20 @@ impl App {
         parsed_events
     }
 
+    /// Keep live events after a lagging full reparse when the disk-parsed
+    /// replacement is only a prefix of what the pane already showed.
+    fn preserve_live_suffix_when_reparse_lags(
+        mut parsed_events: Vec<DisplayEvent>,
+        previous_display_events: &[DisplayEvent],
+    ) -> Vec<DisplayEvent> {
+        let overlap =
+            crate::app::session_store::overlap_prefix_len(&parsed_events, previous_display_events);
+        if overlap == parsed_events.len() && previous_display_events.len() > parsed_events.len() {
+            parsed_events.extend(previous_display_events.iter().skip(overlap).cloned());
+        }
+        parsed_events
+    }
+
     /// Return the display-event index where the currently running turn began.
     fn active_turn_events_offset(&self) -> Option<usize> {
         let branch = self.current_worktree()?.branch_name.clone();
@@ -257,6 +285,28 @@ impl App {
         self.pid_session_target
             .get(slot)
             .map(|(_, _, events_offset, _)| *events_offset)
+    }
+
+    /// Return the best active-turn start offset for a specific display snapshot.
+    fn active_turn_events_offset_for_display(
+        &self,
+        display_events: &[DisplayEvent],
+    ) -> Option<usize> {
+        let tracked_offset = self.active_turn_events_offset();
+        let Some(pending) = self.pending_user_message.as_ref() else {
+            return tracked_offset;
+        };
+        if tracked_offset.is_some_and(|idx| {
+            matches!(
+                display_events.get(idx),
+                Some(DisplayEvent::UserMessage { content, .. }) if content == pending
+            )
+        }) {
+            return tracked_offset;
+        }
+        display_events.iter().rposition(|event| {
+            matches!(event, DisplayEvent::UserMessage { content, .. } if content == pending)
+        })
     }
 }
 
@@ -692,6 +742,150 @@ mod tests {
             DisplayEvent::AssistantText { text, .. } if text == "working on current prompt"
         ));
         assert_eq!(app.pending_user_message, Some("next request".into()));
+
+        let _ = std::fs::remove_file(&session_path);
+    }
+
+    /// Active Codex full reparses keep live pre-turn events ahead of the new
+    /// optimistic prompt when the SQLite store has not caught up yet.
+    #[test]
+    fn poll_session_file_active_codex_preserves_live_prefix_before_pending_prompt() {
+        use std::io::Write;
+
+        let mut app = App::new();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_dir = tempfile::tempdir().unwrap();
+        let wt_path = wt_dir.path().to_path_buf();
+        let branch = "codex".to_string();
+        let store = crate::app::session_store::SessionStore::open(&wt_path).unwrap();
+        let sid = store.create_session(&branch).unwrap();
+        store
+            .append_events(
+                sid,
+                &[
+                    DisplayEvent::UserMessage {
+                        _uuid: String::new(),
+                        content: "stored request".into(),
+                    },
+                    DisplayEvent::AssistantText {
+                        _uuid: String::new(),
+                        _message_id: String::new(),
+                        text: "stored assistant".into(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!(
+            "rollout-live-codex-prefix-gap-{}-{}.jsonl",
+            std::process::id(),
+            unique
+        ));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": format!("live-codex-prefix-gap-{}", unique),
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type":"output_text","text":"working on current prompt"}],
+                }
+            })
+        )
+        .unwrap();
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: branch.clone(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.active_slot.insert(branch, "55".into());
+        app.running_sessions.insert("55".into());
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 2, 0));
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path);
+        app.current_session_id = Some(sid);
+        app.session_file_path = Some(session_path.clone());
+        app.session_file_dirty = true;
+        app.session_file_parse_offset = 999;
+        app.pending_user_message = Some("current request".into());
+        app.display_events = vec![
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "stored request".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "stored assistant".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "previous live request".into(),
+            },
+            DisplayEvent::AssistantText {
+                _uuid: String::new(),
+                _message_id: String::new(),
+                text: "previous live assistant".into(),
+            },
+            DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "current request".into(),
+            },
+        ];
+
+        assert!(app.poll_session_file());
+
+        let labels: Vec<&str> = app
+            .display_events
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::UserMessage { content, .. } => Some(content.as_str()),
+                DisplayEvent::AssistantText { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            vec![
+                "stored request",
+                "stored assistant",
+                "previous live request",
+                "previous live assistant",
+                "current request",
+                "working on current prompt",
+            ]
+        );
 
         let _ = std::fs::remove_file(&session_path);
     }

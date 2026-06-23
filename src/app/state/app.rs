@@ -187,7 +187,7 @@ pub struct App {
     /// Accumulated raw stdout from compaction agents: PID string → JSONL/text buffer
     pub compaction_output: HashMap<String, String>,
     /// Set by poll_compaction_agents when a compaction completes with no output.
-    /// The event loop re-spawns on next tick.
+    /// The event loop allows one retry before deferring compaction.
     /// (session_id, worktree_path)
     pub compaction_retry_needed: Option<(i64, PathBuf)>,
     /// Live character count since last compaction. Initialized from the store at
@@ -195,10 +195,9 @@ pub struct App {
     /// in, and reset after a successful compaction. Enables mid-turn compaction
     /// triggering instead of waiting for process exit.
     pub chars_since_compaction: usize,
-    /// Set when `spawn_compaction_agent` fails due to insufficient boundary
-    /// (not enough user messages). Prevents the event loop from retrying every
-    /// tick. Cleared when a new user message is stored (which may create a valid
-    /// boundary).
+    /// Set when compaction should stop retrying on every tick. This covers
+    /// failed spawns, insufficient boundaries, and already-spent empty-summary
+    /// retries. Cleared when a new user message is stored or a retry succeeds.
     pub compaction_spawn_deferred: bool,
     /// Set when a mid-turn compaction kills the active process. After the compaction
     /// agent finishes, the event loop auto-sends a hidden "continue" prompt (no user

@@ -8,6 +8,10 @@ impl App {
     /// Mark rendered lines cache as dirty after display events change.
     pub fn invalidate_render_cache(&mut self) {
         self.rendered_lines_dirty = true;
+        // The request currently in flight was built from an older display
+        // snapshot. Let the event loop queue a replacement under its normal
+        // throttle instead of waiting for the stale snapshot to finish.
+        self.render_in_flight = false;
     }
 
     /// Replace session display events and force the renderer to rebuild from
@@ -81,6 +85,19 @@ mod tests {
             _message_id: String::new(),
             text: text.to_string(),
         }
+    }
+
+    /// Invalidating the cache releases the in-flight gate for a newer snapshot.
+    #[test]
+    fn invalidate_render_cache_releases_in_flight_snapshot() {
+        let mut app = App::new();
+        app.rendered_lines_dirty = false;
+        app.render_in_flight = true;
+
+        app.invalidate_render_cache();
+
+        assert!(app.rendered_lines_dirty);
+        assert!(!app.render_in_flight);
     }
 
     /// Replacing display events resets incremental render counters but leaves
