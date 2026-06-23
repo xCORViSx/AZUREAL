@@ -175,6 +175,45 @@ impl App {
         (pending, failed)
     }
 
+    /// Return true when the currently rendered session is the same store row.
+    fn displayed_store_session_matches(&self, session_id: i64, wt_path: &std::path::Path) -> bool {
+        self.current_session_id == Some(session_id)
+            && self.session_store_path.as_ref().map(|p| p.as_path()) == Some(wt_path)
+    }
+
+    /// Refresh the visible pane from SQLite after exit-time ingestion succeeds.
+    fn refresh_display_from_store_after_append(
+        &mut self,
+        session_id: i64,
+        wt_path: &std::path::Path,
+    ) {
+        if !self.displayed_store_session_matches(session_id, wt_path) {
+            return;
+        }
+
+        let Some(events) = self
+            .session_store
+            .as_ref()
+            .and_then(|store| store.load_events(session_id).ok())
+        else {
+            return;
+        };
+
+        self.replace_display_events_for_render(events);
+        let (pending, failed) = Self::tool_status_from_events(&self.display_events);
+        self.pending_tool_calls = pending;
+        self.failed_tool_calls = failed;
+        if let Some(pending) = self.pending_user_message.as_ref() {
+            if self
+                .display_events
+                .iter()
+                .any(|event| matches!(event, DisplayEvent::UserMessage { content, .. } if content == pending))
+            {
+                self.pending_user_message = None;
+            }
+        }
+    }
+
     /// Store a running slot's display events early (before exit), e.g. when
     /// a new prompt supersedes a still-running process. Removes the slot from
     /// pid_session_target only after a successful write so exit can retry.
@@ -253,8 +292,7 @@ impl App {
         // either corrupt the store (wrong events) or produce empty results
         // (offset past end). Fall back to parsing the JSONL file directly.
         let slot_owns_display = self.is_viewing_slot(slot_id)
-            || (self.current_session_id == Some(session_id)
-                && self.session_store_path.as_ref().map(|p| p.as_path()) == Some(&wt_path));
+            || self.displayed_store_session_matches(session_id, &wt_path);
 
         let mut events: Vec<crate::events::DisplayEvent> = if slot_owns_display {
             // Viewed slot — use live display_events
@@ -388,6 +426,8 @@ impl App {
                         self.session_file_dirty = false;
                     }
                 }
+
+                self.refresh_display_from_store_after_append(session_id, &wt_path);
 
                 // New events stored (may include user messages) — retry deferred
                 // compaction spawns since a valid boundary may now exist.
@@ -670,6 +710,79 @@ mod tests {
         (session_dir, session_path)
     }
 
+    /// Write a minimal Codex rollout JSONL containing a prompt and final answer.
+    fn write_codex_jsonl(
+        wt_path: &std::path::Path,
+        codex_session_id: &str,
+        prompt: &str,
+        answer: &str,
+    ) -> std::path::PathBuf {
+        let session_dir = dirs::home_dir()
+            .unwrap()
+            .join(".codex")
+            .join("sessions")
+            .join("2099")
+            .join("12")
+            .join("31");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        let session_path = session_dir.join(format!("rollout-{}.jsonl", codex_session_id));
+        let mut file = std::fs::File::create(&session_path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "payload": {
+                    "id": codex_session_id,
+                    "cwd": wt_path,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": prompt,
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-01-01T00:00:02Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": answer }],
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "timestamp": "2026-01-01T00:00:03Z",
+                "payload": {
+                    "type": "task_complete",
+                }
+            })
+        )
+        .unwrap();
+        session_path
+    }
+
     /// Exit-time JSONL reconciliation replaces the visible turn and therefore
     /// must force a full render instead of appending from stale render counters.
     #[test]
@@ -731,5 +844,77 @@ mod tests {
         assert!(!session_path.exists());
 
         let _ = std::fs::remove_dir(&session_dir);
+    }
+
+    /// Viewed Codex exits refresh the pane from the store even if JSONL watching was cleared.
+    #[test]
+    fn store_append_from_jsonl_refreshes_viewed_codex_when_watch_path_was_cleared() {
+        let mut app = App::new();
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let wt_path = std::path::PathBuf::from(format!(
+            "/tmp/azureal-codex-final-refresh-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        let sid = store.create_session("main").unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(wt_path.clone());
+
+        let codex_session_id = format!("codex-final-refresh-{}-{}", std::process::id(), unique);
+        let session_path = write_codex_jsonl(
+            &wt_path,
+            &codex_session_id,
+            "Run the full test suite",
+            "Final summary after the full suite passed",
+        );
+
+        app.worktrees.push(crate::models::Worktree {
+            branch_name: "main".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(sid);
+        app.pid_session_target
+            .insert("55".into(), (sid, wt_path.clone(), 0, 0));
+        app.agent_session_ids
+            .insert("55".into(), codex_session_id.clone());
+        app.session_file_path = None;
+        app.pending_user_message = Some("Run the full test suite".into());
+        app.display_events = vec![
+            user_message("Run the full test suite"),
+            assistant_text("poll session 8973"),
+        ];
+        app.rendered_lines_cache = vec![Line::from("poll session 8973")];
+        app.rendered_lines_dirty = false;
+        app.rendered_events_count = 2;
+        app.rendered_content_line_count = 1;
+        app.rendered_events_start = 0;
+        app.render_in_flight = true;
+
+        assert!(app.store_append_from_jsonl("55", Backend::Codex));
+
+        assert!(app
+            .display_events
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::AssistantText { text, .. } if text == "Final summary after the full suite passed")));
+        assert!(!app
+            .display_events
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::AssistantText { text, .. } if text == "poll session 8973")));
+        assert!(app
+            .display_events
+            .iter()
+            .any(|event| matches!(event, DisplayEvent::Complete { .. })));
+        assert!(app.pending_user_message.is_none());
+        assert!(app.rendered_lines_dirty);
+        assert_eq!(app.rendered_events_count, 0);
+        assert!(!app.render_in_flight);
+        assert!(!session_path.exists());
     }
 }

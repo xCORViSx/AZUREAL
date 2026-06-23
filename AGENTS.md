@@ -265,6 +265,29 @@ if result.seq < app.render_thread.current_seq()
 }
 ```
 
+### Exit-Time Store Append Must Refresh The Viewed Pane
+
+**Problem:** A Codex turn can finish after the visible pane has only rendered the last tool call, such as `poll session ...`. `handle_claude_exited()` may clear the running slot and JSONL watch state before `store_append_from_jsonl()` ingests the final rollout. If visible replacement depends on `session_file_path` still matching the JSONL, SQLite gets the final assistant summary but the pane stays stuck on the pre-final live snapshot.
+
+**Solution:** After exit-time JSONL ingestion succeeds, if the currently displayed store session matches the appended session, reload that session's events from SQLite through `replace_display_events_for_render()`. The store is authoritative after append and already contains the final assistant text and completion banner.
+
+**WRONG:**
+
+```rust
+if !events.is_empty() && self.session_file_path.as_ref() == Some(path) {
+    let mut display_events = prefix_events;
+    display_events.extend(events.clone());
+    self.replace_display_events_for_render(display_events);
+}
+```
+
+**CORRECT:**
+
+```rust
+store.append_events(session_id, &events)?;
+self.refresh_display_from_store_after_append(session_id, &wt_path);
+```
+
 # REFERENCES
 
 (None fetched yet)
