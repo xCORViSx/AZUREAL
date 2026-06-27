@@ -438,9 +438,9 @@ impl App {
                         .map(|chars| chars >= crate::app::session_store::COMPACTION_THRESHOLD)
                         .unwrap_or(false)
                 {
-                    self.compaction_needed = Some((session_id, wt_path));
+                    self.compaction_needed = Some((session_id, wt_path.clone()));
                 }
-                if self.current_session_id == Some(session_id) {
+                if self.is_viewing_session_target(session_id, &wt_path) {
                     // Update context percentage badge from store character count
                     self.update_token_badge();
                 }

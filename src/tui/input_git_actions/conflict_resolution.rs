@@ -145,6 +145,55 @@ fn build_conflict_prompt(display: &str, conflicted: &[String], auto_merged: &[St
     prompt
 }
 
+/// Select a newly created RCR store session in the session-list cache for its
+/// owning branch so subsequent pane reloads keep showing that session.
+fn select_rcr_store_session(
+    app: &mut App,
+    store: &crate::app::session_store::SessionStore,
+    branch: &str,
+    store_id: i64,
+) {
+    let id_str = store_id.to_string();
+    if let Ok(sessions) = store.list_sessions(Some(branch)) {
+        let mut files = Vec::new();
+        let mut selected_idx = 0usize;
+        for (idx, session) in sessions.iter().enumerate() {
+            let key = session.id.to_string();
+            if key == id_str {
+                selected_idx = idx;
+            }
+            files.push((
+                key.clone(),
+                std::path::PathBuf::new(),
+                session.created.clone(),
+            ));
+            app.session_msg_counts
+                .insert(key, (session.message_count, 0));
+        }
+        app.session_files.insert(branch.to_string(), files);
+        app.session_selected_file_idx
+            .insert(branch.to_string(), selected_idx);
+    }
+}
+
+/// Move the visible pane to the conflicted worktree before RCR starts.
+fn select_rcr_worktree(app: &mut App, wt_path: &std::path::Path, branch: &str) {
+    let target_idx = app.worktrees.iter().position(|worktree| {
+        worktree.worktree_path.as_deref() == Some(wt_path) || worktree.branch_name == branch
+    });
+    let Some(target_idx) = target_idx else {
+        return;
+    };
+    if !app.browsing_main && app.selected_worktree == Some(target_idx) {
+        return;
+    }
+
+    app.save_live_display_events();
+    app.save_current_terminal();
+    app.browsing_main = false;
+    app.selected_worktree = Some(target_idx);
+}
+
 /// Spawn a streaming Claude session to resolve rebase conflicts on the
 /// feature branch worktree. Claude runs in the worktree directory and uses
 /// `git add` + `git rebase --continue` to complete the rebase.
@@ -167,24 +216,57 @@ fn spawn_conflict_claude(
         .unwrap_or_else(|| crate::app::state::default_model().to_string());
     let session_name = format!("[RCR] {}", display);
 
-    // Create a dedicated store session for RCR
-    app.ensure_session_store();
-    let store_id = app.session_store.as_ref().and_then(|store| {
-        store.create_session(branch).ok().map(|id| {
+    if !wt_path.join(".git").exists() {
+        if let Some(ref mut p) = app.git_actions_panel {
+            p.conflict_overlay = None;
+            p.result_message = Some((
+                format!(
+                    "Failed to spawn Claude: {} is not a git worktree",
+                    wt_path.display()
+                ),
+                true,
+            ));
+        }
+        return;
+    }
+
+    select_rcr_worktree(app, wt_path, branch);
+
+    let store = match crate::app::session_store::SessionStore::open(wt_path) {
+        Ok(store) => store,
+        Err(err) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.conflict_overlay = None;
+                p.result_message =
+                    Some((format!("Failed to open RCR session store: {}", err), true));
+            }
+            return;
+        }
+    };
+    let store_id = match store.create_session(branch) {
+        Ok(id) => {
             let _ = store.rename_session(id, &session_name);
+            select_rcr_store_session(app, &store, branch, id);
+            app.session_store = Some(store);
+            app.session_store_path = Some(wt_path.to_path_buf());
+            app.current_session_id = Some(id);
             id
-        })
-    });
+        }
+        Err(err) => {
+            if let Some(ref mut p) = app.git_actions_panel {
+                p.conflict_overlay = None;
+                p.result_message = Some((format!("Failed to create RCR session: {}", err), true));
+            }
+            return;
+        }
+    };
 
     match claude_process.spawn(wt_path, &prompt, None, Some(selected_model.as_str())) {
         Ok((rx, pid)) => {
             let slot = pid.to_string();
             // Map PID to the store session so post-exit flow persists events correctly
-            if let Some(sid) = store_id {
-                app.pid_session_target
-                    .insert(slot.clone(), (sid, wt_path.to_path_buf(), 0, 0));
-                app.current_session_id = Some(sid);
-            }
+            app.pid_session_target
+                .insert(slot.clone(), (store_id, wt_path.to_path_buf(), 0, 0));
             app.pending_session_names
                 .push((slot.clone(), session_name.clone()));
             app.register_claude(branch.to_string(), pid, rx, Some(selected_model.as_str()));
@@ -203,6 +285,10 @@ fn spawn_conflict_claude(
             app.session_lines.clear();
             app.session_buffer.clear();
             app.session_scroll = usize::MAX;
+            app.session_file_path = None;
+            app.session_file_modified = None;
+            app.session_file_size = 0;
+            app.session_file_dirty = false;
             app.session_file_parse_offset = 0;
             app.rendered_events_count = 0;
             app.rendered_content_line_count = 0;
@@ -222,6 +308,8 @@ fn spawn_conflict_claude(
             app.invalidate_render_cache();
             app.git_actions_panel = None;
             app.focus = Focus::Session;
+            app.load_file_tree();
+            app.sync_file_watches();
         }
         Err(e) => {
             if let Some(ref mut p) = app.git_actions_panel {

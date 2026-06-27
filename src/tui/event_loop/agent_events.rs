@@ -63,9 +63,18 @@ pub fn spawn_compaction_agent(
     session_id: i64,
     wt_path: &std::path::Path,
 ) -> bool {
-    let store = match app.session_store.as_ref() {
-        Some(s) => s,
-        None => return false,
+    let temp_store;
+    let store = if app.session_store_path.as_deref() == Some(wt_path) {
+        match app.session_store.as_ref() {
+            Some(store) => store,
+            None => return false,
+        }
+    } else {
+        temp_store = match crate::app::session_store::SessionStore::open(wt_path) {
+            Ok(store) => store,
+            Err(_) => return false,
+        };
+        &temp_store
     };
 
     // Find where the last compaction ended
@@ -174,16 +183,17 @@ pub fn spawn_compaction_agent(
             model_label,
         },
     );
-    // Show "Compacting" banner in the session pane
-    app.display_events
-        .push(crate::events::DisplayEvent::MayBeCompacting);
+    if app.is_viewing_session_target(session_id, wt_path) {
+        app.display_events
+            .push(crate::events::DisplayEvent::MayBeCompacting);
+        app.invalidate_render_cache();
+    }
     if used_fallback {
         app.set_status(format!(
             "Compaction: {} failed to spawn — fell back to {}",
             primary_label, fallback_backend
         ));
     }
-    app.invalidate_render_cache();
     true
 }
 
@@ -227,15 +237,24 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
         let summary_trimmed = summary_text.trim();
 
         if !summary_trimmed.is_empty() {
-            if let Some(ref store) = app.session_store {
+            let temp_store;
+            let store = if app.session_store_path.as_deref() == Some(job.wt_path.as_path()) {
+                app.session_store.as_ref()
+            } else {
+                temp_store = crate::app::session_store::SessionStore::open(&job.wt_path).ok();
+                temp_store.as_ref()
+            };
+            if let Some(store) = store {
                 // Store compaction at the boundary — events after this seq remain as raw events
                 let _ = store.store_compaction(job.session_id, job.boundary_seq, summary_trimmed);
-                // Refresh badge — chars_since_compaction just dropped
-                app.update_token_badge();
-                // Show "Compacted" banner in the session pane
-                app.display_events
-                    .push(crate::events::DisplayEvent::Compacting);
-                app.invalidate_render_cache();
+                if app.is_viewing_session_target(job.session_id, &job.wt_path) {
+                    // Refresh badge — chars_since_compaction just dropped
+                    app.try_open_session_store();
+                    app.update_token_badge();
+                    app.display_events
+                        .push(crate::events::DisplayEvent::Compacting);
+                    app.invalidate_render_cache();
+                }
             }
         } else {
             // Compaction returned no summary text.
@@ -251,6 +270,7 @@ pub fn poll_compaction_agents(app: &mut App) -> bool {
     had_events
 }
 
+/// Extract the assistant summary text from a compaction worker's raw output.
 fn extract_compaction_summary(backend: Backend, data: &str) -> String {
     match backend {
         Backend::Claude => extract_assistant_text(data).unwrap_or_default(),
@@ -347,6 +367,7 @@ fn extract_codex_assistant_text(data: &str) -> String {
     text
 }
 
+/// Extract visible text from a Codex message content payload.
 fn extract_codex_message_text(content: Option<&serde_json::Value>) -> String {
     match content {
         Some(serde_json::Value::String(s)) => s.clone(),
@@ -1084,6 +1105,7 @@ mod tests {
             )
             .unwrap();
         app.session_store = Some(store);
+        app.session_store_path = Some(std::path::PathBuf::from("/tmp/test-wt"));
 
         // Simulate raw Claude output already accumulated
         app.compaction_output
@@ -1117,12 +1139,55 @@ mod tests {
         );
     }
 
+    /// Completed compaction for a hidden session does not alter the visible pane.
+    #[test]
+    fn test_poll_compaction_hidden_session_does_not_append_banner() {
+        let mut app = app_with_worktree("main");
+        app.current_session_id = Some(2);
+        app.display_events
+            .push(crate::events::DisplayEvent::UserMessage {
+                _uuid: String::new(),
+                content: "visible session".into(),
+            });
+        let store = crate::app::session_store::SessionStore::open_memory().unwrap();
+        let sid = store.create_session("main").unwrap();
+        store
+            .append_events(
+                sid,
+                &[crate::events::DisplayEvent::UserMessage {
+                    _uuid: String::new(),
+                    content: "hidden session".into(),
+                }],
+            )
+            .unwrap();
+        app.session_store = Some(store);
+        app.session_store_path = Some(std::path::PathBuf::from("/tmp/test-wt"));
+        app.compaction_output.insert(
+            "77".into(),
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Hidden summary.\"}]}}\n".into(),
+        );
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(AgentEvent::Exited { code: Some(0) }).unwrap();
+        drop(tx);
+        app.compaction_receivers
+            .insert("77".into(), test_compaction_job(rx, sid, 0));
+
+        poll_compaction_agents(&mut app);
+
+        assert!(!app
+            .display_events
+            .iter()
+            .any(|event| matches!(event, crate::events::DisplayEvent::Compacting)));
+    }
+
     #[test]
     fn test_poll_compaction_empty_summary_not_stored() {
         let mut app = App::new();
         let store = crate::app::session_store::SessionStore::open_memory().unwrap();
         let sid = store.create_session("main").unwrap();
         app.session_store = Some(store);
+        app.session_store_path = Some(std::path::PathBuf::from("/tmp/test-wt"));
 
         // Empty compaction output
         app.compaction_output.insert("88".into(), "   ".into());
@@ -1151,6 +1216,7 @@ mod tests {
         let store = crate::app::session_store::SessionStore::open_memory().unwrap();
         let sid = store.create_session("main").unwrap();
         app.session_store = Some(store);
+        app.session_store_path = Some(std::path::PathBuf::from("/tmp/test-wt"));
 
         // No compaction_output entry at all
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1185,6 +1251,7 @@ mod tests {
             )
             .unwrap();
         app.session_store = Some(store);
+        app.session_store_path = Some(std::path::PathBuf::from("/tmp/test-wt"));
 
         let (tx, rx) = std::sync::mpsc::channel();
         // Send two output events then exit
@@ -1236,6 +1303,7 @@ mod tests {
             )
             .unwrap();
         app.session_store = Some(store);
+        app.session_store_path = Some(std::path::PathBuf::from("/tmp/test-wt"));
 
         let (tx, rx) = std::sync::mpsc::channel();
         let codex_json_1 = "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"text\":\"Part 1. \"}]}}\n";

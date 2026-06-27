@@ -291,7 +291,11 @@ pub fn handle_input_mode(
 
                 // RCR mode: route prompts to the feature branch worktree where
                 // the rebase is happening, resume the RCR session
-                if let Some(ref rcr) = app.rcr_session {
+                if app.rcr_session_is_visible() {
+                    let rcr = app
+                        .rcr_session
+                        .as_ref()
+                        .expect("visible RCR has session state");
                     let cwd = rcr.worktree_path.clone();
                     let resume = rcr.session_id.clone();
                     let branch = rcr.branch.clone();

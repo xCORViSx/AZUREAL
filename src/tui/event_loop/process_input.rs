@@ -24,7 +24,7 @@ fn is_auto_prompt_toggle_key(key: crossterm::event::KeyEvent) -> bool {
 
 /// Return true when an active mode already owns Ctrl+A semantics.
 fn ctrl_a_belongs_to_existing_mode(app: &App) -> bool {
-    app.rcr_session.is_some()
+    app.rcr_session_is_visible()
         || app.issue_session.is_some()
         || (app.terminal_mode && app.prompt_mode && app.focus == Focus::Input)
 }

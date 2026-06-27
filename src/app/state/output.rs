@@ -33,6 +33,7 @@ impl App {
         // User is manually sending a prompt — cancel any pending auto-continue
         // from a mid-turn compaction (the user's own prompt supersedes it).
         self.auto_continue_after_compaction = false;
+        self.auto_continue_compaction_target = None;
         // A new user message may create a valid compaction boundary where one
         // didn't exist before — retry deferred compaction spawns.
         self.compaction_spawn_deferred = false;

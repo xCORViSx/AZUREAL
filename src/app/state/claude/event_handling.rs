@@ -54,13 +54,13 @@ fn drop_confirmed_optimistic_user_messages(
 impl App {
     /// Check if a slot's output should be displayed (active slot of viewed branch)
     pub fn is_viewing_slot(&self, slot_id: &str) -> bool {
-        let is_rcr_slot = self
+        let is_visible_rcr_slot = self
             .rcr_session
             .as_ref()
-            .map(|r| r.slot_id == slot_id)
+            .map(|r| r.slot_id == slot_id && self.rcr_session_is_visible())
             .unwrap_or(false);
         !self.viewing_historic_session
-            && (is_rcr_slot
+            && (is_visible_rcr_slot
                 || self
                     .current_worktree()
                     .map(|s| {
@@ -180,6 +180,8 @@ impl App {
                                 });
                             if !session_completed {
                                 self.auto_continue_after_compaction = true;
+                                self.auto_continue_compaction_target =
+                                    self.current_auto_prompt_target();
                                 self.cancel_current_claude();
                                 self.set_status("Compacting context — will auto-continue...");
                             } else {
@@ -299,15 +301,16 @@ impl App {
     pub fn handle_claude_output(&mut self, slot_id: &str, output_type: OutputType, data: String) {
         // Only display output from the active slot of the currently viewed branch.
         // Also suppress when the user is viewing a different session file (historic).
-        // During RCR, always show output if the slot matches the RCR session — the
-        // worktree's branch_name may be empty (detached HEAD during rebase).
-        let is_rcr_slot = self
+        // During RCR, show output only while the RCR target session is visible.
+        // The worktree's branch_name may be empty (detached HEAD during rebase),
+        // so slot ownership alone is not enough to decide visibility.
+        let is_visible_rcr_slot = self
             .rcr_session
             .as_ref()
-            .map(|r| r.slot_id == slot_id)
+            .map(|r| r.slot_id == slot_id && self.rcr_session_is_visible())
             .unwrap_or(false);
         let is_viewing = !self.viewing_historic_session
-            && (is_rcr_slot
+            && (is_visible_rcr_slot
                 || self
                     .current_worktree()
                     .map(|s| {
@@ -440,6 +443,8 @@ impl App {
                                     });
                                 if !session_completed {
                                     self.auto_continue_after_compaction = true;
+                                    self.auto_continue_compaction_target =
+                                        self.current_auto_prompt_target();
                                     self.cancel_current_claude();
                                     self.set_status("Compacting context — will auto-continue...");
                                 } else {

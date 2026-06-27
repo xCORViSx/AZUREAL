@@ -204,6 +204,8 @@ pub struct App {
     /// bubble) with fresh context injection including the new compaction summary.
     /// Cleared on manual user prompt or session switch.
     pub auto_continue_after_compaction: bool,
+    /// Session target that owns the pending hidden continuation after compaction.
+    pub auto_continue_compaction_target: Option<AutoPromptTarget>,
     /// Leader key state for `w <key>` worktree command palette
     pub leader_state: crate::tui::keybindings::LeaderState,
     pub terminal_mode: bool,
@@ -746,6 +748,7 @@ impl App {
             chars_since_compaction: 0,
             compaction_spawn_deferred: false,
             auto_continue_after_compaction: false,
+            auto_continue_compaction_target: None,
             leader_state: crate::tui::keybindings::LeaderState::None,
             terminal_mode: false,
             terminal_pty: None,

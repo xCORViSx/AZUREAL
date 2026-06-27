@@ -943,6 +943,8 @@ impl App {
         }
         self.compaction_receivers.clear();
         self.compaction_output.clear();
+        self.auto_continue_after_compaction = false;
+        self.auto_continue_compaction_target = None;
 
         // Kill one-shot commit message generation processes
         if let Ok(mut gen_pids) = self.commit_gen_pids.lock() {

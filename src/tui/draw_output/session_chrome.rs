@@ -22,7 +22,7 @@ use crate::tui::util::AZURE;
 /// centered session name, RCR hint, and model indicator on bottom border.
 pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'static> {
     let is_focused = app.focus == crate::app::Focus::Session;
-    let rcr_active = app.rcr_session.is_some();
+    let rcr_active = app.rcr_session_is_visible();
     let issue_active = app.issue_session.is_some();
     let border_style = if rcr_active {
         // RCR mode: green borders to visually indicate active conflict resolution
@@ -140,7 +140,11 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
     }
 
     // RCR review mode: show ⌃a hint on bottom border when dialog is dismissed
-    if let Some(ref rcr) = app.rcr_session {
+    if rcr_active {
+        let rcr = app
+            .rcr_session
+            .as_ref()
+            .expect("visible RCR has session state");
         if !rcr.approval_pending {
             block = block.title_bottom(
                 Line::from(vec![

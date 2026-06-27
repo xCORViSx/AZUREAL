@@ -359,7 +359,8 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 
     // RCR approval dialog — rendered over session pane
-    if app.rcr_session.as_ref().is_some_and(|m| m.approval_pending) {
+    if app.rcr_session_is_visible() && app.rcr_session.as_ref().is_some_and(|m| m.approval_pending)
+    {
         draw_output::draw_rcr_approval(f, app.pane_session);
     }
     // Issue approval dialog — rendered center screen

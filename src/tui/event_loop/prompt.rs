@@ -622,6 +622,7 @@ fn collapse_trailing_compaction_banner(app: &mut App) {
 fn stop_empty_compaction_retry(app: &mut App, status: impl Into<String>) {
     app.compaction_retry_needed = None;
     app.auto_continue_after_compaction = false;
+    app.auto_continue_compaction_target = None;
     app.compaction_spawn_deferred = true;
     app.set_status(status.into());
 }
@@ -657,6 +658,7 @@ fn clear_completed_compaction_retry_latch(app: &mut App) {
 /// Return true when a mid-turn compaction is ready to resume the interrupted turn.
 fn compaction_auto_continue_is_ready(app: &App) -> bool {
     app.auto_continue_after_compaction
+        && app.auto_continue_compaction_target.is_some()
         && app.compaction_receivers.is_empty()
         && app.compaction_retry_needed.is_none()
 }
@@ -720,7 +722,9 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
             let (sid, wtp) = (*session_id, wt_path.clone());
             if agent_events::spawn_compaction_agent(app, claude_process, sid, &wtp) {
                 app.compaction_needed = None;
-                collapse_trailing_compaction_banner(app);
+                if app.is_viewing_session_target(sid, &wtp) {
+                    collapse_trailing_compaction_banner(app);
+                }
             } else {
                 app.compaction_spawn_deferred = true;
             }
@@ -731,7 +735,9 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
     if let Some((sid, wtp)) = take_empty_compaction_retry(app) {
         if agent_events::spawn_compaction_agent(app, claude_process, sid, &wtp) {
             app.compaction_retry_needed = None;
-            collapse_trailing_compaction_banner(app);
+            if app.is_viewing_session_target(sid, &wtp) {
+                collapse_trailing_compaction_banner(app);
+            }
         } else {
             stop_empty_compaction_retry(
                 app,
@@ -748,9 +754,14 @@ pub fn manage_compaction(app: &mut App, claude_process: &AgentProcess) -> bool {
     // finalizing the turn Azureal intentionally killed for compaction.
     if compaction_auto_continue_is_ready(app) {
         app.auto_continue_after_compaction = false;
-        redraw |= send_prompt_to_current_worktree(
+        let target = app.auto_continue_compaction_target.take();
+        let Some(target) = target else {
+            return redraw;
+        };
+        redraw |= send_prompt_to_target(
             app,
             claude_process,
+            target,
             None,
             crate::app::context_injection::AUTO_CONTINUE_PROMPT,
             "auto-continue after compaction",
@@ -894,6 +905,12 @@ mod tests {
     fn compaction_auto_continue_ignores_completion_banner_from_interrupted_turn() {
         let mut app = App::new();
         app.auto_continue_after_compaction = true;
+        app.auto_continue_compaction_target = Some(AutoPromptTarget::new(
+            PathBuf::from("/tmp/feature"),
+            7,
+            "feature",
+            None,
+        ));
         app.display_events.push(DisplayEvent::Complete {
             _session_id: String::new(),
             success: true,
@@ -909,6 +926,12 @@ mod tests {
     fn compaction_auto_continue_waits_for_empty_summary_retry() {
         let mut app = App::new();
         app.auto_continue_after_compaction = true;
+        app.auto_continue_compaction_target = Some(AutoPromptTarget::new(
+            PathBuf::from("/tmp/feature"),
+            7,
+            "feature",
+            None,
+        ));
         app.compaction_retry_needed = Some((7, PathBuf::from("/tmp/feature")));
 
         assert!(!compaction_auto_continue_is_ready(&app));

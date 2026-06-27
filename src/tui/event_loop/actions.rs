@@ -195,7 +195,11 @@ pub fn handle_key_event(
     // --- Modal overlays consume ALL input (bypass keybinding system) ---
 
     // RCR approval dialog — highest priority modal (conflict resolution decision)
-    if let Some(ref rcr) = app.rcr_session {
+    if app.rcr_session_is_visible() {
+        let rcr = app
+            .rcr_session
+            .as_ref()
+            .expect("visible RCR has session state");
         if rcr.approval_pending {
             match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => {
@@ -239,7 +243,11 @@ pub fn handle_key_event(
     // ⌃a re-shows the RCR or Issue approval dialog after dismissing
     // Only active when session exists, agent isn't running, and dialog isn't shown
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('a') {
-        if let Some(ref rcr) = app.rcr_session {
+        if app.rcr_session_is_visible() {
+            let rcr = app
+                .rcr_session
+                .as_ref()
+                .expect("visible RCR has session state");
             if !rcr.approval_pending && !app.running_sessions.contains(&rcr.slot_id) {
                 if let Some(ref mut m) = app.rcr_session {
                     m.approval_pending = true;

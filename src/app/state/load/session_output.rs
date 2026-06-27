@@ -399,7 +399,7 @@ impl App {
     /// Reads session names from store so draw_title_bar() is zero I/O.
     /// During RCR, the title is locked to "[RCR] <name>" and won't be overwritten.
     pub fn update_title_session_name(&mut self) {
-        if self.rcr_session.is_some() {
+        if self.rcr_session_is_visible() {
             return;
         }
         let Some(session) = self.current_worktree() else {

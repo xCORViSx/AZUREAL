@@ -39,6 +39,42 @@ impl App {
             .unwrap_or(false)
     }
 
+    /// Return true when the session pane is showing the given store session
+    /// from the given worktree path.
+    pub fn is_viewing_session_target(&self, session_id: i64, wt_path: &Path) -> bool {
+        self.current_session_id == Some(session_id)
+            && self
+                .current_worktree()
+                .and_then(|worktree| worktree.worktree_path.as_deref())
+                == Some(wt_path)
+    }
+
+    /// Return true when the session pane is showing the store session owned by
+    /// the given process slot.
+    pub fn is_viewing_slot_target(&self, slot_id: &str) -> bool {
+        self.pid_session_target
+            .get(slot_id)
+            .map(|(session_id, wt_path, _, _)| self.is_viewing_session_target(*session_id, wt_path))
+            .unwrap_or(false)
+    }
+
+    /// Return true when the active RCR workflow belongs to the currently shown
+    /// worktree and store session.
+    pub fn rcr_session_is_visible(&self) -> bool {
+        let Some(rcr) = self.rcr_session.as_ref() else {
+            return false;
+        };
+        if self.pid_session_target.contains_key(&rcr.slot_id) {
+            return self.is_viewing_slot_target(&rcr.slot_id);
+        }
+
+        self.current_session_id.is_none()
+            && self
+                .current_worktree()
+                .and_then(|worktree| worktree.worktree_path.as_deref())
+                == Some(rcr.worktree_path.as_path())
+    }
+
     /// Look up which branch a slot_id belongs to (reverse lookup)
     pub fn branch_for_slot(&self, slot_id: &str) -> Option<String> {
         self.branch_slots
@@ -163,7 +199,9 @@ fn status_priority(status: &WorktreeStatus) -> u8 {
 /// Tests for project, worktree, slot, and status query helpers.
 mod tests {
     use super::*;
+    use crate::app::types::RcrSession;
     use std::collections::HashMap;
+    use std::path::PathBuf;
 
     /// Slot reverse lookup should find the owning branch without allocating a probe String.
     #[test]
@@ -196,5 +234,65 @@ mod tests {
 
         app.clear_status();
         assert!(app.status_message.is_none());
+    }
+
+    /// RCR visibility requires the selected worktree and store session to match.
+    #[test]
+    fn rcr_session_is_visible_for_matching_target() {
+        let mut app = App::new();
+        let wt_path = PathBuf::from("/tmp/rcr-visible");
+        app.worktrees.push(Worktree {
+            branch_name: "feature".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(7);
+        app.pid_session_target
+            .insert("42".into(), (7, wt_path.clone(), 0, 0));
+        app.rcr_session = Some(RcrSession {
+            branch: "feature".into(),
+            display_name: "feature".into(),
+            worktree_path: wt_path,
+            repo_root: PathBuf::from("/tmp/repo"),
+            slot_id: "42".into(),
+            session_id: None,
+            approval_pending: false,
+            continue_with_merge: false,
+        });
+
+        assert!(app.rcr_session_is_visible());
+        assert!(app.is_viewing_slot_target("42"));
+    }
+
+    /// RCR visibility is false when the user selects a different session.
+    #[test]
+    fn rcr_session_is_hidden_for_different_store_session() {
+        let mut app = App::new();
+        let wt_path = PathBuf::from("/tmp/rcr-hidden");
+        app.worktrees.push(Worktree {
+            branch_name: "feature".into(),
+            worktree_path: Some(wt_path.clone()),
+            claude_session_id: None,
+            archived: false,
+        });
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(8);
+        app.pid_session_target
+            .insert("42".into(), (7, wt_path.clone(), 0, 0));
+        app.rcr_session = Some(RcrSession {
+            branch: "feature".into(),
+            display_name: "feature".into(),
+            worktree_path: wt_path,
+            repo_root: PathBuf::from("/tmp/repo"),
+            slot_id: "42".into(),
+            session_id: None,
+            approval_pending: false,
+            continue_with_merge: false,
+        });
+
+        assert!(!app.rcr_session_is_visible());
+        assert!(!app.is_viewing_slot_target("42"));
     }
 }

@@ -231,6 +231,30 @@ if app.auto_continue_after_compaction
 }
 ```
 
+### RCR And Compaction UI Must Be Scoped To The Target Session
+
+**Problem:** RCR state and compaction jobs are global app state, but the session pane is only showing one `(worktree_path, store_session_id)` at a time. Checking only `rcr_session.is_some()` or appending compaction banners directly to `display_events` makes green RCR chrome, RCR output, and compaction banners appear in whichever worktree/session the user happens to view.
+
+**Solution:** Route visible RCR output/chrome and compaction banners through target checks that compare both worktree path and store session id. When RCR starts, switch/select the newly created `[RCR]` store session in the conflicted worktree before spawning the agent. Hidden compaction auto-continue must keep the original target instead of resuming the currently visible session.
+
+**WRONG:**
+
+```rust
+let rcr_active = app.rcr_session.is_some();
+app.display_events.push(DisplayEvent::Compacting);
+send_prompt_to_current_worktree(app, process, None, AUTO_CONTINUE_PROMPT, "...", "...");
+```
+
+**CORRECT:**
+
+```rust
+let rcr_active = app.rcr_session_is_visible();
+if app.is_viewing_session_target(job.session_id, &job.wt_path) {
+    app.display_events.push(DisplayEvent::Compacting);
+}
+send_prompt_to_target(app, process, target, None, AUTO_CONTINUE_PROMPT, "...", "...");
+```
+
 ### Render Results Must Not Apply After A Newer Submit
 
 **Problem:** Large live sessions can have a full or deferred render in flight when a new user prompt or assistant chunk arrives. If the event loop refuses to submit the newer snapshot until the old render completes, live turns can remain invisible. If the old result is then applied after a newer snapshot was queued, an incremental result can append stale bubbles and duplicate prompts.
