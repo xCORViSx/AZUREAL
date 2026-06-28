@@ -95,6 +95,7 @@ impl PromptHistoryStore {
             return Ok(false);
         };
         let mut entries = self.entries.clone();
+        remove_prompt_duplicates(&mut entries, &prompt);
         entries.push(prompt);
         enforce_limit_for_entries(&mut entries, self.limit);
         self.save_entries(&entries)?;
@@ -151,6 +152,11 @@ fn enforce_limit_for_entries(entries: &mut Vec<String>, limit: usize) {
     }
 }
 
+/// Remove older copies of a prompt before a fresh occurrence is appended.
+fn remove_prompt_duplicates(entries: &mut Vec<String>, prompt: &str) {
+    entries.retain(|entry| entry != prompt);
+}
+
 /// Parse history entries from any accepted disk format.
 fn parse_entries(raw: &str, limit: usize) -> Vec<String> {
     let entries = serde_json::from_str::<PromptHistoryDisk>(raw)
@@ -165,15 +171,16 @@ fn parse_entries(raw: &str, limit: usize) -> Vec<String> {
 /// Remove invalid prompts and keep only the newest entries within the limit.
 fn sanitize_entries(entries: Vec<String>, limit: usize) -> Vec<String> {
     let limit = normalize_limit(limit);
-    let mut entries: Vec<String> = entries
+    let mut unique_entries = Vec::new();
+    for entry in entries
         .into_iter()
         .filter_map(|entry| normalize_prompt(&entry))
-        .collect();
-    if entries.len() > limit {
-        let drop_count = entries.len() - limit;
-        entries.drain(0..drop_count);
+    {
+        remove_prompt_duplicates(&mut unique_entries, &entry);
+        unique_entries.push(entry);
     }
-    entries
+    enforce_limit_for_entries(&mut unique_entries, limit);
+    unique_entries
 }
 
 /// Write prompt history through a temporary sibling so interrupted saves do not corrupt the file.
@@ -328,6 +335,44 @@ mod tests {
         );
     }
 
+    /// Re-recording an existing prompt should move it to newest without duplicating it.
+    #[test]
+    fn record_moves_duplicate_prompt_to_newest() {
+        let mut store = PromptHistoryStore::in_memory(20);
+        store.record("build").unwrap();
+        store.record("continue").unwrap();
+        store.record("test").unwrap();
+        store.record("continue").unwrap();
+
+        assert_eq!(
+            store.entries(),
+            &[
+                "build".to_string(),
+                "test".to_string(),
+                "continue".to_string()
+            ]
+        );
+    }
+
+    /// Duplicate removal should happen before limit trimming so older unique prompts survive.
+    #[test]
+    fn record_deduplicates_before_enforcing_limit() {
+        let mut store = PromptHistoryStore::in_memory(3);
+        store.record("inspect").unwrap();
+        store.record("continue").unwrap();
+        store.record("test").unwrap();
+        store.record("continue").unwrap();
+
+        assert_eq!(
+            store.entries(),
+            &[
+                "inspect".to_string(),
+                "test".to_string(),
+                "continue".to_string()
+            ]
+        );
+    }
+
     /// Corrupt JSON should be treated as empty history rather than blocking startup.
     #[test]
     fn load_at_corrupt_file_starts_empty() {
@@ -336,6 +381,29 @@ mod tests {
 
         let store = PromptHistoryStore::load_at(&path, 20).unwrap();
         assert!(store.entries().is_empty());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Loading should collapse older duplicate prompts while preserving newest unique order.
+    #[test]
+    fn load_at_deduplicates_persisted_entries() {
+        let path = temp_history_path("dedupe");
+        std::fs::write(
+            &path,
+            r#"{"entries":["inspect","continue","test","continue"," inspect "]}"#,
+        )
+        .unwrap();
+
+        let store = PromptHistoryStore::load_at(&path, 20).unwrap();
+        assert_eq!(
+            store.entries(),
+            &[
+                "test".to_string(),
+                "continue".to_string(),
+                "inspect".to_string()
+            ]
+        );
 
         let _ = std::fs::remove_file(path);
     }
