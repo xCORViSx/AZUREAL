@@ -621,6 +621,35 @@ if UnicodeWidthStr::width(text) <= max_width {
 }
 ```
 
+### Viewer Tab Labels Must Use Display Width
+
+**Problem:** Viewer tab titles are rendered into fixed terminal slots. Truncating names with `chars().count()` and padding with format widths treats wide Unicode characters as one column, so CJK or emoji tab names can overflow into the next slot.
+
+**Solution:** Build tab labels with display-width helpers: truncate the name by terminal columns, add the leading pad explicitly, and compute trailing padding from the rendered display width.
+
+**WRONG:**
+
+```rust
+let display = if name.chars().count() > name_max {
+    let trunc: String = name.chars().take(name_max.saturating_sub(1)).collect();
+    format!("{trunc}…")
+} else {
+    name.to_string()
+};
+let padded = format!(" {:<width$}", display, width = slot_w - 2);
+let tab_str: String = padded.chars().take(slot_w - 1).collect();
+```
+
+**CORRECT:**
+
+```rust
+let display = truncate_text_to_width(name, name_width);
+let mut label = String::from(" ");
+label.push_str(&display);
+let padding = content_width.saturating_sub(display_width(&label));
+label.extend(std::iter::repeat_n(' ', padding));
+```
+
 # REFERENCES
 
 (None fetched yet)

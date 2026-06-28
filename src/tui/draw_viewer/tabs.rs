@@ -9,9 +9,65 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::super::util::AZURE;
 use crate::app::App;
+
+/// Measure text using the terminal display columns it will occupy.
+fn display_width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+/// Return text truncated to a display-column budget with a fitting ellipsis.
+fn truncate_text_to_width(text: &str, max_width: usize) -> String {
+    if display_width(text) <= max_width {
+        return text.to_string();
+    }
+
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis = "\u{2026}";
+    let ellipsis_width = display_width(ellipsis);
+    if max_width <= ellipsis_width {
+        return ellipsis.to_string();
+    }
+
+    let content_width = max_width - ellipsis_width;
+    let mut truncated = String::new();
+    let mut current_width = 0usize;
+
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if current_width + ch_width > content_width {
+            break;
+        }
+        truncated.push(ch);
+        current_width += ch_width;
+    }
+
+    truncated.push_str(ellipsis);
+    truncated
+}
+
+/// Build the fixed-width content inside a tab slot, excluding the trailing gap.
+fn tab_slot_label(name: &str, slot_w: usize) -> String {
+    let content_width = slot_w.saturating_sub(1);
+    if content_width == 0 {
+        return String::new();
+    }
+
+    let name_width = content_width.saturating_sub(1);
+    let display = truncate_text_to_width(name, name_width);
+    let mut label = String::from(" ");
+    label.push_str(&display);
+
+    let padding = content_width.saturating_sub(display_width(&label));
+    label.extend(std::iter::repeat_n(' ', padding));
+    label
+}
 
 /// How many rows the tab bar occupies (0 if no tabs, 1 for ≤6, 2 for >6)
 pub(super) fn tab_bar_rows(tab_count: usize) -> u16 {
@@ -33,8 +89,6 @@ pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
     }
     // Each slot includes the tab + 1 trailing gap char. 6 slots fill the row.
     let slot_w = inner_w / 6;
-    // Visible tab content = slot minus gap(1) minus leading pad(1)
-    let name_max = slot_w.saturating_sub(2);
     let rows = tab_bar_rows(app.viewer_tabs.len());
 
     for row in 0..rows {
@@ -46,13 +100,6 @@ pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
 
         for idx in start..end {
             let name = app.viewer_tabs[idx].name();
-            // Truncate to fit, ellipsis if too long
-            let display = if name.chars().count() > name_max {
-                let trunc: String = name.chars().take(name_max.saturating_sub(1)).collect();
-                format!("{trunc}…")
-            } else {
-                name.to_string()
-            };
             let is_active = idx == app.viewer_active_tab;
             let style = if is_active {
                 Style::default()
@@ -62,9 +109,8 @@ pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Style::default().fg(Color::Gray).bg(Color::DarkGray)
             };
-            // " name" padded to slot_w-1, then 1 gap char = total slot_w
-            let padded = format!(" {:<width$}", display, width = slot_w - 2);
-            let tab_str: String = padded.chars().take(slot_w - 1).collect();
+            // Fixed-width content plus one gap char equals the full slot width.
+            let tab_str = tab_slot_label(name, slot_w);
             spans.push(Span::styled(tab_str, style));
             spans.push(Span::raw(" "));
         }
@@ -134,72 +180,86 @@ pub(super) fn draw_tab_dialog(f: &mut Frame, app: &App, area: Rect) {
 }
 
 #[cfg(test)]
+/// Regression coverage for viewer tab row counts, labels, and dialog geometry.
 mod tests {
     use super::*;
     use crate::app::types::{ViewerMode, ViewerTab};
 
     // ── tab_bar_rows: determines how many rows the tab bar occupies ──
 
+    /// Verifies tab bar rows zero tabs.
     #[test]
     fn test_tab_bar_rows_zero_tabs() {
         assert_eq!(tab_bar_rows(0), 0);
     }
 
+    /// Verifies tab bar rows one tab.
     #[test]
     fn test_tab_bar_rows_one_tab() {
         assert_eq!(tab_bar_rows(1), 1);
     }
 
+    /// Verifies tab bar rows six tabs.
     #[test]
     fn test_tab_bar_rows_six_tabs() {
         assert_eq!(tab_bar_rows(6), 1);
     }
 
+    /// Verifies tab bar rows seven tabs.
     #[test]
     fn test_tab_bar_rows_seven_tabs() {
         assert_eq!(tab_bar_rows(7), 2);
     }
 
+    /// Verifies tab bar rows twelve tabs.
     #[test]
     fn test_tab_bar_rows_twelve_tabs() {
         assert_eq!(tab_bar_rows(12), 2);
     }
 
+    /// Verifies tab bar rows two tabs.
     #[test]
     fn test_tab_bar_rows_two_tabs() {
         assert_eq!(tab_bar_rows(2), 1);
     }
 
+    /// Verifies tab bar rows three tabs.
     #[test]
     fn test_tab_bar_rows_three_tabs() {
         assert_eq!(tab_bar_rows(3), 1);
     }
 
+    /// Verifies tab bar rows four tabs.
     #[test]
     fn test_tab_bar_rows_four_tabs() {
         assert_eq!(tab_bar_rows(4), 1);
     }
 
+    /// Verifies tab bar rows five tabs.
     #[test]
     fn test_tab_bar_rows_five_tabs() {
         assert_eq!(tab_bar_rows(5), 1);
     }
 
+    /// Verifies tab bar rows eight tabs.
     #[test]
     fn test_tab_bar_rows_eight_tabs() {
         assert_eq!(tab_bar_rows(8), 2);
     }
 
+    /// Verifies tab bar rows nine tabs.
     #[test]
     fn test_tab_bar_rows_nine_tabs() {
         assert_eq!(tab_bar_rows(9), 2);
     }
 
+    /// Verifies tab bar rows ten tabs.
     #[test]
     fn test_tab_bar_rows_ten_tabs() {
         assert_eq!(tab_bar_rows(10), 2);
     }
 
+    /// Verifies tab bar rows eleven tabs.
     #[test]
     fn test_tab_bar_rows_eleven_tabs() {
         assert_eq!(tab_bar_rows(11), 2);
@@ -207,11 +267,13 @@ mod tests {
 
     // ── Boundary: exactly at threshold ──
 
+    /// Verifies tab bar rows boundary six is one row.
     #[test]
     fn test_tab_bar_rows_boundary_six_is_one_row() {
         assert_eq!(tab_bar_rows(6), 1, "6 tabs should fit in 1 row");
     }
 
+    /// Verifies tab bar rows boundary seven is two rows.
     #[test]
     fn test_tab_bar_rows_boundary_seven_is_two_rows() {
         assert_eq!(tab_bar_rows(7), 2, "7 tabs requires 2 rows");
@@ -219,16 +281,19 @@ mod tests {
 
     // ── Large tab count (over 12 — still 2 rows, capped) ──
 
+    /// Verifies tab bar rows thirteen still two.
     #[test]
     fn test_tab_bar_rows_thirteen_still_two() {
         assert_eq!(tab_bar_rows(13), 2);
     }
 
+    /// Verifies tab bar rows twenty still two.
     #[test]
     fn test_tab_bar_rows_twenty_still_two() {
         assert_eq!(tab_bar_rows(20), 2);
     }
 
+    /// Verifies tab bar rows hundred still two.
     #[test]
     fn test_tab_bar_rows_hundred_still_two() {
         assert_eq!(tab_bar_rows(100), 2);
@@ -236,6 +301,7 @@ mod tests {
 
     // ── ViewerTab name() tests (used by draw_tab_bar) ──
 
+    /// Create a minimal viewer tab with the supplied title for tab-rendering tests.
     fn make_tab(title: &str) -> ViewerTab {
         ViewerTab {
             path: None,
@@ -246,30 +312,35 @@ mod tests {
         }
     }
 
+    /// Verifies viewer tab name simple.
     #[test]
     fn test_viewer_tab_name_simple() {
         let tab = make_tab("main.rs");
         assert_eq!(tab.name(), "main.rs");
     }
 
+    /// Verifies viewer tab name empty.
     #[test]
     fn test_viewer_tab_name_empty() {
         let tab = make_tab("");
         assert_eq!(tab.name(), "");
     }
 
+    /// Verifies viewer tab name with path.
     #[test]
     fn test_viewer_tab_name_with_path() {
         let tab = make_tab("src/lib.rs");
         assert_eq!(tab.name(), "src/lib.rs");
     }
 
+    /// Verifies viewer tab name unicode.
     #[test]
     fn test_viewer_tab_name_unicode() {
         let tab = make_tab("fichier.rs");
         assert_eq!(tab.name(), "fichier.rs");
     }
 
+    /// Verifies viewer tab name long.
     #[test]
     fn test_viewer_tab_name_long() {
         let long = "a".repeat(200);
@@ -279,30 +350,35 @@ mod tests {
 
     // ── ViewerTab field defaults ──
 
+    /// Verifies viewer tab default scroll.
     #[test]
     fn test_viewer_tab_default_scroll() {
         let tab = make_tab("test");
         assert_eq!(tab.scroll, 0);
     }
 
+    /// Verifies viewer tab default mode.
     #[test]
     fn test_viewer_tab_default_mode() {
         let tab = make_tab("test");
         assert_eq!(tab.mode, ViewerMode::Empty);
     }
 
+    /// Verifies viewer tab no path.
     #[test]
     fn test_viewer_tab_no_path() {
         let tab = make_tab("test");
         assert!(tab.path.is_none());
     }
 
+    /// Verifies viewer tab no content.
     #[test]
     fn test_viewer_tab_no_content() {
         let tab = make_tab("test");
         assert!(tab.content.is_none());
     }
 
+    /// Verifies viewer tab with content.
     #[test]
     fn test_viewer_tab_with_content() {
         let mut tab = make_tab("test");
@@ -310,6 +386,7 @@ mod tests {
         assert_eq!(tab.content.as_deref(), Some("file content"));
     }
 
+    /// Verifies viewer tab with path.
     #[test]
     fn test_viewer_tab_with_path() {
         let mut tab = make_tab("test");
@@ -317,6 +394,7 @@ mod tests {
         assert_eq!(tab.path.unwrap().to_str().unwrap(), "/src/main.rs");
     }
 
+    /// Verifies viewer tab file mode.
     #[test]
     fn test_viewer_tab_file_mode() {
         let mut tab = make_tab("code.rs");
@@ -324,6 +402,7 @@ mod tests {
         assert_eq!(tab.mode, ViewerMode::File);
     }
 
+    /// Verifies viewer tab diff mode.
     #[test]
     fn test_viewer_tab_diff_mode() {
         let mut tab = make_tab("diff");
@@ -331,6 +410,7 @@ mod tests {
         assert_eq!(tab.mode, ViewerMode::Diff);
     }
 
+    /// Verifies viewer tab image mode.
     #[test]
     fn test_viewer_tab_image_mode() {
         let mut tab = make_tab("img.png");
@@ -340,6 +420,7 @@ mod tests {
 
     // ── App tab state tests ──
 
+    /// Verifies app default no tabs.
     #[test]
     fn test_app_default_no_tabs() {
         let app = App::new();
@@ -347,12 +428,14 @@ mod tests {
         assert_eq!(app.viewer_active_tab, 0);
     }
 
+    /// Verifies app tab dialog default false.
     #[test]
     fn test_app_tab_dialog_default_false() {
         let app = App::new();
         assert!(!app.viewer_tab_dialog);
     }
 
+    /// Verifies app one tab rows.
     #[test]
     fn test_app_one_tab_rows() {
         let mut app = App::new();
@@ -360,6 +443,7 @@ mod tests {
         assert_eq!(tab_bar_rows(app.viewer_tabs.len()), 1);
     }
 
+    /// Verifies app six tabs rows.
     #[test]
     fn test_app_six_tabs_rows() {
         let mut app = App::new();
@@ -369,6 +453,7 @@ mod tests {
         assert_eq!(tab_bar_rows(app.viewer_tabs.len()), 1);
     }
 
+    /// Verifies app seven tabs rows.
     #[test]
     fn test_app_seven_tabs_rows() {
         let mut app = App::new();
@@ -378,6 +463,7 @@ mod tests {
         assert_eq!(tab_bar_rows(app.viewer_tabs.len()), 2);
     }
 
+    /// Verifies app twelve tabs rows.
     #[test]
     fn test_app_twelve_tabs_rows() {
         let mut app = App::new();
@@ -387,6 +473,7 @@ mod tests {
         assert_eq!(tab_bar_rows(app.viewer_tabs.len()), 2);
     }
 
+    /// Verifies active tab within bounds.
     #[test]
     fn test_active_tab_within_bounds() {
         let mut app = App::new();
@@ -397,6 +484,7 @@ mod tests {
         assert!(app.viewer_active_tab < app.viewer_tabs.len());
     }
 
+    /// Verifies tab names accessible after push.
     #[test]
     fn test_tab_names_accessible_after_push() {
         let mut app = App::new();
@@ -408,48 +496,55 @@ mod tests {
 
     // ── Tab name truncation logic (char boundary tests for draw_tab_bar) ──
 
+    /// Verifies short name no truncation.
     #[test]
     fn test_short_name_no_truncation() {
         let name = "abc";
-        let name_max = 10;
-        let display = if name.chars().count() > name_max {
-            let trunc: String = name.chars().take(name_max.saturating_sub(1)).collect();
-            format!("{trunc}...")
-        } else {
-            name.to_string()
-        };
-        assert_eq!(display, "abc");
+        assert_eq!(truncate_text_to_width(name, 10), "abc");
     }
 
+    /// Verifies long name truncation.
     #[test]
     fn test_long_name_truncation() {
         let name = "a_very_long_filename_here.rs";
-        let name_max = 10;
-        let display = if name.chars().count() > name_max {
-            let trunc: String = name.chars().take(name_max.saturating_sub(1)).collect();
-            format!("{trunc}...")
-        } else {
-            name.to_string()
-        };
-        assert_eq!(display, "a_very_lo...");
+        assert_eq!(truncate_text_to_width(name, 10), "a_very_lo…");
     }
 
+    /// Verifies exact length no truncation.
     #[test]
     fn test_exact_length_no_truncation() {
         let name = "exactfit10";
         assert_eq!(name.chars().count(), 10);
-        let name_max = 10;
-        let display = if name.chars().count() > name_max {
-            let trunc: String = name.chars().take(name_max.saturating_sub(1)).collect();
-            format!("{trunc}...")
-        } else {
-            name.to_string()
-        };
-        assert_eq!(display, "exactfit10");
+        assert_eq!(truncate_text_to_width(name, 10), "exactfit10");
+    }
+
+    /// Verifies tab slot label uses display width for wide title.
+    #[test]
+    fn test_tab_slot_label_uses_display_width_for_wide_title() {
+        let label = tab_slot_label("日本abc", 7);
+        assert_eq!(label, " 日本…");
+        assert_eq!(display_width(&label), 6);
+    }
+
+    /// Verifies tab slot label pads after wide truncation.
+    #[test]
+    fn test_tab_slot_label_pads_after_wide_truncation() {
+        let label = tab_slot_label("日本abc", 6);
+        assert_eq!(label, " 日… ");
+        assert_eq!(display_width(&label), 5);
+    }
+
+    /// Verifies tab slot label handles tiny slots.
+    #[test]
+    fn test_tab_slot_label_handles_tiny_slots() {
+        assert_eq!(tab_slot_label("abc", 0), "");
+        assert_eq!(tab_slot_label("abc", 1), "");
+        assert_eq!(tab_slot_label("abc", 2), " ");
     }
 
     // ── tab_bar_rows exhaustive coverage for all counts 0..=12 ──
 
+    /// Verifies tab bar rows all values 0 to 6 are 0 or 1.
     #[test]
     fn test_tab_bar_rows_all_values_0_to_6_are_0_or_1() {
         for n in 0..=6 {
@@ -458,6 +553,7 @@ mod tests {
         }
     }
 
+    /// Verifies tab bar rows all values 7 to 12 are 2.
     #[test]
     fn test_tab_bar_rows_all_values_7_to_12_are_2() {
         for n in 7..=12 {
@@ -468,6 +564,7 @@ mod tests {
 
     // ── slot_w arithmetic used in draw_tab_bar ──
 
+    /// Verifies slot width divisible by six.
     #[test]
     fn test_slot_width_divisible_by_six() {
         // inner_w = area.width - 2. slot_w = inner_w / 6
@@ -477,6 +574,7 @@ mod tests {
         assert_eq!(slot_w, 13); // 78 / 6 = 13
     }
 
+    /// Verifies name max from slot w.
     #[test]
     fn test_name_max_from_slot_w() {
         // name_max = slot_w - 2  (strip leading pad + gap)
@@ -485,6 +583,7 @@ mod tests {
         assert_eq!(name_max, 11);
     }
 
+    /// Verifies slot w below 12 skips render.
     #[test]
     fn test_slot_w_below_12_skips_render() {
         // draw_tab_bar returns early when inner_w < 12
@@ -495,6 +594,7 @@ mod tests {
 
     // ── Dialog geometry ──
 
+    /// Verifies dialog width capped at 40.
     #[test]
     fn test_dialog_width_capped_at_40() {
         let area_width = 200u16;
@@ -502,6 +602,7 @@ mod tests {
         assert_eq!(dialog_width, 40);
     }
 
+    /// Verifies dialog width follows narrow terminal.
     #[test]
     fn test_dialog_width_follows_narrow_terminal() {
         let area_width = 30u16;
@@ -509,6 +610,7 @@ mod tests {
         assert_eq!(dialog_width, 26);
     }
 
+    /// Verifies dialog height with few tabs.
     #[test]
     fn test_dialog_height_with_few_tabs() {
         let tab_count = 3usize;
