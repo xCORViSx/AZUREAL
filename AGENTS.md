@@ -255,6 +255,36 @@ if app.is_viewing_session_target(job.session_id, &job.wt_path) {
 send_prompt_to_target(app, process, target, None, AUTO_CONTINUE_PROMPT, "...", "...");
 ```
 
+### RCR Approval State Must Be Recoverable Or Reconciled
+
+**Problem:** A branch tab can stay in the blue/purple `R` approval state after the user switches sessions or manually finishes the rebase and squash merge outside Azureal. If Ctrl+A only checks the currently visible RCR session, there is no way to reopen the approval dialog. If auto-rebase only checks `rcr_session.is_some()`, a stale global RCR session can also block future auto-rebase checks forever.
+
+**Solution:** Distinguish "RCR belongs to the current worktree" from "RCR is the visible store session." Let Ctrl+A and worktree-tab clicks recover the active RCR store session for that branch. Periodically reconcile non-running RCR state against Git, and clear the stale approval only when the target worktree has no rebase/unmerged state and is already at main.
+
+**WRONG:**
+
+```rust
+fn ctrl_a_belongs_to_existing_mode(app: &App) -> bool {
+    app.rcr_session_is_visible()
+}
+
+if app.rcr_session.is_some() {
+    return false;
+}
+```
+
+**CORRECT:**
+
+```rust
+fn ctrl_a_belongs_to_existing_mode(app: &App) -> bool {
+    app.rcr_session_matches_current_worktree()
+}
+
+if app.reconcile_rcr_after_external_git_resolution() {
+    needs_redraw = true;
+}
+```
+
 ### Render Results Must Not Apply After A Newer Submit
 
 **Problem:** Large live sessions can have a full or deferred render in flight when a new user prompt or assistant chunk arrives. If the event loop refuses to submit the newer snapshot until the old render completes, live turns can remain invisible. If the old result is then applied after a newer snapshot was queued, an incremental result can append stale bubbles and duplicate prompts.

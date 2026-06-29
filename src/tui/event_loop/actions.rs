@@ -243,6 +243,11 @@ pub fn handle_key_event(
     // ⌃a re-shows the RCR or Issue approval dialog after dismissing
     // Only active when session exists, agent isn't running, and dialog isn't shown
     if key.modifiers.contains(event::KeyModifiers::CONTROL) && key.code == KeyCode::Char('a') {
+        if app.rcr_session_matches_current_worktree() && !app.rcr_session_is_visible() {
+            if app.select_active_rcr_session_for_current_worktree() {
+                app.load_session_output();
+            }
+        }
         if app.rcr_session_is_visible() {
             let rcr = app
                 .rcr_session

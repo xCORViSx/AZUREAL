@@ -4,7 +4,7 @@
 //! via mpsc channel, receives events (RecordingStarted, Transcribed, Error, etc.)
 //! back via another channel. Zero CPU when idle — blocks on recv().
 //!
-//! Audio flow: cpal callback → Arc<Mutex<Vec<f32>>> → resample to 16kHz → whisper.
+//! Audio flow: cpal callback → `Arc<Mutex<Vec<f32>>>` → resample to 16kHz → whisper.
 //! WhisperContext is lazy-loaded on first transcription and cached for reuse.
 //! Model lives at ~/.azureal/speech/ggml-large-v3.bin (~2.9 GiB).
 

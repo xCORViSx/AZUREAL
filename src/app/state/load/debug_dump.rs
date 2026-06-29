@@ -34,7 +34,7 @@ fn debug_dump_filename(name_suffix: &str) -> String {
 
 /// Debug dump generation methods for application state.
 impl App {
-    /// Dump debug output to .azureal/debug-output[_name] (triggered by ⌃d)
+    /// Dump debug output to `.azureal/debug-output[_name]` (triggered by ⌃d).
     /// All user/assistant content is obfuscated so the file can be shared in bug reports
     /// without exposing sensitive project details. Tool names, event types, and structural
     /// markers are preserved for diagnostic value. Optional name suffix appended after underscore.

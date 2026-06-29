@@ -80,7 +80,7 @@ pub static HEALTH_GOD_FILES: [Keybinding; 4] = [
 ];
 
 /// Health Panel — Documentation tab actions.
-/// Space checks, `a` toggles all non-100%, `v` views in Viewer, Enter spawns [DH] sessions.
+/// Space checks, `a` toggles all non-100%, `v` views in Viewer, Enter spawns `[DH]` sessions.
 pub static HEALTH_DOCS: [Keybinding; 4] = [
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char(' ')),

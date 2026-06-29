@@ -10,7 +10,7 @@ use super::Git;
 
 /// Remote-operation methods for pulling, pushing, and branch divergence checks.
 impl Git {
-    /// Pull from remote (current branch's upstream, or origin/<branch> if no upstream set)
+    /// Pull from remote (current branch's upstream, or `origin/<branch>` if no upstream set).
     pub fn pull(worktree_path: &Path) -> Result<String> {
         let has_upstream = Command::new("git")
             .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])

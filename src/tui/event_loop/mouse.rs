@@ -210,6 +210,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                         app.save_live_display_events();
                         app.save_current_terminal();
                         app.selected_worktree = Some(idx);
+                        app.select_active_rcr_session_for_current_worktree();
                         app.load_session_output();
                         app.open_git_actions_panel();
                     }
@@ -234,6 +235,7 @@ pub fn handle_mouse_click(app: &mut App, col: u16, row: u16) -> bool {
                         app.save_live_display_events();
                         app.save_current_terminal();
                         app.selected_worktree = Some(idx);
+                        app.select_active_rcr_session_for_current_worktree();
                         app.load_session_output();
                         app.invalidate_sidebar();
                     }

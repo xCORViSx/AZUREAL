@@ -634,6 +634,9 @@ pub async fn run_app(
             && now_poll.duration_since(app.last_auto_rebase_check) >= Duration::from_secs(2)
         {
             app.last_auto_rebase_check = now_poll;
+            if app.reconcile_rcr_after_external_git_resolution() {
+                needs_redraw = true;
+            }
             if !app.auto_rebase_enabled.is_empty() {
                 if auto_rebase::check_auto_rebase(app, &claude_process) {
                     needs_redraw = true;

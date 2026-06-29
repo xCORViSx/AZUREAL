@@ -174,7 +174,7 @@ fn radix_36(mut n: u64) -> String {
 }
 
 /// Get Claude's session file path for a given project path and session ID
-/// Claude stores sessions at: ~/.claude/projects/<encoded-path>/<session-id>.jsonl
+/// Claude stores sessions at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`.
 pub fn claude_session_file(project_path: &std::path::Path, session_id: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let encoded_path = encode_project_path(project_path);
@@ -426,7 +426,7 @@ fn codex_session_cwd(path: &std::path::Path) -> Option<String> {
 }
 
 /// Extract the UUID session ID from a Codex session filename.
-/// Format: rollout-YYYY-MM-DDThh-mm-ss-<UUID>.jsonl
+/// Format: `rollout-YYYY-MM-DDThh-mm-ss-<UUID>.jsonl`.
 /// The UUID is the last 36 characters before .jsonl
 fn codex_session_id_from_filename(filename: &str) -> Option<String> {
     let stem = filename.strip_suffix(".jsonl")?;

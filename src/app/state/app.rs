@@ -359,7 +359,7 @@ pub struct App {
     /// Cached rect for the worktree tab row (mouse click hit-testing)
     pub pane_worktree_tabs: ratatui::layout::Rect,
     /// Hit-test regions for worktree tab bar clicks: (x_start, x_end, tab_target)
-    /// None = [M] main branch tab, Some(idx) = worktree index
+    /// None means the `[M]` main branch tab, and Some(idx) means a worktree index.
     pub worktree_tab_hits: Vec<(u16, u16, Option<usize>)>,
     /// Cached rect for the status bar (mouse click → copy status message)
     pub pane_status: ratatui::layout::Rect,
@@ -560,7 +560,7 @@ pub struct App {
     /// Worktree Health panel — tabbed modal overlay with god file scanner,
     /// documentation coverage, and future health checks. None when closed.
     pub health_panel: Option<HealthPanel>,
-    /// Serial God File Modularization queue. Only one [GFM] agent runs at a time.
+    /// Serial God File Modularization queue. Only one `[GFM]` agent runs at a time.
     pub god_file_modularize_queue: Option<GodFileModularizeQueue>,
     /// Remembers which tab was last active so the panel reopens on the same tab
     pub last_health_tab: HealthTab,

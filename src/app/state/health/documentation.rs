@@ -213,7 +213,7 @@ impl App {
         self.set_status(msg);
     }
 
-    /// Spawn [DH] (Documentation Health) Claude sessions for all checked doc entries.
+    /// Spawn `[DH]` (Documentation Health) Claude sessions for all checked doc entries.
     /// Each checked file gets its own concurrent Claude process with a prompt
     /// instructing Claude to add missing doc comments to all documentable items.
     pub fn doc_health_spawn(&mut self, claude_process: &AgentProcess) {

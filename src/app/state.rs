@@ -35,6 +35,8 @@ mod output;
 pub(crate) mod project_snapshot;
 /// Hidden context payload assembly for continued prompts.
 mod prompt_context;
+/// Rebase-conflict-resolution recovery and stale-state reconciliation.
+mod rcr;
 /// Session, viewer, file tree, and terminal scrolling behavior.
 mod scroll;
 /// Persisted session display-name helpers.
