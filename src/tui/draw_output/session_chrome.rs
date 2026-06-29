@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::tui::util::AZURE;
+use crate::tui::util::{AZURE, GIT_ORANGE};
 
 /// Build the fully-decorated session pane block.
 ///
@@ -24,7 +24,11 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
     let is_focused = app.focus == crate::app::Focus::Session;
     let rcr_active = app.rcr_session_is_visible();
     let issue_active = app.issue_session.is_some();
-    let border_style = if rcr_active {
+    let compacting_active = app.current_session_is_compacting();
+    let border_style = if compacting_active {
+        // Compaction mode: orange chrome keeps background summarization visible.
+        Style::default().fg(GIT_ORANGE).add_modifier(Modifier::BOLD)
+    } else if rcr_active {
         // RCR mode: green borders to visually indicate active conflict resolution
         Style::default()
             .fg(Color::Green)
@@ -94,11 +98,13 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
 
     let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if is_focused || rcr_active || issue_active {
-            BorderType::Double
-        } else {
-            BorderType::Plain
-        })
+        .border_type(
+            if is_focused || rcr_active || issue_active || compacting_active {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            },
+        )
         .title(Span::styled(title.to_string(), border_style))
         .border_style(border_style);
 
@@ -120,7 +126,9 @@ pub(super) fn build_session_block(app: &App, area: Rect, title: &str) -> Block<'
             String::new()
         };
         if !bracketed.is_empty() {
-            let title_color = if rcr_active {
+            let title_color = if compacting_active {
+                GIT_ORANGE
+            } else if rcr_active {
                 Color::Green
             } else if issue_active {
                 AZURE

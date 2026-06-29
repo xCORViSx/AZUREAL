@@ -28,6 +28,49 @@ impl App {
             .unwrap_or(false)
     }
 
+    /// Return true when any session in the worktree is queued for, retrying,
+    /// or actively running a background compaction job.
+    pub fn is_worktree_compacting(&self, wt_path: &Path) -> bool {
+        self.compaction_needed
+            .as_ref()
+            .is_some_and(|(_, path)| path.as_path() == wt_path)
+            || self
+                .compaction_retry_needed
+                .as_ref()
+                .is_some_and(|(_, path)| path.as_path() == wt_path)
+            || self
+                .compaction_receivers
+                .values()
+                .any(|job| job.wt_path.as_path() == wt_path)
+    }
+
+    /// Return true when the specific store session is in the compaction
+    /// lifecycle, including queued work and empty-summary retry attempts.
+    pub fn is_session_compacting(&self, session_id: i64, wt_path: &Path) -> bool {
+        self.compaction_needed
+            .as_ref()
+            .is_some_and(|(sid, path)| *sid == session_id && path.as_path() == wt_path)
+            || self
+                .compaction_retry_needed
+                .as_ref()
+                .is_some_and(|(sid, path)| *sid == session_id && path.as_path() == wt_path)
+            || self
+                .compaction_receivers
+                .values()
+                .any(|job| job.session_id == session_id && job.wt_path.as_path() == wt_path)
+    }
+
+    /// Return true when the currently visible session pane target is in the
+    /// compaction lifecycle.
+    pub fn current_session_is_compacting(&self) -> bool {
+        let Some(session_id) = self.current_session_id else {
+            return false;
+        };
+        self.current_worktree()
+            .and_then(|worktree| worktree.worktree_path.as_deref())
+            .is_some_and(|wt_path| self.is_session_compacting(session_id, wt_path))
+    }
+
     /// True if the ACTIVE slot (the one feeding display_events) is running
     pub fn is_active_slot_running(&self) -> bool {
         self.current_worktree()
@@ -199,9 +242,35 @@ fn status_priority(status: &WorktreeStatus) -> u8 {
 /// Tests for project, worktree, slot, and status query helpers.
 mod tests {
     use super::*;
+    use crate::app::state::CompactionJob;
     use crate::app::types::RcrSession;
+    use crate::backend::Backend;
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::mpsc;
+
+    /// Build a focused worktree fixture for query helper tests.
+    fn test_worktree(branch_name: &str, wt_path: PathBuf) -> Worktree {
+        Worktree {
+            branch_name: branch_name.into(),
+            worktree_path: Some(wt_path),
+            claude_session_id: None,
+            archived: false,
+        }
+    }
+
+    /// Build a compaction job fixture whose receiver never yields events.
+    fn test_compaction_job(session_id: i64, wt_path: PathBuf) -> CompactionJob {
+        let (_tx, rx) = mpsc::channel();
+        CompactionJob {
+            rx,
+            session_id,
+            boundary_seq: 0,
+            wt_path,
+            backend: Backend::Claude,
+            model_label: "test".into(),
+        }
+    }
 
     /// Slot reverse lookup should find the owning branch without allocating a probe String.
     #[test]
@@ -294,5 +363,56 @@ mod tests {
 
         assert!(!app.rcr_session_is_visible());
         assert!(!app.is_viewing_slot_target("42"));
+    }
+
+    /// Visible-session compaction follows the target session id and worktree path.
+    #[test]
+    fn current_session_is_compacting_for_visible_running_job() {
+        let mut app = App::new();
+        let wt_path = PathBuf::from("/tmp/compacting-visible");
+        app.worktrees
+            .push(test_worktree("feature", wt_path.clone()));
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(7);
+        app.compaction_receivers
+            .insert("99".into(), test_compaction_job(7, wt_path.clone()));
+
+        assert!(app.current_session_is_compacting());
+        assert!(app.is_session_compacting(7, &wt_path));
+        assert!(app.is_worktree_compacting(&wt_path));
+    }
+
+    /// Hidden sessions do not make the current session pane look like it is compacting.
+    #[test]
+    fn current_session_is_not_compacting_for_different_session() {
+        let mut app = App::new();
+        let wt_path = PathBuf::from("/tmp/compacting-hidden");
+        app.worktrees
+            .push(test_worktree("feature", wt_path.clone()));
+        app.selected_worktree = Some(0);
+        app.current_session_id = Some(8);
+        app.compaction_receivers
+            .insert("99".into(), test_compaction_job(7, wt_path.clone()));
+
+        assert!(!app.current_session_is_compacting());
+        assert!(!app.is_session_compacting(8, &wt_path));
+        assert!(app.is_worktree_compacting(&wt_path));
+    }
+
+    /// Queued and retrying compactions are included so tab color does not flicker.
+    #[test]
+    fn compaction_queries_include_pending_and_retry_lifecycle() {
+        let mut app = App::new();
+        let pending_path = PathBuf::from("/tmp/compacting-pending");
+        let retry_path = PathBuf::from("/tmp/compacting-retry");
+
+        app.compaction_needed = Some((3, pending_path.clone()));
+        app.compaction_retry_needed = Some((5, retry_path.clone()));
+
+        assert!(app.is_session_compacting(3, &pending_path));
+        assert!(app.is_worktree_compacting(&pending_path));
+        assert!(app.is_session_compacting(5, &retry_path));
+        assert!(app.is_worktree_compacting(&retry_path));
+        assert!(!app.is_session_compacting(3, &retry_path));
     }
 }
