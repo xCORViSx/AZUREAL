@@ -1,6 +1,7 @@
 //! Git Actions panel types — commits, changed files, overlays, and background operation types
 
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 
 /// A commit entry for the Git panel's commit log pane
 #[derive(Debug, Clone)]
@@ -183,6 +184,7 @@ pub struct GitActionsPanel {
     pub cached_total_del: usize,
 }
 
+/// Behavior helpers for Git Actions panel cached state.
 impl GitActionsPanel {
     /// Recompute cached file stats from changed_files.
     /// Call after any mutation to changed_files or staged flags.
@@ -320,4 +322,83 @@ pub enum BackgroundRebaseOutcome {
     },
     /// Rebase failed with error
     Failed(String),
+}
+
+/// State for one in-flight auto-rebase batch coordinator.
+pub struct AutoRebaseBatch {
+    /// Receiver for per-worktree results produced by bounded worker threads.
+    pub receiver: Receiver<AutoRebaseProgress>,
+    /// Total number of worktrees captured when the batch started.
+    pub total: usize,
+    /// Number of worktree results received so far.
+    pub completed: usize,
+    /// Number of worker threads used for the batch.
+    pub max_workers: usize,
+    /// Display names for worktrees that rebased successfully.
+    pub rebased: Vec<String>,
+    /// Human-readable failures reported by workers, including push failures.
+    pub failures: Vec<String>,
+    /// Count of worktrees skipped by worker-side safety checks.
+    pub skipped: usize,
+    /// Count of worktrees whose rebase stopped on conflicts.
+    pub conflicts: usize,
+}
+
+/// Conflict payload from auto-rebase that must be shown through serialized UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoRebaseConflict {
+    /// Branch name for the conflicted worktree.
+    pub branch: String,
+    /// Branch display name without the Azureal prefix.
+    pub display_name: String,
+    /// Worktree path whose rebase is left in progress.
+    pub worktree_path: PathBuf,
+    /// Files with conflict markers that need resolution.
+    pub conflicted_files: Vec<String>,
+    /// Files Git or auto-resolve merged without conflict markers.
+    pub auto_merged_files: Vec<String>,
+}
+
+/// Per-worktree result sent by an auto-rebase worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoRebaseProgress {
+    /// Branch name for the worktree that finished processing.
+    pub branch: String,
+    /// User-facing branch display name.
+    pub display_name: String,
+    /// Filesystem path to the processed worktree.
+    pub worktree_path: PathBuf,
+    /// Final outcome for this worktree.
+    pub outcome: AutoRebaseOutcome,
+}
+
+/// Final outcome for one worktree in an auto-rebase batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AutoRebaseOutcome {
+    /// Worktree already contained the chosen main tip.
+    UpToDate,
+    /// Rebase changed history; push may still have failed independently.
+    Rebased {
+        /// True when the rebased branch was pushed to origin.
+        pushed: bool,
+        /// Push failure message, when rebase succeeded but push did not.
+        push_error: Option<String>,
+    },
+    /// Rebase stopped on conflicts and left the worktree in rebase state.
+    Conflict {
+        /// Files with conflict markers that need resolution.
+        conflicted_files: Vec<String>,
+        /// Files Git or auto-resolve merged without conflict markers.
+        auto_merged_files: Vec<String>,
+    },
+    /// Worker skipped the worktree before rebasing because a safety check failed.
+    Skipped {
+        /// Human-readable reason for the skip.
+        reason: String,
+    },
+    /// Rebase failed without producing a conflict state that RCR can resolve.
+    Failed {
+        /// Human-readable failure message.
+        message: String,
+    },
 }

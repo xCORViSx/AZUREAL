@@ -43,10 +43,10 @@ use super::DisplayEvent;
 use crate::app::prompt_history::PromptHistoryStore;
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{
-    BranchDialog, FileTreeAction, FileTreeEntry, Focus, GitActionsPanel, GodFileModularizeQueue,
-    HealthPanel, HealthTab, IssueSession, IssuesPanel, PostMergeDialog, PresetPrompt,
-    PresetPromptDialog, PresetPromptPicker, ProjectsPanel, RcrSession, RunCommand,
-    RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode,
+    AutoRebaseBatch, AutoRebaseConflict, BranchDialog, FileTreeAction, FileTreeEntry, Focus,
+    GitActionsPanel, GodFileModularizeQueue, HealthPanel, HealthTab, IssueSession, IssuesPanel,
+    PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel,
+    RcrSession, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode,
 };
 use crate::backend::Backend;
 use crate::events::EventParser;
@@ -56,11 +56,17 @@ use crate::tui::render_thread::RenderThread;
 
 /// Metadata for a running compaction agent.
 pub struct CompactionJob {
+    /// Receiver for the compaction agent's streaming events.
     pub rx: Receiver<crate::claude::AgentEvent>,
+    /// Store session being compacted.
     pub session_id: i64,
+    /// Event sequence that marks the compaction boundary.
     pub boundary_seq: i64,
+    /// Worktree path that owns the compacted session.
     pub wt_path: PathBuf,
+    /// Agent backend used for the compaction run.
     pub backend: Backend,
+    /// Display label for the model used by the compaction run.
     pub model_label: String,
 }
 
@@ -598,6 +604,10 @@ pub struct App {
     pub last_auto_rebase_check: std::time::Instant,
     /// Auto-rebase success dialog: (branch_display_names, dismiss_at). Shown for 2 seconds.
     pub auto_rebase_success_until: Option<(Vec<String>, std::time::Instant)>,
+    /// In-flight bounded auto-rebase batch, if one is currently running.
+    pub auto_rebase_batch: Option<AutoRebaseBatch>,
+    /// Auto-rebase conflicts waiting for serialized conflict/RCR UI.
+    pub pending_auto_rebase_conflicts: VecDeque<AutoRebaseConflict>,
     /// True when user is browsing the main/master branch (via Shift+M).
     /// Main acts like any other worktree — the ★ yellow tab is visual distinction only.
     pub browsing_main: bool,
@@ -930,6 +940,8 @@ impl App {
             auto_rebase_enabled: HashSet::new(), // populated from azufig in load()
             last_auto_rebase_check: std::time::Instant::now(),
             auto_rebase_success_until: None,
+            auto_rebase_batch: None,
+            pending_auto_rebase_conflicts: VecDeque::new(),
             browsing_main: false,
             pre_main_browse_selection: None,
             main_worktree: None,

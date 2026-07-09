@@ -2,7 +2,7 @@
 //!
 //! Polls mpsc receivers for: commit message generation, squash merge progress,
 //! generic background ops (archive/unarchive/create/delete/push/pull/rename),
-//! and rebase operations.
+//! manual rebase operations, and auto-rebase batch completion.
 
 use crate::app::App;
 
@@ -325,7 +325,8 @@ pub fn poll_background_ops(app: &mut App) -> bool {
 }
 
 /// Poll background rebase operations (separate from generic ops because
-/// rebase has conflict overlay handling). Returns true if needs redraw.
+/// rebase has conflict overlay handling) and auto-rebase batch results.
+/// Returns true if needs redraw.
 pub fn poll_rebase_ops(app: &mut App) -> bool {
     use crate::app::types::BackgroundRebaseOutcome;
 
@@ -380,9 +381,13 @@ pub fn poll_rebase_ops(app: &mut App) -> bool {
             }
         }
     }
+    if super::auto_rebase::poll_auto_rebase_batch(app) {
+        redraw = true;
+    }
     redraw
 }
 
+/// Tests for Git background operation polling side effects.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,6 +395,7 @@ mod tests {
     use crate::models::Worktree;
     use std::path::PathBuf;
 
+    /// Build an app with representative per-branch state for deletion outcomes.
     fn app_with_delete_state(branch: &str, slot: &str) -> App {
         let mut app = App::new();
         app.worktrees.push(Worktree {
@@ -426,6 +432,7 @@ mod tests {
         app
     }
 
+    /// Deliver a single generic background operation outcome to the app.
     fn deliver_background_outcome(app: &mut App, outcome: BackgroundOpOutcome) {
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(BackgroundOpProgress {
@@ -436,6 +443,7 @@ mod tests {
         app.background_op_receiver = Some(rx);
     }
 
+    /// Deleted worktrees clear all live and persisted branch-side state.
     #[test]
     fn deleted_outcome_cleans_branch_state() {
         let branch = "azureal/delete-me";
@@ -467,6 +475,7 @@ mod tests {
         assert_eq!(app.status_message.as_deref(), Some("Deleted: delete-me"));
     }
 
+    /// Archiving clears live branch state while preserving session history.
     #[test]
     fn archived_outcome_cleans_live_state_preserves_branch_sessions() {
         let branch = "azureal/archive-me";
@@ -496,6 +505,7 @@ mod tests {
         assert_eq!(app.status_message.as_deref(), Some("Session archived"));
     }
 
+    /// Partial delete failures preserve sessions but clear live worktree state.
     #[test]
     fn branch_delete_failure_after_worktree_removal_preserves_sessions_but_clears_live_state() {
         let branch = "azureal/partial-delete";
@@ -533,6 +543,7 @@ mod tests {
         );
     }
 
+    /// Failed background operations leave branch state untouched.
     #[test]
     fn failed_outcome_preserves_branch_state() {
         let branch = "azureal/keep-me";
