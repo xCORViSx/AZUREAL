@@ -40,6 +40,7 @@ use portable_pty::{Child as PtyChild, MasterPty};
 use super::project_snapshot::ProjectSnapshot;
 use super::AgentEvent;
 use super::DisplayEvent;
+use crate::app::prompt_draft::PromptInputDraft;
 use crate::app::prompt_history::PromptHistoryStore;
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{
@@ -94,6 +95,10 @@ pub struct App {
     pub input_cursor: usize,
     /// Selection range in prompt input: (start, end) as char indices
     pub input_selection: Option<(usize, usize)>,
+    /// Saved prompt-box drafts keyed by worktree identity.
+    pub(crate) prompt_drafts: HashMap<String, PromptInputDraft>,
+    /// Worktree key currently loaded into the shared prompt-box fields.
+    pub(crate) active_prompt_draft_key: Option<String>,
     /// Delete worktree confirmation dialog (⌘d)
     pub delete_worktree_dialog: Option<crate::app::types::DeleteWorktreeDialog>,
     /// Rename worktree dialog (W r)
@@ -715,6 +720,8 @@ impl App {
             input: String::new(),
             input_cursor: 0,
             input_selection: None,
+            prompt_drafts: HashMap::new(),
+            active_prompt_draft_key: None,
             delete_worktree_dialog: None,
             rename_worktree_dialog: None,
             view_mode: ViewMode::Session,

@@ -16,6 +16,8 @@ pub(crate) mod codex_session_parser;
 pub(crate) mod context_injection;
 /// Prompt input editing and history navigation methods.
 mod input;
+/// Worktree-scoped prompt draft storage and reconciliation.
+mod prompt_draft;
 /// Session-independent prompt input history.
 pub(crate) mod prompt_history;
 /// Claude JSONL parsing for persisted Claude Code sessions.

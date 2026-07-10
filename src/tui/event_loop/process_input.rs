@@ -54,18 +54,21 @@ pub fn process_input_event(
     cached_width: &mut u16,
     cached_height: &mut u16,
 ) -> Result<()> {
+    if app.sync_prompt_draft_to_current_worktree() {
+        *needs_redraw = true;
+    }
+
     match evt {
+        Event::Key(key) if matches!(key.code, KeyCode::Modifier(_)) => {}
         Event::Key(key) => {
             // Input thread already filters to Press/Repeat only
-            if !matches!(key.code, KeyCode::Modifier(_)) {
-                if is_auto_prompt_toggle_key(key) && !ctrl_a_belongs_to_existing_mode(app) {
-                    toggle_auto_prompt(app);
-                    *needs_redraw = true;
-                } else {
-                    handle_key_event(key, app, claude_process)?;
-                }
-                *had_key_event = true;
+            if is_auto_prompt_toggle_key(key) && !ctrl_a_belongs_to_existing_mode(app) {
+                toggle_auto_prompt(app);
+                *needs_redraw = true;
+            } else {
+                handle_key_event(key, app, claude_process)?;
             }
+            *had_key_event = true;
         }
         Event::Mouse(mouse) => match mouse.kind {
             MouseEventKind::ScrollDown => {
@@ -130,11 +133,12 @@ pub fn process_input_event(
                     *needs_redraw = true;
                 }
             }
-            MouseEventKind::Drag(MouseButton::Left) => {
-                if handle_mouse_drag(app, mouse.column, mouse.row) {
-                    *needs_redraw = true;
-                }
+            MouseEventKind::Drag(MouseButton::Left)
+                if handle_mouse_drag(app, mouse.column, mouse.row) =>
+            {
+                *needs_redraw = true;
             }
+            MouseEventKind::Drag(MouseButton::Left) => {}
             MouseEventKind::Up(MouseButton::Left) => {
                 app.mouse_drag_start = None;
             }
@@ -218,6 +222,9 @@ pub fn process_input_event(
             *needs_redraw = true;
         }
         _ => {}
+    }
+    if app.sync_prompt_draft_to_current_worktree() {
+        *needs_redraw = true;
     }
     Ok(())
 }
