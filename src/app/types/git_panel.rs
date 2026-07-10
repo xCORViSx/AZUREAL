@@ -324,10 +324,34 @@ pub enum BackgroundRebaseOutcome {
     Failed(String),
 }
 
+/// Stable identity for an auto-rebase scan that has already completed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoRebaseFingerprint {
+    /// Exact main commit all jobs rebased against.
+    pub main_tip: String,
+    /// Sorted worktree state entries included in the batch.
+    pub jobs: Vec<AutoRebaseFingerprintJob>,
+}
+
+/// One worktree state entry inside an auto-rebase fingerprint.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AutoRebaseFingerprintJob {
+    /// Branch name for the enabled worktree.
+    pub branch: String,
+    /// Current `HEAD` commit when the batch was scheduled, or `None` for unborn heads.
+    pub head: Option<String>,
+    /// Raw porcelain status when the batch was scheduled.
+    pub status: String,
+    /// Worktree path used when the batch was built.
+    pub worktree_path: PathBuf,
+}
+
 /// State for one in-flight auto-rebase batch coordinator.
 pub struct AutoRebaseBatch {
     /// Receiver for per-worktree results produced by bounded worker threads.
     pub receiver: Receiver<AutoRebaseProgress>,
+    /// Fingerprint this batch records once all jobs report.
+    pub fingerprint: AutoRebaseFingerprint,
     /// Total number of worktrees captured when the batch started.
     pub total: usize,
     /// Number of worktree results received so far.

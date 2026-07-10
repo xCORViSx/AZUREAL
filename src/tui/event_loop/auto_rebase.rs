@@ -12,7 +12,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::app::types::{
-    AutoRebaseBatch, AutoRebaseConflict, AutoRebaseOutcome, AutoRebaseProgress, GitConflictOverlay,
+    AutoRebaseBatch, AutoRebaseConflict, AutoRebaseFingerprint, AutoRebaseFingerprintJob,
+    AutoRebaseOutcome, AutoRebaseProgress, GitConflictOverlay,
 };
 use crate::app::App;
 use crate::backend::AgentProcess;
@@ -32,6 +33,10 @@ struct AutoRebaseJob {
     branch: String,
     /// User-facing branch label with the Azureal prefix stripped.
     display_name: String,
+    /// `HEAD` commit observed when the scheduler captured the job.
+    head: Option<String>,
+    /// Porcelain status observed when the scheduler captured the job.
+    status: String,
     /// Filesystem path to the worktree.
     worktree_path: PathBuf,
 }
@@ -39,6 +44,8 @@ struct AutoRebaseJob {
 /// Summary data copied out of a finished batch before clearing its receiver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AutoRebaseSummary {
+    /// Fingerprint for the completed batch.
+    fingerprint: AutoRebaseFingerprint,
     /// Number of worktree jobs captured at batch start.
     total: usize,
     /// Number of worktree jobs reported before completion or disconnection.
@@ -87,11 +94,17 @@ pub fn check_auto_rebase(app: &mut App, _claude_process: &AgentProcess) -> bool 
         return true;
     };
 
+    let fingerprint = auto_rebase_fingerprint(&target_ref, &jobs);
+    if auto_rebase_fingerprint_already_completed(app, &fingerprint) {
+        return false;
+    }
+
     let total = jobs.len();
     let max_workers = auto_rebase_worker_count(total);
     let receiver = spawn_auto_rebase_batch(jobs, target_ref, max_workers);
     app.auto_rebase_batch = Some(AutoRebaseBatch {
         receiver,
+        fingerprint,
         total,
         completed: 0,
         max_workers,
@@ -144,9 +157,12 @@ fn collect_auto_rebase_jobs(
         })
         .filter_map(|worktree| {
             let worktree_path = worktree.worktree_path.clone()?;
+            let (head, status) = auto_rebase_job_state(&worktree_path);
             Some(AutoRebaseJob {
                 display_name: crate::models::strip_branch_prefix(&worktree.branch_name).to_string(),
                 branch: worktree.branch_name.clone(),
+                head,
+                status,
                 worktree_path,
             })
         })
@@ -181,6 +197,53 @@ fn auto_rebase_worker_count(total_jobs: usize) -> usize {
         .map(usize::from)
         .unwrap_or(1);
     total_jobs.min(available).clamp(1, AUTO_REBASE_WORKER_CAP)
+}
+
+/// Read the worktree state that invalidates an already-completed batch.
+fn auto_rebase_job_state(worktree_path: &Path) -> (Option<String>, String) {
+    let head = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(worktree_path)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|head| !head.is_empty());
+    let status = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(worktree_path)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+        .unwrap_or_default();
+    (head, status)
+}
+
+/// Build a stable identity for a candidate auto-rebase scan.
+fn auto_rebase_fingerprint(main_tip: &str, jobs: &[AutoRebaseJob]) -> AutoRebaseFingerprint {
+    let mut fingerprint_jobs: Vec<_> = jobs
+        .iter()
+        .map(|job| AutoRebaseFingerprintJob {
+            branch: job.branch.clone(),
+            head: job.head.clone(),
+            status: job.status.clone(),
+            worktree_path: job.worktree_path.clone(),
+        })
+        .collect();
+    fingerprint_jobs.sort();
+    AutoRebaseFingerprint {
+        main_tip: main_tip.to_string(),
+        jobs: fingerprint_jobs,
+    }
+}
+
+/// Return true when this exact auto-rebase scan already completed.
+fn auto_rebase_fingerprint_already_completed(
+    app: &App,
+    fingerprint: &AutoRebaseFingerprint,
+) -> bool {
+    app.last_auto_rebase_fingerprint.as_ref() == Some(fingerprint)
 }
 
 /// Spawn the coordinator that owns the bounded worker pool.
@@ -308,6 +371,7 @@ fn drain_auto_rebase_batch(app: &mut App) -> bool {
         let stopped_early = disconnected && batch.completed < batch.total;
         if stopped_early || batch.completed >= batch.total {
             Some(AutoRebaseSummary {
+                fingerprint: batch.fingerprint.clone(),
                 total: batch.total,
                 completed: batch.completed,
                 max_workers: batch.max_workers,
@@ -382,6 +446,10 @@ fn record_auto_rebase_progress(
 
 /// Apply completion status, toast state, and redraw invalidation for a batch.
 fn complete_auto_rebase_batch(app: &mut App, summary: AutoRebaseSummary) {
+    if !summary.stopped_early {
+        app.last_auto_rebase_fingerprint = Some(summary.fingerprint.clone());
+    }
+
     if !summary.rebased.is_empty() {
         app.auto_rebase_success_until = Some((
             summary.rebased.clone(),
@@ -522,6 +590,7 @@ mod tests {
         let (_tx, rx) = mpsc::channel();
         AutoRebaseBatch {
             receiver: rx,
+            fingerprint: dummy_fingerprint(),
             total,
             completed: 0,
             max_workers: 1,
@@ -529,6 +598,19 @@ mod tests {
             failures: Vec::new(),
             skipped: 0,
             conflicts: 0,
+        }
+    }
+
+    /// Build a stable fingerprint fixture for auto-rebase completion tests.
+    fn dummy_fingerprint() -> AutoRebaseFingerprint {
+        AutoRebaseFingerprint {
+            main_tip: "main-tip".to_string(),
+            jobs: vec![AutoRebaseFingerprintJob {
+                branch: "azureal/conflict".to_string(),
+                head: Some("head".to_string()),
+                status: String::new(),
+                worktree_path: PathBuf::from("/tmp/conflict"),
+            }],
         }
     }
 
@@ -599,6 +681,59 @@ mod tests {
         assert!(many <= AUTO_REBASE_WORKER_CAP);
     }
 
+    /// Fingerprints sort jobs so a stable batch is not repeated due to list order.
+    #[test]
+    fn fingerprint_sorts_jobs_for_stable_duplicate_detection() {
+        let first = vec![
+            AutoRebaseJob {
+                branch: "azureal/b".to_string(),
+                display_name: "b".to_string(),
+                head: Some("head-b".to_string()),
+                status: String::new(),
+                worktree_path: PathBuf::from("/tmp/b"),
+            },
+            AutoRebaseJob {
+                branch: "azureal/a".to_string(),
+                display_name: "a".to_string(),
+                head: Some("head-a".to_string()),
+                status: String::new(),
+                worktree_path: PathBuf::from("/tmp/a"),
+            },
+        ];
+        let second = vec![first[1].clone(), first[0].clone()];
+
+        assert_eq!(
+            auto_rebase_fingerprint("main-tip", &first),
+            auto_rebase_fingerprint("main-tip", &second)
+        );
+    }
+
+    /// A completed fingerprint suppresses the next identical scheduler pass.
+    #[test]
+    fn completed_fingerprint_suppresses_duplicate_batch() {
+        let fingerprint = dummy_fingerprint();
+        let mut app = App::new();
+        app.last_auto_rebase_fingerprint = Some(fingerprint.clone());
+
+        assert!(auto_rebase_fingerprint_already_completed(
+            &app,
+            &fingerprint
+        ));
+    }
+
+    /// A dirty-state change invalidates the completed fingerprint and allows retry.
+    #[test]
+    fn changed_worktree_status_invalidates_completed_fingerprint() {
+        let completed = dummy_fingerprint();
+        let mut changed = completed.clone();
+        changed.jobs[0].status = " M src/lib.rs\n".to_string();
+
+        let mut app = App::new();
+        app.last_auto_rebase_fingerprint = Some(completed);
+
+        assert!(!auto_rebase_fingerprint_already_completed(&app, &changed));
+    }
+
     /// An existing conflict overlay is active conflict UI and blocks new batches.
     #[test]
     fn conflict_overlay_blocks_starting_new_batch() {
@@ -652,6 +787,7 @@ mod tests {
         app.rcr_session = Some(dummy_rcr_session());
         app.auto_rebase_batch = Some(AutoRebaseBatch {
             receiver: rx,
+            fingerprint: dummy_fingerprint(),
             total: 1,
             completed: 0,
             max_workers: 1,

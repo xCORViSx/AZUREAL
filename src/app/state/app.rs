@@ -43,10 +43,11 @@ use super::DisplayEvent;
 use crate::app::prompt_history::PromptHistoryStore;
 use crate::app::terminal::SessionTerminal;
 use crate::app::types::{
-    AutoRebaseBatch, AutoRebaseConflict, BranchDialog, FileTreeAction, FileTreeEntry, Focus,
-    GitActionsPanel, GodFileModularizeQueue, HealthPanel, HealthTab, IssueSession, IssuesPanel,
-    PostMergeDialog, PresetPrompt, PresetPromptDialog, PresetPromptPicker, ProjectsPanel,
-    RcrSession, RunCommand, RunCommandDialog, RunCommandPicker, ViewMode, ViewerMode,
+    AutoRebaseBatch, AutoRebaseConflict, AutoRebaseFingerprint, BranchDialog, FileTreeAction,
+    FileTreeEntry, Focus, GitActionsPanel, GodFileModularizeQueue, HealthPanel, HealthTab,
+    IssueSession, IssuesPanel, PostMergeDialog, PresetPrompt, PresetPromptDialog,
+    PresetPromptPicker, ProjectsPanel, RcrSession, RunCommand, RunCommandDialog, RunCommandPicker,
+    ViewMode, ViewerMode,
 };
 use crate::backend::Backend;
 use crate::events::EventParser;
@@ -602,6 +603,8 @@ pub struct App {
     pub auto_rebase_enabled: HashSet<String>,
     /// Throttle for periodic auto-rebase checks (every 2 seconds)
     pub last_auto_rebase_check: std::time::Instant,
+    /// Last finished batch identity, used to suppress repeated no-op batches.
+    pub last_auto_rebase_fingerprint: Option<AutoRebaseFingerprint>,
     /// Auto-rebase success dialog: (branch_display_names, dismiss_at). Shown for 2 seconds.
     pub auto_rebase_success_until: Option<(Vec<String>, std::time::Instant)>,
     /// In-flight bounded auto-rebase batch, if one is currently running.
@@ -939,6 +942,7 @@ impl App {
             issue_submit_receiver: None,
             auto_rebase_enabled: HashSet::new(), // populated from azufig in load()
             last_auto_rebase_check: std::time::Instant::now(),
+            last_auto_rebase_fingerprint: None,
             auto_rebase_success_until: None,
             auto_rebase_batch: None,
             pending_auto_rebase_conflicts: VecDeque::new(),
