@@ -70,7 +70,9 @@ struct IncrementalState {
     tool_calls: HashMap<String, (String, Option<String>)>,
 }
 
+/// Reconstructs pending tool and message state when parsing an appended JSONL suffix.
 impl IncrementalState {
+    /// Seeds incremental correlation state from events already loaded for the session.
     fn from_events(events: &[DisplayEvent]) -> Self {
         let mut tool_calls = HashMap::new();
         for event in events {
@@ -108,10 +110,8 @@ fn parse_from(
     };
     let mut reader = BufReader::new(file);
 
-    if start_offset > 0 {
-        if reader.seek(SeekFrom::Start(start_offset)).is_err() {
-            return empty_parsed();
-        }
+    if start_offset > 0 && reader.seek(SeekFrom::Start(start_offset)).is_err() {
+        return empty_parsed();
     }
 
     let mut line = String::new();
@@ -302,9 +302,10 @@ fn parse_response_item(
                 .unwrap_or("shell_command");
 
             // Map Codex tool names to display names
-            let (tool_name, file_path) = map_codex_tool(name, payload);
+            let (tool_name, file_path) =
+                crate::events::codex_tool_payload::map_codex_tool(name, payload);
 
-            let input = build_tool_input(name, payload);
+            let input = crate::events::codex_tool_payload::build_tool_input(name, payload);
 
             events.push(DisplayEvent::ToolCall {
                 _uuid: String::new(),
@@ -367,8 +368,9 @@ fn parse_response_item(
                 .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("custom_tool");
-            let (tool_name, file_path) = map_codex_tool(name, payload);
-            let input = build_tool_input(name, payload);
+            let (tool_name, file_path) =
+                crate::events::codex_tool_payload::map_codex_tool(name, payload);
+            let input = crate::events::codex_tool_payload::build_tool_input(name, payload);
 
             events.push(DisplayEvent::ToolCall {
                 _uuid: String::new(),
@@ -437,6 +439,7 @@ fn parse_response_item(
     }
 }
 
+/// Parses a command item as it starts and records it for completion matching.
 fn parse_item_started(
     item: &serde_json::Value,
     events: &mut Vec<DisplayEvent>,
@@ -468,6 +471,7 @@ fn parse_item_started(
     }
 }
 
+/// Parses a completed response item into display events and resolves pending tools.
 fn parse_item_completed(
     item: &serde_json::Value,
     events: &mut Vec<DisplayEvent>,
@@ -648,6 +652,7 @@ fn parse_item_completed(
     }
 }
 
+/// Returns whether the same user message occurs in the current recent turn segment.
 fn recent_user_message_matches(events: &[DisplayEvent], text: &str) -> bool {
     for event in events.iter().rev().take(12) {
         match event {
@@ -661,6 +666,7 @@ fn recent_user_message_matches(events: &[DisplayEvent], text: &str) -> bool {
     false
 }
 
+/// Returns whether the same assistant text occurs in the current recent turn segment.
 fn recent_assistant_text_matches(events: &[DisplayEvent], text: &str) -> bool {
     for event in events.iter().rev().take(20) {
         match event {
@@ -674,6 +680,7 @@ fn recent_assistant_text_matches(events: &[DisplayEvent], text: &str) -> bool {
     false
 }
 
+/// Checks whether a reconstructed message duplicates recent stored output.
 fn is_recent_message_duplicate(events: &[DisplayEvent], event: &DisplayEvent) -> bool {
     match event {
         DisplayEvent::UserMessage { content, .. } => recent_user_message_matches(events, content),
@@ -785,123 +792,7 @@ fn extract_message_text(content: Option<&serde_json::Value>) -> String {
     }
 }
 
-/// Map Codex tool names to Azureal display names
-fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<String>) {
-    match name {
-        "shell_command" => {
-            let args = parse_tool_args(payload);
-            let workdir = args
-                .as_object()
-                .and_then(|a| a.get("workdir"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            ("Bash".to_string(), workdir)
-        }
-        "exec_command" | "write_stdin" => ("Bash".to_string(), None),
-        "apply_patch" => {
-            // Extract file path from patch content if possible
-            let args = payload
-                .get("arguments")
-                .and_then(|v| v.as_str())
-                .or_else(|| payload.get("input").and_then(|v| v.as_str()));
-            let file_path = args.and_then(|s| {
-                // Look for "*** Update File: <path>" or "*** Add File: <path>"
-                for line in s.lines() {
-                    if let Some(rest) = line.strip_prefix("*** Update File: ") {
-                        return Some(rest.trim().to_string());
-                    }
-                    if let Some(rest) = line.strip_prefix("*** Add File: ") {
-                        return Some(rest.trim().to_string());
-                    }
-                }
-                None
-            });
-            ("Edit".to_string(), file_path)
-        }
-        _ => (name.to_string(), None),
-    }
-}
-
-/// Build a serde_json::Value input for tool display
-fn build_tool_input(name: &str, payload: &serde_json::Value) -> serde_json::Value {
-    match name {
-        "shell_command" => parse_tool_args(payload),
-        "exec_command" => normalize_exec_command_input(parse_tool_args(payload)),
-        "write_stdin" => normalize_write_stdin_input(parse_tool_args(payload)),
-        "apply_patch" => {
-            let patch = payload
-                .get("arguments")
-                .and_then(|v| v.as_str())
-                .or_else(|| payload.get("input").and_then(|v| v.as_str()))
-                .unwrap_or("");
-            serde_json::json!({ "patch": patch })
-        }
-        _ => parse_tool_args(payload),
-    }
-}
-
-fn parse_tool_args(payload: &serde_json::Value) -> serde_json::Value {
-    let args_str = payload
-        .get("arguments")
-        .and_then(|v| v.as_str())
-        .or_else(|| payload.get("input").and_then(|v| v.as_str()))
-        .unwrap_or("{}");
-    serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
-}
-
-fn normalize_exec_command_input(mut args: serde_json::Value) -> serde_json::Value {
-    let command = args
-        .get("command")
-        .or_else(|| args.get("cmd"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    insert_command_field(&mut args, command);
-    args
-}
-
-fn normalize_write_stdin_input(mut args: serde_json::Value) -> serde_json::Value {
-    let command = describe_write_stdin_action(&args);
-    insert_command_field(&mut args, command);
-    args
-}
-
-fn insert_command_field(args: &mut serde_json::Value, command: String) {
-    match args {
-        serde_json::Value::Object(map) => {
-            map.insert("command".into(), serde_json::json!(command));
-        }
-        _ => {
-            *args = serde_json::json!({ "command": command });
-        }
-    }
-}
-
-fn describe_write_stdin_action(args: &serde_json::Value) -> String {
-    let session_suffix = args
-        .get("session_id")
-        .map(|v| match v {
-            serde_json::Value::String(s) => format!(" {}", s),
-            serde_json::Value::Number(n) => format!(" {}", n),
-            _ => String::new(),
-        })
-        .unwrap_or_default();
-    let chars = args.get("chars").and_then(|v| v.as_str()).unwrap_or("");
-    if chars.is_empty() {
-        return format!("poll session{session_suffix}");
-    }
-    if chars == "\u{3}" {
-        return format!("send Ctrl-C to session{session_suffix}");
-    }
-    let escaped = chars.escape_default().to_string();
-    let preview = if escaped.chars().count() > 32 {
-        format!("{}...", escaped.chars().take(29).collect::<String>())
-    } else {
-        escaped
-    };
-    format!("send \"{preview}\" to session{session_suffix}")
-}
-
+/// Removes Codex CLI result envelopes while retaining meaningful stored output.
 fn normalize_tool_output(tool_name: &str, output: String) -> String {
     let output = unwrap_tool_output_envelope(&output).unwrap_or(output);
 
@@ -938,6 +829,7 @@ fn normalize_tool_output(tool_name: &str, output: String) -> String {
     output
 }
 
+/// Extracts output text from a JSON-encoded custom-tool result envelope.
 fn unwrap_tool_output_envelope(output: &str) -> Option<String> {
     let json: serde_json::Value = serde_json::from_str(output).ok()?;
     let inner = json.get("output").and_then(|v| v.as_str())?;
@@ -977,9 +869,11 @@ fn empty_parsed() -> ParsedSession {
     }
 }
 
+/// Regression coverage for full and incremental Codex session-file parsing.
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::codex_tool_payload::map_codex_tool;
     use std::io::Write;
 
     /// Helper: write JSONL lines to a temp file and parse
@@ -996,6 +890,7 @@ mod tests {
     // ── session_meta ──
 
     #[test]
+    /// Covers the session meta produces init regression case.
     fn test_session_meta_produces_init() {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"abc-123","cwd":"/home/user/project","originator":"codex_cli","cli_version":"0.77.0"}}"#,
@@ -1016,6 +911,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the session meta missing cwd regression case.
     fn test_session_meta_missing_cwd() {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"abc"}}"#,
@@ -1030,6 +926,7 @@ mod tests {
     // ── response_item/message ──
 
     #[test]
+    /// Covers the user message string content regression case.
     fn test_user_message_string_content() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":"hello world"}}"#,
@@ -1042,6 +939,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the user message strips injected context before dedup regression case.
     fn test_user_message_strips_injected_context_before_dedup() {
         let injected = crate::app::context_injection::build_context_prompt(
             &crate::app::session_store::ContextPayload {
@@ -1088,6 +986,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the internal auto continue user message is hidden regression case.
     fn test_internal_auto_continue_user_message_is_hidden() {
         let result = parse_lines(&[&serde_json::json!({
             "type": "response_item",
@@ -1104,6 +1003,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the user message array content regression case.
     fn test_user_message_array_content() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix the bug"},{"type":"input_text","text":"in main.rs"}]}}"#,
@@ -1118,6 +1018,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the developer message ignored regression case.
     fn test_developer_message_ignored() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"developer","content":"system instructions"}}"#,
@@ -1126,6 +1027,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the assistant message regression case.
     fn test_assistant_message() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:02Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Here is the fix."}]}}"#,
@@ -1138,6 +1040,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the empty message skipped regression case.
     fn test_empty_message_skipped() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":""}}"#,
@@ -1146,6 +1049,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the empty array content skipped regression case.
     fn test_empty_array_content_skipped() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":[]}}"#,
@@ -1156,6 +1060,7 @@ mod tests {
     // ── function_call / function_call_output ──
 
     #[test]
+    /// Covers the function call shell command regression case.
     fn test_function_call_shell_command() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"function_call","name":"shell_command","call_id":"call_abc","arguments":"{\"command\":\"ls\",\"workdir\":\"/tmp\"}"}}"#,
@@ -1180,6 +1085,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the function call output regression case.
     fn test_function_call_output() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"function_call","name":"shell_command","call_id":"call_xyz","arguments":"{\"command\":\"echo hi\"}"}}"#,
@@ -1207,6 +1113,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the function call output error regression case.
     fn test_function_call_output_error() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"function_call","name":"shell_command","call_id":"call_err","arguments":"{\"command\":\"false\"}"}}"#,
@@ -1220,6 +1127,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the function call exec command maps to bash regression case.
     fn test_function_call_exec_command_maps_to_bash() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"function_call","name":"exec_command","call_id":"call_exec","arguments":"{\"cmd\":\"pwd\",\"workdir\":\"/tmp\"}"}}"#,
@@ -1242,6 +1150,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the function call write stdin maps to bash poll regression case.
     fn test_function_call_write_stdin_maps_to_bash_poll() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"function_call","name":"write_stdin","call_id":"call_poll","arguments":"{\"session_id\":98333,\"chars\":\"\",\"yield_time_ms\":1000}"}}"#,
@@ -1262,6 +1171,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the function call output exec wrapper is stripped regression case.
     fn test_function_call_output_exec_wrapper_is_stripped() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:03Z","payload":{"type":"function_call","name":"exec_command","call_id":"call_exec","arguments":"{\"cmd\":\"pwd\"}"}}"#,
@@ -1286,6 +1196,7 @@ mod tests {
     // ── apply_patch ──
 
     #[test]
+    /// Covers the apply patch maps to edit regression case.
     fn test_apply_patch_maps_to_edit() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:05Z","payload":{"type":"function_call","name":"apply_patch","call_id":"call_patch","arguments":"*** Begin Patch\n*** Update File: /src/main.rs\n@@\n-old\n+new"}}"#,
@@ -1304,6 +1215,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the apply patch add file regression case.
     fn test_apply_patch_add_file() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:05Z","payload":{"type":"function_call","name":"apply_patch","call_id":"call_add","arguments":"*** Begin Patch\n*** Add File: /src/new.rs\n+content"}}"#,
@@ -1324,6 +1236,7 @@ mod tests {
     // ── custom_tool_call ──
 
     #[test]
+    /// Covers the custom tool call regression case.
     fn test_custom_tool_call() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:06Z","payload":{"type":"custom_tool_call","name":"my_mcp_tool","call_id":"call_mcp","input":"some input"}}"#,
@@ -1342,6 +1255,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the custom tool call output regression case.
     fn test_custom_tool_call_output() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:06Z","payload":{"type":"custom_tool_call","name":"my_tool","call_id":"call_ct","input":"{}"}}"#,
@@ -1364,6 +1278,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the custom tool call output unwraps json envelope regression case.
     fn test_custom_tool_call_output_unwraps_json_envelope() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:06Z","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call_ct","input":"*** Begin Patch\n*** Update File: /tmp/demo.txt\n@@\n-old\n+new\n*** End Patch"}}"#,
@@ -1393,6 +1308,7 @@ mod tests {
     // ── event_msg types ──
 
     #[test]
+    /// Covers the event msg user message regression case.
     fn test_event_msg_user_message() {
         let result = parse_lines(&[
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:08Z","payload":{"type":"user_message","message":"what does this do?"}}"#,
@@ -1405,6 +1321,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg agent message regression case.
     fn test_event_msg_agent_message() {
         let result = parse_lines(&[
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:09Z","payload":{"type":"agent_message","message":"I'll fix that for you."}}"#,
@@ -1417,6 +1334,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg agent reasoning regression case.
     fn test_event_msg_agent_reasoning() {
         let result = parse_lines(&[
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:10Z","payload":{"type":"agent_reasoning","text":"I need to read the file first."}}"#,
@@ -1431,6 +1349,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg task complete regression case.
     fn test_event_msg_task_complete() {
         let result = parse_lines(&[
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:11Z","payload":{"type":"task_complete","turn_id":"turn_abc","last_agent_message":null}}"#,
@@ -1443,6 +1362,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg empty message skipped regression case.
     fn test_event_msg_empty_message_skipped() {
         let result = parse_lines(&[
             r#"{"type":"event_msg","timestamp":"2026-01-01T00:00:08Z","payload":{"type":"user_message","message":""}}"#,
@@ -1451,6 +1371,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg user message deduped against response item regression case.
     fn test_event_msg_user_message_deduped_against_response_item() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":"what does this do?"}}"#,
@@ -1464,6 +1385,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg agent message deduped against response item regression case.
     fn test_event_msg_agent_message_deduped_against_response_item() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I'll fix that for you."}]}}"#,
@@ -1477,6 +1399,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg user message deduped with tool events in between regression case.
     fn test_event_msg_user_message_deduped_with_tool_events_in_between() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"user","content":"what does this do?"}}"#,
@@ -1489,6 +1412,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the event msg agent message deduped with tool events in between regression case.
     fn test_event_msg_agent_message_deduped_with_tool_events_in_between() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:01Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I'll fix that for you."}]}}"#,
@@ -1506,6 +1430,7 @@ mod tests {
     // ── turn_context ──
 
     #[test]
+    /// Covers the turn context extracts model regression case.
     fn test_turn_context_extracts_model() {
         let result = parse_lines(&[
             r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:13Z","payload":{"model":"gpt-5.2-codex","cwd":"/tmp"}}"#,
@@ -1514,6 +1439,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the turn context model updates regression case.
     fn test_turn_context_model_updates() {
         let result = parse_lines(&[
             r#"{"type":"turn_context","timestamp":"2026-01-01T00:00:13Z","payload":{"model":"gpt-5.4"}}"#,
@@ -1524,6 +1450,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the turn context upgrades initial codex placeholder model regression case.
     fn test_turn_context_upgrades_initial_codex_placeholder_model() {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"abc-123","cwd":"/home/user/project"}}"#,
@@ -1540,6 +1467,7 @@ mod tests {
     // ── reasoning response_item ──
 
     #[test]
+    /// Covers the reasoning with summary regression case.
     fn test_reasoning_with_summary() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:15Z","payload":{"type":"reasoning","summary":[{"type":"text","text":"Thinking about the approach..."}],"content":"encrypted"}}"#,
@@ -1554,6 +1482,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the reasoning empty summary regression case.
     fn test_reasoning_empty_summary() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:15Z","payload":{"type":"reasoning","summary":[],"content":"encrypted"}}"#,
@@ -1562,6 +1491,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the reasoning no summary regression case.
     fn test_reasoning_no_summary() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:15Z","payload":{"type":"reasoning","content":"encrypted"}}"#,
@@ -1572,6 +1502,7 @@ mod tests {
     // ── ghost_snapshot (should be ignored) ──
 
     #[test]
+    /// Covers the ghost snapshot ignored regression case.
     fn test_ghost_snapshot_ignored() {
         let result = parse_lines(&[
             r#"{"type":"response_item","timestamp":"2026-01-01T00:00:16Z","payload":{"type":"ghost_snapshot","ghost_commit":"abc123"}}"#,
@@ -1582,6 +1513,7 @@ mod tests {
     // ── Error handling ──
 
     #[test]
+    /// Covers the invalid json counted as error regression case.
     fn test_invalid_json_counted_as_error() {
         let result = parse_lines(&[
             "not valid json",
@@ -1593,6 +1525,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the empty lines skipped regression case.
     fn test_empty_lines_skipped() {
         let result = parse_lines(&[
             "",
@@ -1604,6 +1537,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the nonexistent file regression case.
     fn test_nonexistent_file() {
         let result = parse_codex_session_file(Path::new("/nonexistent/path.jsonl"));
         assert_eq!(result.events.len(), 0);
@@ -1613,6 +1547,7 @@ mod tests {
     // ── Full session simulation ──
 
     #[test]
+    /// Covers the full codex session regression case.
     fn test_full_codex_session() {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"sess-1","cwd":"/home/user/project","originator":"codex_cli","cli_version":"0.77.0"}}"#,
@@ -1646,6 +1581,7 @@ mod tests {
     // ── Incremental parsing ──
 
     #[test]
+    /// Covers the incremental parse appends regression case.
     fn test_incremental_parse_appends() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
@@ -1686,6 +1622,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the incremental parse dedups completion agent message against existing assistant text regression case.
     fn test_incremental_parse_dedups_completion_agent_message_against_existing_assistant_text() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
@@ -1733,6 +1670,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the incremental parse zero offset is full regression case.
     fn test_incremental_parse_zero_offset_is_full() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
@@ -1747,6 +1685,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the incremental tool call resolution regression case.
     fn test_incremental_tool_call_resolution() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
@@ -1787,6 +1726,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the item completed file change preserves unified diff regression case.
     fn test_item_completed_file_change_preserves_unified_diff() {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"sess-1","cwd":"/tmp"}}"#,
@@ -1814,6 +1754,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the incremental parse item completed file change appends edit events regression case.
     fn test_incremental_parse_item_completed_file_change_appends_edit_events() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
@@ -1864,6 +1805,7 @@ mod tests {
     // ── end_offset tracking ──
 
     #[test]
+    /// Covers the end offset tracks bytes regression case.
     fn test_end_offset_tracks_bytes() {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"s1","cwd":"/tmp"}}"#,
@@ -1872,6 +1814,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the full parse dedups agent message then response item assistant text regression case.
     fn test_full_parse_dedups_agent_message_then_response_item_assistant_text() {
         let result = parse_lines(&[
             r#"{"type":"session_meta","timestamp":"2026-01-01T00:00:00Z","payload":{"id":"sess-1","cwd":"/tmp"}}"#,
@@ -1897,23 +1840,27 @@ mod tests {
     // ── extract_message_text ──
 
     #[test]
+    /// Covers the extract text from null regression case.
     fn test_extract_text_from_null() {
         assert_eq!(extract_message_text(None), "");
     }
 
     #[test]
+    /// Covers the extract text from string regression case.
     fn test_extract_text_from_string() {
         let val = serde_json::json!("hello");
         assert_eq!(extract_message_text(Some(&val)), "hello");
     }
 
     #[test]
+    /// Covers the extract text from array regression case.
     fn test_extract_text_from_array() {
         let val = serde_json::json!([{"text": "a"}, {"text": "b"}]);
         assert_eq!(extract_message_text(Some(&val)), "a\nb");
     }
 
     #[test]
+    /// Covers the extract text from mixed array regression case.
     fn test_extract_text_from_mixed_array() {
         let val = serde_json::json!([{"type": "image"}, {"text": "only text"}]);
         assert_eq!(extract_message_text(Some(&val)), "only text");
@@ -1922,6 +1869,7 @@ mod tests {
     // ── map_codex_tool ──
 
     #[test]
+    /// Covers the map shell command regression case.
     fn test_map_shell_command() {
         let payload = serde_json::json!({"arguments": "{\"command\":\"ls\",\"workdir\":\"/tmp\"}"});
         let (name, path) = map_codex_tool("shell_command", &payload);
@@ -1930,6 +1878,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the map apply patch regression case.
     fn test_map_apply_patch() {
         let payload = serde_json::json!({"arguments": "*** Begin Patch\n*** Update File: /src/lib.rs\n@@\n-old\n+new"});
         let (name, path) = map_codex_tool("apply_patch", &payload);
@@ -1938,6 +1887,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the map unknown tool regression case.
     fn test_map_unknown_tool() {
         let payload = serde_json::json!({});
         let (name, path) = map_codex_tool("my_custom_tool", &payload);
@@ -1948,6 +1898,7 @@ mod tests {
     // ── Real session file integration tests ──
 
     #[test]
+    /// Covers the parse real codex session regression case.
     fn test_parse_real_codex_session() {
         let path = Path::new("/Users/macbookpro/.codex/sessions/2026/03/12/rollout-2026-03-12T22-29-48-019ce53e-414d-7852-a2dd-71d7c376fdc2.jsonl");
         if !path.exists() {
@@ -1967,6 +1918,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse real codex session with tools regression case.
     fn test_parse_real_codex_session_with_tools() {
         let path = Path::new("/Users/macbookpro/.codex/sessions/2026/01/01/rollout-2026-01-01T07-56-02-019b79d8-1364-79d0-a63d-9dcbfcf1c21e.jsonl");
         if !path.exists() {
@@ -1997,6 +1949,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the real session incremental matches full regression case.
     fn test_real_session_incremental_matches_full() {
         let path = Path::new("/Users/macbookpro/.codex/sessions/2026/01/01/rollout-2026-01-01T07-56-02-019b79d8-1364-79d0-a63d-9dcbfcf1c21e.jsonl");
         if !path.exists() {

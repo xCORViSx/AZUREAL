@@ -20,7 +20,9 @@ pub struct CodexEventParser {
     init_emitted: bool,
 }
 
+/// Implements incremental parsing while retaining tool and session correlation state.
 impl CodexEventParser {
+    /// Creates a parser seeded with the selected model name.
     pub fn new(model: String) -> Self {
         Self {
             buffer: String::new(),
@@ -95,6 +97,7 @@ impl CodexEventParser {
         (events, Some(json))
     }
 
+    /// Emits session initialization once and suppresses duplicate metadata records.
     fn emit_init(&mut self, session_id: String, cwd: String) -> Vec<DisplayEvent> {
         if self.init_emitted {
             return Vec::new();
@@ -107,6 +110,7 @@ impl CodexEventParser {
         }]
     }
 
+    /// Parses legacy session metadata into an initialization event.
     fn parse_session_meta(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let payload = match json.get("payload") {
             Some(p) => p,
@@ -125,6 +129,7 @@ impl CodexEventParser {
         self.emit_init(session_id, cwd)
     }
 
+    /// Parses a thread-started record into an initialization event.
     fn parse_thread_started(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let thread_id = json
             .get("thread_id")
@@ -134,6 +139,7 @@ impl CodexEventParser {
         self.emit_init(thread_id, String::new())
     }
 
+    /// Updates the active model from a turn-context record without emitting UI content.
     fn parse_turn_context(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         if let Some(model) = json
             .get("payload")
@@ -146,6 +152,7 @@ impl CodexEventParser {
         Vec::new()
     }
 
+    /// Routes a response item to message, tool, output, or reasoning parsing.
     fn parse_response_item(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let payload = match json.get("payload") {
             Some(p) => p,
@@ -166,6 +173,7 @@ impl CodexEventParser {
         }
     }
 
+    /// Converts visible response messages while dropping hidden system and developer context.
     fn parse_response_message(&self, payload: &serde_json::Value) -> Vec<DisplayEvent> {
         let role = payload.get("role").and_then(|v| v.as_str()).unwrap_or("");
         let text = extract_message_text(payload.get("content"));
@@ -195,6 +203,7 @@ impl CodexEventParser {
         }
     }
 
+    /// Records a tool call and emits its normalized display event.
     fn parse_response_tool_call(
         &mut self,
         payload: &serde_json::Value,
@@ -209,8 +218,8 @@ impl CodexEventParser {
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or(default_name);
-        let (tool_name, file_path) = map_codex_tool(name, payload);
-        let input = build_tool_input(name, payload);
+        let (tool_name, file_path) = super::codex_tool_payload::map_codex_tool(name, payload);
+        let input = super::codex_tool_payload::build_tool_input(name, payload);
 
         self.tool_calls
             .insert(call_id.clone(), (tool_name.clone(), file_path.clone()));
@@ -224,6 +233,7 @@ impl CodexEventParser {
         }]
     }
 
+    /// Matches a tool output to its prior call and determines whether it represents failure.
     fn parse_response_tool_output(
         &mut self,
         payload: &serde_json::Value,
@@ -258,6 +268,7 @@ impl CodexEventParser {
         }]
     }
 
+    /// Emits visible reasoning summaries supplied by Codex.
     fn parse_response_reasoning(&self, payload: &serde_json::Value) -> Vec<DisplayEvent> {
         let mut events = Vec::new();
         if let Some(summary) = payload.get("summary").and_then(|v| v.as_array()) {
@@ -276,6 +287,7 @@ impl CodexEventParser {
         events
     }
 
+    /// Parses legacy event-message payloads used by older Codex streams.
     fn parse_event_msg(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let payload = match json.get("payload") {
             Some(p) => p,
@@ -347,6 +359,7 @@ impl CodexEventParser {
         }
     }
 
+    /// Begins tracking a command-execution item and emits its tool call.
     fn parse_item_started(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let item = match json.get("item") {
             Some(i) => i,
@@ -381,6 +394,7 @@ impl CodexEventParser {
         }
     }
 
+    /// Converts a completed item into message, tool result, or file-change events.
     fn parse_item_completed(&mut self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let item = match json.get("item") {
             Some(i) => i,
@@ -562,6 +576,7 @@ impl CodexEventParser {
         }
     }
 
+    /// Converts turn completion usage into a terminal completion event.
     fn parse_turn_completed(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let usage = json.get("usage");
         let input_tokens = usage
@@ -581,6 +596,7 @@ impl CodexEventParser {
         }]
     }
 
+    /// Converts a top-level error record into visible assistant text.
     fn parse_error(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let message = json
             .get("message")
@@ -594,6 +610,7 @@ impl CodexEventParser {
         }]
     }
 
+    /// Converts turn failure details into visible assistant text and a failed completion.
     fn parse_turn_failed(&self, json: &serde_json::Value) -> Vec<DisplayEvent> {
         let message = json
             .get("error")
@@ -623,6 +640,7 @@ fn estimate_codex_cost(input_tokens: u64, output_tokens: u64) -> f64 {
     (input_tokens as f64 * 10.0 + output_tokens as f64 * 30.0) / 1_000_000.0
 }
 
+/// Extracts text from either string or structured message content.
 fn extract_message_text(content: Option<&serde_json::Value>) -> String {
     match content {
         Some(serde_json::Value::String(s)) => s.clone(),
@@ -639,124 +657,7 @@ fn extract_message_text(content: Option<&serde_json::Value>) -> String {
     }
 }
 
-fn map_codex_tool(name: &str, payload: &serde_json::Value) -> (String, Option<String>) {
-    match name {
-        "shell_command" => {
-            let args = parse_tool_args(payload);
-            let workdir = args
-                .as_object()
-                .and_then(|a| a.get("workdir"))
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
-            ("Bash".to_string(), workdir)
-        }
-        "exec_command" | "write_stdin" => ("Bash".to_string(), None),
-        "apply_patch" => {
-            let args = payload
-                .get("arguments")
-                .and_then(|v| v.as_str())
-                .or_else(|| payload.get("input").and_then(|v| v.as_str()));
-            let file_path = args.and_then(extract_patch_file_path);
-            ("Edit".to_string(), file_path)
-        }
-        _ => (name.to_string(), None),
-    }
-}
-
-fn build_tool_input(name: &str, payload: &serde_json::Value) -> serde_json::Value {
-    match name {
-        "shell_command" => parse_tool_args(payload),
-        "exec_command" => normalize_exec_command_input(parse_tool_args(payload)),
-        "write_stdin" => normalize_write_stdin_input(parse_tool_args(payload)),
-        "apply_patch" => {
-            let patch = payload
-                .get("arguments")
-                .and_then(|v| v.as_str())
-                .or_else(|| payload.get("input").and_then(|v| v.as_str()))
-                .unwrap_or("");
-            serde_json::json!({ "patch": patch })
-        }
-        _ => parse_tool_args(payload),
-    }
-}
-
-fn extract_patch_file_path(patch: &str) -> Option<String> {
-    for line in patch.lines() {
-        if let Some(rest) = line.strip_prefix("*** Update File: ") {
-            return Some(rest.trim().to_string());
-        }
-        if let Some(rest) = line.strip_prefix("*** Add File: ") {
-            return Some(rest.trim().to_string());
-        }
-        if let Some(rest) = line.strip_prefix("*** Delete File: ") {
-            return Some(rest.trim().to_string());
-        }
-    }
-    None
-}
-
-fn parse_tool_args(payload: &serde_json::Value) -> serde_json::Value {
-    let args_str = payload
-        .get("arguments")
-        .and_then(|v| v.as_str())
-        .or_else(|| payload.get("input").and_then(|v| v.as_str()))
-        .unwrap_or("{}");
-    serde_json::from_str(args_str).unwrap_or(serde_json::json!({}))
-}
-
-fn normalize_exec_command_input(mut args: serde_json::Value) -> serde_json::Value {
-    let command = args
-        .get("command")
-        .or_else(|| args.get("cmd"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    insert_command_field(&mut args, command);
-    args
-}
-
-fn normalize_write_stdin_input(mut args: serde_json::Value) -> serde_json::Value {
-    let command = describe_write_stdin_action(&args);
-    insert_command_field(&mut args, command);
-    args
-}
-
-fn insert_command_field(args: &mut serde_json::Value, command: String) {
-    match args {
-        serde_json::Value::Object(map) => {
-            map.insert("command".into(), serde_json::json!(command));
-        }
-        _ => {
-            *args = serde_json::json!({ "command": command });
-        }
-    }
-}
-
-fn describe_write_stdin_action(args: &serde_json::Value) -> String {
-    let session_suffix = args
-        .get("session_id")
-        .map(|v| match v {
-            serde_json::Value::String(s) => format!(" {}", s),
-            serde_json::Value::Number(n) => format!(" {}", n),
-            _ => String::new(),
-        })
-        .unwrap_or_default();
-    let chars = args.get("chars").and_then(|v| v.as_str()).unwrap_or("");
-    if chars.is_empty() {
-        return format!("poll session{session_suffix}");
-    }
-    if chars == "\u{3}" {
-        return format!("send Ctrl-C to session{session_suffix}");
-    }
-    let escaped = chars.escape_default().to_string();
-    let preview = if escaped.chars().count() > 32 {
-        format!("{}...", escaped.chars().take(29).collect::<String>())
-    } else {
-        escaped
-    };
-    format!("send \"{preview}\" to session{session_suffix}")
-}
-
+/// Removes Codex CLI result envelopes while preserving meaningful tool output.
 fn normalize_tool_output(tool_name: &str, output: String) -> String {
     let output = unwrap_tool_output_envelope(&output).unwrap_or(output);
 
@@ -793,6 +694,7 @@ fn normalize_tool_output(tool_name: &str, output: String) -> String {
     output
 }
 
+/// Extracts output text from a JSON-encoded custom-tool result envelope.
 fn unwrap_tool_output_envelope(output: &str) -> Option<String> {
     let json: serde_json::Value = serde_json::from_str(output).ok()?;
     let inner = json.get("output").and_then(|v| v.as_str())?;
@@ -814,6 +716,7 @@ fn unwrap_tool_output_envelope(output: &str) -> Option<String> {
     Some(inner.to_string())
 }
 
+/// Regression coverage for live Codex JSONL parsing.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,6 +724,7 @@ mod tests {
     // ── CodexEventParser construction ──
 
     #[test]
+    /// Covers the parser new regression case.
     fn parser_new() {
         let p = CodexEventParser::new("gpt-5.4".to_string());
         assert!(p.buffer.is_empty());
@@ -832,6 +736,7 @@ mod tests {
     // ── thread.started ──
 
     #[test]
+    /// Covers the parse thread started regression case.
     fn parse_thread_started() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, json) = p.parse(r#"{"type":"thread.started","thread_id":"abc-123"}"#);
@@ -855,6 +760,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse thread started missing thread id regression case.
     fn parse_thread_started_missing_thread_id() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"thread.started\"}\n");
@@ -866,6 +772,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse session meta emits init regression case.
     fn parse_session_meta_emits_init() {
         let mut p = CodexEventParser::new("gpt-5.1-codex-mini".to_string());
         let line = r#"{"type":"session_meta","payload":{"id":"sess-1","cwd":"/tmp/project"}}"#;
@@ -888,6 +795,7 @@ mod tests {
     // ── turn.started (no-op) ──
 
     #[test]
+    /// Covers the parse turn started is noop regression case.
     fn parse_turn_started_is_noop() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"turn.started\"}\n");
@@ -897,6 +805,7 @@ mod tests {
     // ── item.started + item.completed (command_execution) ──
 
     #[test]
+    /// Covers the parse command execution started regression case.
     fn parse_command_execution_started() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls -la","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#;
@@ -919,6 +828,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse command execution completed with started regression case.
     fn parse_command_execution_completed_with_started() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let started = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#;
@@ -943,6 +853,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse command execution completed without started regression case.
     fn parse_command_execution_completed_without_started() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let completed = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"ls","aggregated_output":"output","exit_code":0,"status":"completed"}}"#;
@@ -954,6 +865,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse command execution failed regression case.
     fn parse_command_execution_failed() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"false","aggregated_output":"","exit_code":1,"status":"completed"}}"#;
@@ -968,6 +880,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse command execution empty output regression case.
     fn parse_command_execution_empty_output() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"true","aggregated_output":"","exit_code":0,"status":"completed"}}"#;
@@ -984,6 +897,7 @@ mod tests {
     // ── item.completed (reasoning) ──
 
     #[test]
+    /// Covers the parse reasoning regression case.
     fn parse_reasoning() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"Thinking about it..."}}"#;
@@ -996,6 +910,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse reasoning empty text regression case.
     fn parse_reasoning_empty_text() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line =
@@ -1007,6 +922,7 @@ mod tests {
     // ── item.completed (agent_message) ──
 
     #[test]
+    /// Covers the parse agent message regression case.
     fn parse_agent_message() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Hello world"}}"#;
@@ -1019,6 +935,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse agent message with markdown regression case.
     fn parse_agent_message_with_markdown() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r##"{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"# Title\n\n```rust\nfn main() {}\n```"}}"##;
@@ -1033,6 +950,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item user message regression case.
     fn parse_response_item_user_message() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"response_item","payload":{"type":"message","role":"user","content":"hello world"}}"#;
@@ -1045,6 +963,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item internal auto continue ignored regression case.
     fn parse_response_item_internal_auto_continue_ignored() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = serde_json::json!({
@@ -1061,6 +980,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item developer message ignored regression case.
     fn parse_response_item_developer_message_ignored() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r##"{"type":"response_item","payload":{"type":"message","role":"developer","content":"# AGENTS.md instructions for /tmp/project\n<INSTRUCTIONS>\nhidden\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/tmp/project</cwd>\n</environment_context>"}}"##;
@@ -1069,6 +989,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item system message ignored regression case.
     fn parse_response_item_system_message_ignored() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"response_item","payload":{"type":"message","role":"system","content":"hidden system instructions"}}"#;
@@ -1077,6 +998,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item custom tool call apply patch preserves patch regression case.
     fn parse_response_item_custom_tool_call_apply_patch_preserves_patch() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call_patch","input":"*** Begin Patch\n*** Update File: /tmp/probe.txt\n@@\n-old\n+new\n*** End Patch"}}"#;
@@ -1105,6 +1027,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item custom tool call output uses edit metadata regression case.
     fn parse_response_item_custom_tool_call_output_uses_edit_metadata() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let call = r#"{"type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call_patch","input":"*** Begin Patch\n*** Update File: /tmp/probe.txt\n@@\n-old\n+new\n*** End Patch"}}"#;
@@ -1134,6 +1057,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item exec command maps to bash command regression case.
     fn parse_response_item_exec_command_maps_to_bash_command() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_exec","arguments":"{\"cmd\":\"pwd\",\"workdir\":\"/tmp\",\"yield_time_ms\":1000}"}}"#;
@@ -1156,6 +1080,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item write stdin maps to bash poll command regression case.
     fn parse_response_item_write_stdin_maps_to_bash_poll_command() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"response_item","payload":{"type":"function_call","name":"write_stdin","call_id":"call_poll","arguments":"{\"session_id\":98333,\"chars\":\"\",\"yield_time_ms\":1000}"}}"#;
@@ -1176,6 +1101,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse response item exec command output strips exec wrapper regression case.
     fn parse_response_item_exec_command_output_strips_exec_wrapper() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let call = r#"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_exec","arguments":"{\"cmd\":\"pwd\"}"}}"#;
@@ -1201,6 +1127,7 @@ mod tests {
     // ── item.completed (file_change) ──
 
     #[test]
+    /// Covers the parse file change single regression case.
     fn parse_file_change_single() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"src/main.rs","kind":"update"}],"status":"completed"}}"#;
@@ -1229,6 +1156,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse file change multiple regression case.
     fn parse_file_change_multiple() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"a.rs","kind":"create"},{"path":"b.rs","kind":"update"}],"status":"completed"}}"#;
@@ -1237,6 +1165,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse file change empty changes regression case.
     fn parse_file_change_empty_changes() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[],"status":"completed"}}"#;
@@ -1245,6 +1174,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse file change preserves unified diff regression case.
     fn parse_file_change_preserves_unified_diff() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","changes":[{"path":"src/main.rs","kind":"update","unified_diff":"diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n"}],"status":"completed"}}"#;
@@ -1266,6 +1196,7 @@ mod tests {
     // ── item.completed (mcp_tool_call) ──
 
     #[test]
+    /// Covers the parse mcp tool call regression case.
     fn parse_mcp_tool_call() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"docs","tool":"search","arguments":{"query":"help"},"result":"Found docs","error":null}}"#;
@@ -1292,6 +1223,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse mcp tool call with error regression case.
     fn parse_mcp_tool_call_with_error() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"s","tool":"t","arguments":null,"result":"","error":"timeout"}}"#;
@@ -1313,6 +1245,7 @@ mod tests {
     // ── turn.completed ──
 
     #[test]
+    /// Covers the parse turn completed regression case.
     fn parse_turn_completed() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"turn.completed","usage":{"input_tokens":32607,"cached_input_tokens":32384,"output_tokens":87}}"#;
@@ -1330,6 +1263,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse turn completed no usage regression case.
     fn parse_turn_completed_no_usage() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"turn.completed"}"#;
@@ -1344,6 +1278,7 @@ mod tests {
     // ── error ──
 
     #[test]
+    /// Covers the parse error event regression case.
     fn parse_error_event() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"error","message":"Model not supported"}"#;
@@ -1360,6 +1295,7 @@ mod tests {
     // ── turn.failed ──
 
     #[test]
+    /// Covers the parse turn failed regression case.
     fn parse_turn_failed() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line = r#"{"type":"turn.failed","error":{"message":"API error"}}"#;
@@ -1378,6 +1314,7 @@ mod tests {
     // ── Invalid / edge cases ──
 
     #[test]
+    /// Covers the parse invalid json regression case.
     fn parse_invalid_json() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("not json\n");
@@ -1385,6 +1322,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse json without type regression case.
     fn parse_json_without_type() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, json) = p.parse("{\"foo\":\"bar\"}\n");
@@ -1393,6 +1331,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse unknown event type regression case.
     fn parse_unknown_event_type() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"future.event\"}\n");
@@ -1400,6 +1339,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse empty input regression case.
     fn parse_empty_input() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, json) = p.parse("");
@@ -1408,6 +1348,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse multiple lines regression case.
     fn parse_multiple_lines() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let input = concat!(
@@ -1421,6 +1362,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse partial then complete regression case.
     fn parse_partial_then_complete() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         // Feed partial line
@@ -1435,6 +1377,7 @@ mod tests {
     // ── Full session simulation ──
 
     #[test]
+    /// Covers the parse full codex session regression case.
     fn parse_full_codex_session() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
 
@@ -1474,17 +1417,20 @@ mod tests {
     // ── Cost estimation ──
 
     #[test]
+    /// Covers the estimate cost zero regression case.
     fn estimate_cost_zero() {
         assert_eq!(estimate_codex_cost(0, 0), 0.0);
     }
 
     #[test]
+    /// Covers the estimate cost nonzero regression case.
     fn estimate_cost_nonzero() {
         let cost = estimate_codex_cost(1_000_000, 1_000_000);
         assert!((cost - 40.0).abs() < 0.01); // $10 input + $30 output
     }
 
     #[test]
+    /// Covers the estimate cost typical regression case.
     fn estimate_cost_typical() {
         let cost = estimate_codex_cost(32607, 87);
         assert!(cost > 0.0);
@@ -1494,6 +1440,7 @@ mod tests {
     // ── item.completed with unknown item type ──
 
     #[test]
+    /// Covers the parse unknown item type regression case.
     fn parse_unknown_item_type() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let line =
@@ -1505,6 +1452,7 @@ mod tests {
     // ── item.started with no item field ──
 
     #[test]
+    /// Covers the parse item started no item regression case.
     fn parse_item_started_no_item() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"item.started\"}\n");
@@ -1514,6 +1462,7 @@ mod tests {
     // ── item.completed with no item field ──
 
     #[test]
+    /// Covers the parse item completed no item regression case.
     fn parse_item_completed_no_item() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("{\"type\":\"item.completed\"}\n");
@@ -1523,6 +1472,7 @@ mod tests {
     // ── Buffer handling ──
 
     #[test]
+    /// Covers the parse preserves buffer across calls regression case.
     fn parse_preserves_buffer_across_calls() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         p.parse("{\"type\":\"thread.star");
@@ -1532,6 +1482,7 @@ mod tests {
     }
 
     #[test]
+    /// Covers the parse handles multiple newlines regression case.
     fn parse_handles_multiple_newlines() {
         let mut p = CodexEventParser::new("gpt-5.4".to_string());
         let (events, _) = p.parse("\n\n{\"type\":\"turn.started\"}\n\n");

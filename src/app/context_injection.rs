@@ -8,13 +8,23 @@
 use crate::app::session_store::ContextPayload;
 use crate::events::DisplayEvent;
 
+/// Opening delimiter for Azureal's hidden resumed-session transcript.
 pub const CONTEXT_OPEN: &str = "<azureal-session-context>";
+/// Closing delimiter for Azureal's hidden resumed-session transcript.
 pub const CONTEXT_CLOSE: &str = "</azureal-session-context>";
+/// Opening delimiter for a hidden continuation request after compaction.
 pub const AUTO_CONTINUE_OPEN: &str = "<azureal-internal-auto-continue>";
+/// Closing delimiter for a hidden continuation request after compaction.
 pub const AUTO_CONTINUE_CLOSE: &str = "</azureal-internal-auto-continue>";
+/// Internal prompt that resumes interrupted work without creating a visible user turn.
 pub const AUTO_CONTINUE_PROMPT: &str =
     "<azureal-internal-auto-continue>\nContinue the in-progress work from the supplied Azureal session context. Do not treat this as a new user request, do not change objectives, and keep following the user's latest instructions.\n</azureal-internal-auto-continue>";
+/// Prefix used to recognize Codex-injected repository instructions.
 const AGENTS_INSTRUCTIONS_PREFIX: &str = "# AGENTS.md instructions for ";
+/// Opening delimiter used by Codex for an injected skill definition.
+const SKILL_CONTEXT_OPEN: &str = "<skill>";
+/// Closing delimiter used by Codex for an injected skill definition.
+const SKILL_CONTEXT_CLOSE: &str = "</skill>";
 
 /// Build a context-injected prompt. If the payload has no content, returns
 /// the original prompt unchanged.
@@ -43,6 +53,7 @@ pub fn strip_injected_context(content: &str) -> &str {
     }
 }
 
+/// Returns whether content contains either Azureal session-context delimiter.
 pub fn contains_injected_context(content: &str) -> bool {
     content.contains(CONTEXT_OPEN) || content.contains(CONTEXT_CLOSE)
 }
@@ -50,7 +61,7 @@ pub fn contains_injected_context(content: &str) -> bool {
 /// Return display/store-safe user content. A normal empty prompt is preserved,
 /// but a malformed context wrapper with no recoverable real prompt is dropped.
 pub fn sanitize_user_message_content(content: &str) -> Option<String> {
-    if is_hidden_codex_context(content) {
+    if is_hidden_codex_context(content) || is_hidden_skill_context(content) {
         return None;
     }
     let stripped = strip_injected_context(content);
@@ -73,11 +84,21 @@ pub fn is_hidden_codex_context(content: &str) -> bool {
     trimmed.starts_with(AGENTS_INSTRUCTIONS_PREFIX) && trimmed.contains("<INSTRUCTIONS>")
 }
 
+/// Returns whether a user-role item is a standalone injected skill definition.
+pub fn is_hidden_skill_context(content: &str) -> bool {
+    let trimmed = content.trim();
+    trimmed.starts_with(SKILL_CONTEXT_OPEN)
+        && trimmed.contains("<name>")
+        && (trimmed.ends_with(SKILL_CONTEXT_CLOSE) || trimmed.contains("<path>"))
+}
+
+/// Returns whether content is Azureal's hidden post-compaction continuation prompt.
 pub fn is_internal_auto_continue_prompt(content: &str) -> bool {
     let trimmed = content.trim();
     trimmed.starts_with(AUTO_CONTINUE_OPEN) && trimmed.ends_with(AUTO_CONTINUE_CLOSE)
 }
 
+/// Appends a sanitized non-empty user message while preserving its event identifier.
 fn push_stripped_user_message(out: &mut Vec<DisplayEvent>, _uuid: String, content: &str) {
     let Some(stripped) = sanitize_user_message_content(content) else {
         return;
@@ -102,7 +123,7 @@ pub fn strip_injected_context_from_events(events: Vec<DisplayEvent>) -> Vec<Disp
     for event in events {
         match event {
             DisplayEvent::UserMessage { _uuid, content } => {
-                if is_hidden_codex_context(&content) {
+                if is_hidden_codex_context(&content) || is_hidden_skill_context(&content) {
                     continue;
                 }
 
@@ -172,7 +193,9 @@ fn build_transcript(payload: &ContextPayload) -> String {
 /// Format a single DisplayEvent into a transcript line for context injection.
 fn format_event(event: &DisplayEvent) -> Option<String> {
     match event {
-        DisplayEvent::UserMessage { content, .. } => Some(format!("## User\n{content}\n")),
+        DisplayEvent::UserMessage { content, .. } => sanitize_user_message_content(content)
+            .filter(|content| !content.trim().is_empty())
+            .map(|content| format!("## User\n{content}\n")),
         DisplayEvent::AssistantText { text, .. } => Some(format!("## Assistant\n{text}\n")),
         DisplayEvent::ToolCall {
             tool_name, input, ..
@@ -219,7 +242,7 @@ fn format_event(event: &DisplayEvent) -> Option<String> {
 /// Extract the most relevant parameter from a tool input for the transcript.
 fn extract_key_param(tool_name: &str, input: &serde_json::Value) -> String {
     let key = match tool_name {
-        "Bash" | "bash" => "command",
+        "Bash" | "bash" | "Exec" | "exec" => "command",
         "Read" | "read" => "file_path",
         "Edit" | "edit" => "file_path",
         "Write" | "write" => "file_path",
@@ -283,565 +306,7 @@ no preamble."
     )
 }
 
+/// Regression coverage for context construction and hidden-message filtering.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn empty_payload() -> ContextPayload {
-        ContextPayload {
-            compaction_summary: None,
-            events: vec![],
-        }
-    }
-
-    fn simple_payload() -> ContextPayload {
-        ContextPayload {
-            compaction_summary: None,
-            events: vec![
-                DisplayEvent::UserMessage {
-                    _uuid: String::new(),
-                    content: "fix the bug".into(),
-                },
-                DisplayEvent::AssistantText {
-                    _uuid: String::new(),
-                    _message_id: String::new(),
-                    text: "I'll look at it.".into(),
-                },
-            ],
-        }
-    }
-
-    fn hidden_codex_context() -> String {
-        concat!(
-            "# AGENTS.md instructions for /tmp/project\n",
-            "<INSTRUCTIONS>\n",
-            "Keep this hidden.\n",
-            "</INSTRUCTIONS>\n",
-            "<environment_context>\n",
-            "  <cwd>/tmp/project</cwd>\n",
-            "  <shell>bash</shell>\n",
-            "</environment_context>"
-        )
-        .to_string()
-    }
-
-    // ── build_context_prompt ──
-
-    #[test]
-    fn empty_payload_returns_original_prompt() {
-        let result = build_context_prompt(&empty_payload(), "hello");
-        assert_eq!(result, "hello");
-    }
-
-    #[test]
-    fn non_empty_payload_wraps_with_tags() {
-        let result = build_context_prompt(&simple_payload(), "now fix the tests");
-        assert!(result.starts_with(CONTEXT_OPEN));
-        assert!(result.contains(CONTEXT_CLOSE));
-        assert!(result.ends_with("now fix the tests"));
-    }
-
-    #[test]
-    fn prompt_appears_after_close_tag() {
-        let result = build_context_prompt(&simple_payload(), "my prompt");
-        let after_close = result.split(CONTEXT_CLOSE).nth(1).unwrap();
-        assert!(after_close.contains("my prompt"));
-    }
-
-    #[test]
-    fn context_contains_user_message() {
-        let result = build_context_prompt(&simple_payload(), "x");
-        assert!(result.contains("## User\nfix the bug"));
-    }
-
-    #[test]
-    fn context_contains_assistant_text() {
-        let result = build_context_prompt(&simple_payload(), "x");
-        assert!(result.contains("## Assistant\nI'll look at it."));
-    }
-
-    // ── strip_injected_context ──
-
-    #[test]
-    fn strip_no_context_returns_original() {
-        assert_eq!(strip_injected_context("hello world"), "hello world");
-    }
-
-    #[test]
-    fn strip_with_context_returns_prompt() {
-        let injected = format!("{CONTEXT_OPEN}\nsome context\n{CONTEXT_CLOSE}\n\nactual prompt");
-        assert_eq!(strip_injected_context(&injected), "actual prompt");
-    }
-
-    #[test]
-    fn strip_round_trip() {
-        let payload = simple_payload();
-        let prompt = "do the thing";
-        let injected = build_context_prompt(&payload, prompt);
-        let stripped = strip_injected_context(&injected);
-        assert_eq!(stripped, prompt);
-    }
-
-    #[test]
-    fn strip_preserves_multiline_prompt() {
-        let prompt = "line 1\nline 2\nline 3";
-        let injected = format!("{CONTEXT_OPEN}\nctx\n{CONTEXT_CLOSE}\n\n{prompt}");
-        assert_eq!(strip_injected_context(&injected), prompt);
-    }
-
-    #[test]
-    fn strip_malformed_context_returns_empty() {
-        let malformed = format!("{CONTEXT_OPEN}\nctx without close");
-        assert_eq!(strip_injected_context(&malformed), "");
-        assert!(sanitize_user_message_content(&malformed).is_none());
-    }
-
-    #[test]
-    fn sanitize_drops_hidden_codex_context() {
-        let hidden = hidden_codex_context();
-        assert!(is_hidden_codex_context(&hidden));
-        assert!(sanitize_user_message_content(&hidden).is_none());
-    }
-
-    #[test]
-    fn sanitize_drops_truncated_hidden_codex_context() {
-        let hidden = concat!(
-            "# AGENTS.md instructions for /tmp/project\n",
-            "<INSTRUCTIONS>\n",
-            "Keep this hidden.\n"
-        );
-
-        assert!(is_hidden_codex_context(hidden));
-        assert!(sanitize_user_message_content(hidden).is_none());
-    }
-
-    #[test]
-    fn sanitize_drops_internal_auto_continue_prompt() {
-        assert!(is_internal_auto_continue_prompt(AUTO_CONTINUE_PROMPT));
-        assert!(sanitize_user_message_content(AUTO_CONTINUE_PROMPT).is_none());
-    }
-
-    #[test]
-    fn sanitize_drops_context_wrapped_internal_auto_continue_prompt() {
-        let injected =
-            format!("{CONTEXT_OPEN}\nprior context\n{CONTEXT_CLOSE}\n\n{AUTO_CONTINUE_PROMPT}");
-        assert_eq!(strip_injected_context(&injected), AUTO_CONTINUE_PROMPT);
-        assert!(sanitize_user_message_content(&injected).is_none());
-    }
-
-    #[test]
-    fn strip_events_removes_context_from_user_messages_only() {
-        let injected = format!("{CONTEXT_OPEN}\nctx\n{CONTEXT_CLOSE}\n\nreal prompt");
-        let events = vec![
-            DisplayEvent::UserMessage {
-                _uuid: "u".into(),
-                content: injected,
-            },
-            DisplayEvent::AssistantText {
-                _uuid: "a".into(),
-                _message_id: "m".into(),
-                text: "answer".into(),
-            },
-        ];
-
-        let stripped = strip_injected_context_from_events(events);
-
-        assert!(matches!(
-            &stripped[0],
-            DisplayEvent::UserMessage { content, .. } if content == "real prompt"
-        ));
-        assert!(matches!(
-            &stripped[1],
-            DisplayEvent::AssistantText { text, .. } if text == "answer"
-        ));
-    }
-
-    #[test]
-    fn strip_events_drops_malformed_context_user_message() {
-        let events = vec![
-            DisplayEvent::UserMessage {
-                _uuid: "u".into(),
-                content: format!("{CONTEXT_OPEN}\nctx without close"),
-            },
-            DisplayEvent::AssistantText {
-                _uuid: "a".into(),
-                _message_id: "m".into(),
-                text: "answer".into(),
-            },
-        ];
-
-        let stripped = strip_injected_context_from_events(events);
-
-        assert_eq!(stripped.len(), 1);
-        assert!(matches!(
-            &stripped[0],
-            DisplayEvent::AssistantText { text, .. } if text == "answer"
-        ));
-    }
-
-    #[test]
-    fn strip_events_drops_legacy_hidden_codex_context_user_message() {
-        let events = vec![
-            DisplayEvent::UserMessage {
-                _uuid: "u".into(),
-                content: hidden_codex_context(),
-            },
-            DisplayEvent::AssistantText {
-                _uuid: "a".into(),
-                _message_id: "m".into(),
-                text: "answer".into(),
-            },
-        ];
-
-        let stripped = strip_injected_context_from_events(events);
-
-        assert_eq!(stripped.len(), 1);
-        assert!(matches!(
-            &stripped[0],
-            DisplayEvent::AssistantText { text, .. } if text == "answer"
-        ));
-    }
-
-    #[test]
-    fn strip_events_removes_split_context_user_messages() {
-        let events = vec![
-            DisplayEvent::UserMessage {
-                _uuid: "u1".into(),
-                content: "<permissions instructions>hidden</permissions instructions>".into(),
-            },
-            DisplayEvent::UserMessage {
-                _uuid: "u2".into(),
-                content: "older transcript fragment".into(),
-            },
-            DisplayEvent::UserMessage {
-                _uuid: "u3".into(),
-                content: format!("last hidden chunk\n{CONTEXT_CLOSE}\n\nreal prompt"),
-            },
-            DisplayEvent::AssistantText {
-                _uuid: "a".into(),
-                _message_id: "m".into(),
-                text: "answer".into(),
-            },
-        ];
-
-        let stripped = strip_injected_context_from_events(events);
-
-        assert_eq!(stripped.len(), 2);
-        assert!(matches!(
-            &stripped[0],
-            DisplayEvent::UserMessage { content, .. } if content == "real prompt"
-        ));
-        assert!(matches!(
-            &stripped[1],
-            DisplayEvent::AssistantText { text, .. } if text == "answer"
-        ));
-    }
-
-    #[test]
-    fn strip_events_preserves_consecutive_real_user_messages() {
-        let events = vec![
-            DisplayEvent::UserMessage {
-                _uuid: "u1".into(),
-                content: "first".into(),
-            },
-            DisplayEvent::UserMessage {
-                _uuid: "u2".into(),
-                content: "second".into(),
-            },
-            DisplayEvent::AssistantText {
-                _uuid: "a".into(),
-                _message_id: "m".into(),
-                text: "answer".into(),
-            },
-        ];
-
-        let stripped = strip_injected_context_from_events(events);
-
-        assert_eq!(stripped.len(), 3);
-        assert!(matches!(
-            &stripped[0],
-            DisplayEvent::UserMessage { content, .. } if content == "first"
-        ));
-        assert!(matches!(
-            &stripped[1],
-            DisplayEvent::UserMessage { content, .. } if content == "second"
-        ));
-    }
-
-    // ── format_event ──
-
-    #[test]
-    fn format_user_message() {
-        let ev = DisplayEvent::UserMessage {
-            _uuid: String::new(),
-            content: "hello".into(),
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.starts_with("## User\n"));
-        assert!(line.contains("hello"));
-    }
-
-    #[test]
-    fn format_assistant_text() {
-        let ev = DisplayEvent::AssistantText {
-            _uuid: String::new(),
-            _message_id: String::new(),
-            text: "hi".into(),
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.starts_with("## Assistant\n"));
-    }
-
-    #[test]
-    fn format_tool_call_with_param() {
-        let ev = DisplayEvent::ToolCall {
-            _uuid: String::new(),
-            tool_use_id: String::new(),
-            tool_name: "Read".into(),
-            file_path: Some("/src/main.rs".into()),
-            input: serde_json::json!({"file_path": "/src/main.rs"}),
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.contains("## Tool: Read (/src/main.rs)"));
-    }
-
-    #[test]
-    fn format_tool_call_no_param() {
-        let ev = DisplayEvent::ToolCall {
-            _uuid: String::new(),
-            tool_use_id: String::new(),
-            tool_name: "Custom".into(),
-            file_path: None,
-            input: serde_json::json!({}),
-        };
-        let line = format_event(&ev).unwrap();
-        assert_eq!(line.trim(), "## Tool: Custom");
-    }
-
-    #[test]
-    fn format_tool_result_ok() {
-        let ev = DisplayEvent::ToolResult {
-            tool_use_id: String::new(),
-            tool_name: "Bash".into(),
-            file_path: None,
-            content: "OK".into(),
-            is_error: false,
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.contains("[Result: Bash]"));
-    }
-
-    #[test]
-    fn format_tool_result_error() {
-        let ev = DisplayEvent::ToolResult {
-            tool_use_id: String::new(),
-            tool_name: "Bash".into(),
-            file_path: None,
-            content: "not found".into(),
-            is_error: true,
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.contains("[Error: Bash]"));
-    }
-
-    #[test]
-    fn format_init_returns_none() {
-        let ev = DisplayEvent::Init {
-            _session_id: String::new(),
-            cwd: String::new(),
-            model: String::new(),
-        };
-        assert!(format_event(&ev).is_none());
-    }
-
-    #[test]
-    fn format_filtered_returns_none() {
-        assert!(format_event(&DisplayEvent::Filtered).is_none());
-    }
-
-    #[test]
-    fn format_compacting_returns_none() {
-        assert!(format_event(&DisplayEvent::Compacting).is_none());
-    }
-
-    #[test]
-    fn format_hook_returns_none() {
-        let ev = DisplayEvent::Hook {
-            name: "x".into(),
-            output: "y".into(),
-        };
-        assert!(format_event(&ev).is_none());
-    }
-
-    #[test]
-    fn format_model_switch_returns_none() {
-        let ev = DisplayEvent::ModelSwitch {
-            model: "gpt-5.4".into(),
-        };
-        assert!(format_event(&ev).is_none());
-    }
-
-    #[test]
-    fn format_plan() {
-        let ev = DisplayEvent::Plan {
-            name: "refactor".into(),
-            content: "step 1".into(),
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.contains("## Plan: refactor"));
-        assert!(line.contains("step 1"));
-    }
-
-    #[test]
-    fn format_command() {
-        let ev = DisplayEvent::Command {
-            name: "/compact".into(),
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.contains("## Command: /compact"));
-    }
-
-    #[test]
-    fn format_complete() {
-        let ev = DisplayEvent::Complete {
-            _session_id: String::new(),
-            success: true,
-            duration_ms: 5000,
-            cost_usd: 0.05,
-        };
-        let line = format_event(&ev).unwrap();
-        assert!(line.contains("5.0s"));
-        assert!(line.contains("$0.0500"));
-    }
-
-    // ── compact_result ──
-
-    #[test]
-    fn compact_result_short() {
-        assert_eq!(compact_result("one\ntwo\nthree"), "one\ntwo\nthree");
-    }
-
-    #[test]
-    fn compact_result_long() {
-        let long = "a\nb\nc\nd\ne\nf\ng\nh";
-        let result = compact_result(long);
-        assert!(result.contains("a\nb\nc"));
-        assert!(result.contains("(+2 more lines)"));
-        assert!(result.contains("f\ng\nh"));
-        assert!(!result.contains("\nd\ne\n"));
-    }
-
-    #[test]
-    fn compact_result_strips_system_reminder() {
-        let content = "actual content<system-reminder>secret stuff</system-reminder>";
-        assert_eq!(compact_result(content), "actual content");
-    }
-
-    // ── extract_key_param ──
-
-    #[test]
-    fn extract_key_param_bash() {
-        let input = serde_json::json!({"command": "cargo test"});
-        assert_eq!(extract_key_param("Bash", &input), "cargo test");
-    }
-
-    #[test]
-    fn extract_key_param_read() {
-        let input = serde_json::json!({"file_path": "/src/main.rs"});
-        assert_eq!(extract_key_param("Read", &input), "/src/main.rs");
-    }
-
-    #[test]
-    fn extract_key_param_grep() {
-        let input = serde_json::json!({"pattern": "fn main"});
-        assert_eq!(extract_key_param("Grep", &input), "fn main");
-    }
-
-    #[test]
-    fn extract_key_param_missing() {
-        let input = serde_json::json!({});
-        assert_eq!(extract_key_param("Read", &input), "");
-    }
-
-    #[test]
-    fn extract_key_param_path_fallback() {
-        let input = serde_json::json!({"path": "/fallback"});
-        assert_eq!(extract_key_param("Unknown", &input), "/fallback");
-    }
-
-    // ── build_transcript with compaction ──
-
-    #[test]
-    fn transcript_with_compaction_summary() {
-        let payload = ContextPayload {
-            compaction_summary: Some("Previously: fixed auth bug, added tests.".into()),
-            events: vec![DisplayEvent::UserMessage {
-                _uuid: String::new(),
-                content: "now what?".into(),
-            }],
-        };
-        let transcript = build_transcript(&payload);
-        assert!(transcript.contains("[Previous conversation summary]"));
-        assert!(transcript.contains("fixed auth bug"));
-        assert!(transcript.contains("[Conversation continues]"));
-        assert!(transcript.contains("## User\nnow what?"));
-    }
-
-    #[test]
-    fn transcript_compaction_only_no_events() {
-        let payload = ContextPayload {
-            compaction_summary: Some("All summarized.".into()),
-            events: vec![],
-        };
-        let transcript = build_transcript(&payload);
-        assert!(transcript.contains("All summarized."));
-        assert!(transcript.contains("[Conversation continues]"));
-    }
-
-    #[test]
-    fn transcript_no_compaction_no_events_empty() {
-        let transcript = build_transcript(&empty_payload());
-        assert!(transcript.is_empty());
-    }
-
-    // ── build_compaction_prompt ──
-
-    #[test]
-    fn compaction_prompt_contains_transcript() {
-        let prompt = build_compaction_prompt(&simple_payload());
-        assert!(prompt.contains("<transcript>"));
-        assert!(prompt.contains("</transcript>"));
-        assert!(prompt.contains("fix the bug"));
-    }
-
-    #[test]
-    fn compaction_prompt_instructions() {
-        let prompt = build_compaction_prompt(&simple_payload());
-        assert!(prompt.contains("Key decisions"));
-        assert!(prompt.contains("Files created"));
-        assert!(prompt.contains("third person"));
-        assert!(prompt.contains("ONLY the summary"));
-    }
-
-    #[test]
-    fn compaction_prompt_empty_payload_still_valid() {
-        let prompt = build_compaction_prompt(&empty_payload());
-        assert!(prompt.contains("<transcript>"));
-        assert!(prompt.contains("</transcript>"));
-    }
-
-    #[test]
-    fn compaction_prompt_with_compaction_summary() {
-        let payload = ContextPayload {
-            compaction_summary: Some("Previously fixed auth.".into()),
-            events: vec![DisplayEvent::UserMessage {
-                _uuid: String::new(),
-                content: "next task".into(),
-            }],
-        };
-        let prompt = build_compaction_prompt(&payload);
-        assert!(prompt.contains("[Previous conversation summary]"));
-        assert!(prompt.contains("Previously fixed auth."));
-        assert!(prompt.contains("next task"));
-    }
-}
+#[path = "context_injection_tests.rs"]
+mod tests;

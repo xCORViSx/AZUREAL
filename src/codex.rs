@@ -27,6 +27,12 @@ const CODEX_CONTEXT_TRUNCATION_NOTICE: &str = "\n[Azureal omitted older raw sess
 /// Transcript marker that separates a compaction summary from raw recent events.
 const CONVERSATION_CONTINUES_MARKER: &str = "[Conversation continues]\n\n";
 
+/// GPT-5.6 Sol model slug that supports Codex's ultra reasoning mode.
+const GPT_5_6_SOL_MODEL: &str = "gpt-5.6-sol";
+
+/// Per-invocation Codex config override for maximum reasoning with delegation.
+const GPT_5_6_SOL_REASONING_CONFIG: &str = "model_reasoning_effort=\"ultra\"";
+
 /// Extract a Codex session/thread id from a JSONL event line.
 fn extract_codex_session_id(line: &str) -> Option<String> {
     if !(line.contains("\"thread.started\"") || line.contains("\"type\":\"session_meta\"")) {
@@ -58,6 +64,11 @@ fn build_codex_exec_args(
 
     args.push("exec".into());
     args.push("--json".into());
+
+    if model == Some(GPT_5_6_SOL_MODEL) {
+        args.push("--config".into());
+        args.push(GPT_5_6_SOL_REASONING_CONFIG.into());
+    }
 
     if let Some(m) = model {
         args.push("--model".into());
@@ -164,7 +175,7 @@ impl CodexProcess {
 
     /// Spawn Codex with the given prompt
     /// resume_session_id: Codex thread_id from previous prompt (for `exec resume`)
-    /// model: optional model override (e.g. "gpt-5.5", "gpt-5.4-mini") — passed as --model flag
+    /// model: optional model override (e.g. "gpt-5.6-sol", "gpt-5.4-mini") — passed as --model flag
     pub fn spawn(
         &self,
         working_dir: &Path,
@@ -281,6 +292,7 @@ impl CodexProcess {
 
 /// Regression tests for Codex CLI process setup and event parsing.
 #[cfg(test)]
+/// Regression tests for Codex process configuration, arguments, and prompt bounds.
 mod tests {
     use super::*;
 
@@ -394,6 +406,22 @@ mod tests {
         assert_eq!(args.last().map(String::as_str), Some("-"));
         assert!(args.windows(2).any(|pair| pair == ["--model", "gpt-5.5"]));
         assert!(!args.iter().any(|arg| arg.contains("visible prompt")));
+    }
+
+    /// GPT-5.6 Sol launches with Codex's ultra reasoning and delegation setting.
+    #[test]
+    fn codex_exec_args_enable_ultra_for_gpt_5_6_sol() {
+        let args = build_codex_exec_args(&Config::default(), None, Some(GPT_5_6_SOL_MODEL));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--config", GPT_5_6_SOL_REASONING_CONFIG]));
+    }
+
+    /// Other Codex models preserve the caller's configured reasoning effort.
+    #[test]
+    fn codex_exec_args_do_not_override_reasoning_for_other_models() {
+        let args = build_codex_exec_args(&Config::default(), None, Some("gpt-5.5"));
+        assert!(!args.iter().any(|arg| arg == GPT_5_6_SOL_REASONING_CONFIG));
     }
 
     /// Resume args keep the session id while still reading the prompt from stdin.
