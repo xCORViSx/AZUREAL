@@ -40,12 +40,11 @@ family:
 | Opus | Magenta |
 | Sonnet | Cyan |
 | Haiku | Yellow |
-| GPT-5.4 | Green |
-| GPT-5.3-codex | Light green |
-| GPT-5.2-codex | Teal |
-| GPT-5.2 | Light cyan |
-| GPT-5.1-codex-max | Blue |
-| GPT-5.1-codex-mini | Light blue |
+| GPT-5.6 family | Light blue |
+| GPT-5.5 family | Green |
+| GPT-5.4 family | Light green |
+| GPT-5 / GPT-5 mini / GPT-5 nano | Light blue |
+| GPT-4.1 | Blue |
 
 ## Conversation Layout
 

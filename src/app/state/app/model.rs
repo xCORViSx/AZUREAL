@@ -4,7 +4,7 @@ use super::App;
 use crate::backend::Backend;
 use ratatui::style::Color;
 
-/// Claude model aliases exposed by Azureal's unified model picker.
+/// Claude aliases exposed by the unified model switcher.
 const CLAUDE_MODELS: &[&str] = &["opus", "sonnet", "haiku"];
 
 // BEGIN OPENAI_FRONTIER_MODELS
@@ -24,33 +24,42 @@ const OPENAI_FRONTIER_MODELS: &[&str] = &[
 ];
 // END OPENAI_FRONTIER_MODELS
 
-/// Iterate through Claude aliases followed by the synced OpenAI frontier models.
-fn all_models() -> impl Iterator<Item = &'static str> {
-    CLAUDE_MODELS
+/// Iterate over Codex models in switcher order without duplicate pinned entries.
+fn codex_models() -> impl Iterator<Item = &'static str> {
+    crate::codex::CODEX_SWITCHER_MODELS
         .iter()
-        .chain(OPENAI_FRONTIER_MODELS.iter())
+        .chain(
+            OPENAI_FRONTIER_MODELS
+                .iter()
+                .filter(|model| !crate::codex::CODEX_SWITCHER_MODELS.contains(*model)),
+        )
         .copied()
 }
 
-/// Materialize the unified model order for cycling and tests.
+/// Iterate over every model in the unified Claude-then-Codex switcher order.
+fn all_models() -> impl Iterator<Item = &'static str> {
+    CLAUDE_MODELS.iter().copied().chain(codex_models())
+}
+
+/// Materialize the unified model iterator for availability checks and tests.
 fn all_models_vec() -> Vec<&'static str> {
     all_models().collect()
 }
 
-/// Return the highest-priority Codex model from the synced frontier catalog.
+/// Return the first Codex model, which is also Azureal's preferred default.
 fn first_codex_model() -> Option<&'static str> {
-    OPENAI_FRONTIER_MODELS.first().copied()
+    codex_models().next()
 }
 
-#[cfg(test)]
 /// Return the final Codex model so cycling wraparound can be verified.
+#[cfg(test)]
 fn last_codex_model() -> Option<&'static str> {
-    OPENAI_FRONTIER_MODELS.last().copied()
+    codex_models().last()
 }
 
 /// Default model for new/empty sessions.
 pub fn default_model() -> &'static str {
-    OPENAI_FRONTIER_MODELS[0]
+    crate::codex::GPT_5_6_SOL_MODEL
 }
 
 /// Map a model string from an Init event back to a unified model-pool alias.
@@ -104,7 +113,7 @@ pub fn model_color(model: &str) -> Color {
     }
 }
 
-/// Model-selection and context-meter behavior attached to application state.
+/// Model selection, persistence, and context-usage behavior for the application state.
 impl App {
     /// Return the subset of the unified model pool whose backend is detected as installed.
     /// Falls back to the full pool if neither backend is found (the app can't
@@ -212,7 +221,7 @@ impl App {
         self.apply_token_badge(self.chars_since_compaction);
     }
 
-    /// Update cached context-usage text, color, and compaction threshold state.
+    /// Update the cached badge and compaction-warning state for a character count.
     fn apply_token_badge(&mut self, total_chars: usize) {
         let pct_value = self.char_usage_pct(total_chars);
         let pct_value = if let Some(pct) = pct_value {
@@ -238,7 +247,7 @@ impl App {
         }
     }
 
-    /// Convert stored character usage into a percentage capped at one hundred.
+    /// Convert stored characters into a capped percentage of the compaction threshold.
     fn char_usage_pct(&self, total_chars: usize) -> Option<f64> {
         if total_chars > 0 || self.current_session_id.is_some() {
             let threshold = crate::app::session_store::COMPACTION_THRESHOLD as f64;
@@ -288,12 +297,12 @@ impl App {
     }
 }
 
+/// Regression tests for model selection, persistence, availability, and usage badges.
 #[cfg(test)]
-/// Regression tests for model selection, persistence, colors, and context usage.
 mod tests {
     use super::*;
 
-    /// Build an application whose selected model matches the production default.
+    /// Build an app whose selected model matches the application default.
     fn app_default() -> App {
         let mut app = App::new();
         app.selected_model = Some(default_model().to_string());
@@ -302,15 +311,27 @@ mod tests {
 
     // ── default_model ──
 
-    /// Verifies that default model is GPT-5.6 sol.
+    /// The application default resolves to the canonical GPT-5.6 Sol model ID.
     #[test]
     fn test_default_model_is_gpt_5_6_sol() {
         assert_eq!(default_model(), "gpt-5.6-sol");
+        assert_eq!(
+            codex_models().take(7).collect::<Vec<_>>(),
+            vec![
+                crate::codex::GPT_5_6_SOL_MODEL,
+                "gpt-5.6-sol:low",
+                "gpt-5.6-sol:medium",
+                "gpt-5.6-sol:high",
+                "gpt-5.6-sol:xhigh",
+                "gpt-5.6-sol:max",
+                "gpt-5.6-sol:ultra",
+            ]
+        );
     }
 
     // ── backend_for_model ──
 
-    /// Verifies that backend for Claude models.
+    /// Every Claude alias routes to the Claude backend.
     #[test]
     fn test_backend_for_claude_models() {
         for &model in CLAUDE_MODELS {
@@ -318,16 +339,16 @@ mod tests {
         }
     }
 
-    /// Verifies that backend for Codex models.
+    /// Every configured Codex model and the legacy alias route to Codex.
     #[test]
     fn test_backend_for_codex_models() {
-        for &model in OPENAI_FRONTIER_MODELS {
+        for model in codex_models() {
             assert_eq!(backend_for_model(model), Backend::Codex);
         }
         assert_eq!(backend_for_model("codex"), Backend::Codex);
     }
 
-    /// Verifies that backend for unknown defaults Claude.
+    /// Unknown non-GPT model names retain the Claude fallback behavior.
     #[test]
     fn test_backend_for_unknown_defaults_claude() {
         assert_eq!(backend_for_model("unknown"), Backend::Claude);
@@ -335,7 +356,7 @@ mod tests {
 
     // ── model_alias_from_init ──
 
-    /// Verifies that alias exact match.
+    /// Every switcher model round-trips through exact Init-event alias matching.
     #[test]
     fn test_alias_exact_match() {
         for model in all_models_vec() {
@@ -343,7 +364,7 @@ mod tests {
         }
     }
 
-    /// Verifies that alias Claude api name.
+    /// Full Claude API identifiers collapse to their short switcher aliases.
     #[test]
     fn test_alias_claude_api_name() {
         assert_eq!(
@@ -357,21 +378,21 @@ mod tests {
         );
     }
 
-    /// Verifies that alias unknown returns none.
+    /// Empty and unrecognized non-GPT identifiers do not restore a model.
     #[test]
     fn test_alias_unknown_returns_none() {
         assert_eq!(model_alias_from_init("unknown"), None);
         assert_eq!(model_alias_from_init(""), None);
     }
 
-    /// Verifies that alias unknown gpt falls back to first Codex.
+    /// Unlisted GPT identifiers recover to Azureal's preferred Codex model.
     #[test]
     fn test_alias_unknown_gpt_falls_back_to_first_codex() {
         // An unlisted gpt model still maps to a Codex entry
         assert!(model_alias_from_init("gpt-99").unwrap().starts_with("gpt-"));
     }
 
-    /// Verifies that alias legacy Codex string.
+    /// Legacy `codex` Init events recover to a supported Codex model.
     #[test]
     fn test_alias_legacy_codex_string() {
         // Old sessions stored "codex" as the model — should map to first Codex model
@@ -382,14 +403,14 @@ mod tests {
 
     // ── last_session_model ──
 
-    /// Verifies that last session model empty events.
+    /// An empty event stream has no restorable model.
     #[test]
     fn test_last_session_model_empty_events() {
         let app = App::new();
         assert_eq!(app.last_session_model(), None);
     }
 
-    /// Verifies that last session model from init.
+    /// The latest recognized Init event supplies the session model.
     #[test]
     fn test_last_session_model_from_init() {
         use crate::events::DisplayEvent;
@@ -409,7 +430,7 @@ mod tests {
         assert_eq!(app.last_session_model(), Some("gpt-5.4"));
     }
 
-    /// Verifies that last session model picks last init.
+    /// Later Init events supersede earlier session-model metadata.
     #[test]
     fn test_last_session_model_picks_last_init() {
         use crate::events::DisplayEvent;
@@ -439,7 +460,7 @@ mod tests {
         assert_eq!(app.last_session_model(), Some("sonnet"));
     }
 
-    /// Verifies that last session model model switch overrides init.
+    /// An explicit model switch takes precedence over Init metadata.
     #[test]
     fn test_last_session_model_model_switch_overrides_init() {
         use crate::events::DisplayEvent;
@@ -463,7 +484,7 @@ mod tests {
         assert_eq!(app.last_session_model(), Some("gpt-5.4"));
     }
 
-    /// Verifies that last session model picks last model switch.
+    /// The most recent explicit model switch wins among multiple switches.
     #[test]
     fn test_last_session_model_picks_last_model_switch() {
         use crate::events::DisplayEvent;
@@ -487,7 +508,7 @@ mod tests {
         assert_eq!(app.last_session_model(), Some("haiku"));
     }
 
-    /// Verifies that last session model no switch falls back to init.
+    /// Sessions without switch tags fall back to their Init model.
     #[test]
     fn test_last_session_model_no_switch_falls_back_to_init() {
         use crate::events::DisplayEvent;
@@ -513,7 +534,7 @@ mod tests {
 
     // ── Unified model cycling ──
 
-    /// Verifies that cycle opus to sonnet.
+    /// Cycling advances between adjacent Claude aliases without changing backends.
     #[test]
     fn test_cycle_opus_to_sonnet() {
         let mut app = app_default();
@@ -525,7 +546,7 @@ mod tests {
         assert_eq!(app.backend, Backend::Claude);
     }
 
-    /// Verifies that cycle haiku to first Codex model.
+    /// Cycling after Haiku selects Sol and crosses to the Codex backend.
     #[test]
     fn test_cycle_haiku_to_first_codex_model() {
         let mut app = app_default();
@@ -535,7 +556,7 @@ mod tests {
         assert_eq!(app.backend, Backend::Codex);
     }
 
-    /// Verifies that cycle last Codex wraps to opus.
+    /// Cycling past the final Codex model wraps to Opus and Claude.
     #[test]
     fn test_cycle_last_codex_wraps_to_opus() {
         let mut app = app_default();
@@ -546,7 +567,7 @@ mod tests {
         assert_eq!(app.backend, Backend::Claude);
     }
 
-    /// Verifies that full cycle all models.
+    /// A complete cycle visits every available model in order and returns to default.
     #[test]
     fn test_full_cycle_all_models() {
         let mut app = app_default();
@@ -569,16 +590,16 @@ mod tests {
         }
     }
 
-    /// Verifies that cycle unknown model defaults to model after default.
+    /// Unknown selections resume cycling at the model after the configured default.
     #[test]
     fn test_cycle_unknown_model_defaults_to_model_after_default() {
         let mut app = app_default();
         app.selected_model = Some("unknown".to_string());
         app.cycle_model();
-        assert_eq!(app.display_model_name(), "gpt-5.6-terra");
+        assert_eq!(app.display_model_name(), "gpt-5.6-sol:low");
     }
 
-    /// Verifies that cycle injects model switch event.
+    /// Cycling records the newly selected model in the display event stream.
     #[test]
     fn test_cycle_injects_model_switch_event() {
         use crate::events::DisplayEvent;
@@ -587,12 +608,12 @@ mod tests {
         app.cycle_model();
         assert_eq!(app.display_events.len(), 1);
         match &app.display_events[0] {
-            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.6-terra"),
+            DisplayEvent::ModelSwitch { model } => assert_eq!(model, "gpt-5.6-sol:low"),
             other => panic!("expected ModelSwitch, got {:?}", other),
         }
     }
 
-    /// Verifies that cycle model switch persists to store.
+    /// Cycling persists the model-switch tag in the active SQLite session.
     #[test]
     fn test_cycle_model_switch_persists_to_store() {
         use crate::app::session_store::SessionStore;
@@ -601,7 +622,7 @@ mod tests {
         let sid = store.create_session("test").unwrap();
         app.session_store = Some(store);
         app.current_session_id = Some(sid);
-        app.cycle_model(); // gpt-5.6-sol → gpt-5.6-terra
+        app.cycle_model(); // gpt-5.6-sol → gpt-5.6-sol:low
                            // Verify the ModelSwitch event was persisted to the store
         let events = app
             .session_store
@@ -612,7 +633,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         match &events[0] {
             crate::events::DisplayEvent::ModelSwitch { model } => {
-                assert_eq!(model, "gpt-5.6-terra")
+                assert_eq!(model, "gpt-5.6-sol:low")
             }
             other => panic!("expected ModelSwitch, got {:?}", other),
         }
@@ -620,14 +641,14 @@ mod tests {
 
     // ── Backend availability gating ──
 
-    /// Verifies that available models both available.
+    /// Both installed backends expose the complete unified model pool.
     #[test]
     fn test_available_models_both_available() {
         let app = app_default();
         assert_eq!(app.available_models().len(), all_models_vec().len());
     }
 
-    /// Verifies that available models Codex unavailable.
+    /// Missing Codex leaves only Claude models available.
     #[test]
     fn test_available_models_codex_unavailable() {
         let mut app = app_default();
@@ -636,16 +657,16 @@ mod tests {
         assert_eq!(models, CLAUDE_MODELS.to_vec());
     }
 
-    /// Verifies that available models Claude unavailable.
+    /// Missing Claude leaves every configured Codex model available.
     #[test]
     fn test_available_models_claude_unavailable() {
         let mut app = app_default();
         app.claude_available = false;
         let models = app.available_models();
-        assert_eq!(models, OPENAI_FRONTIER_MODELS.to_vec());
+        assert_eq!(models, codex_models().collect::<Vec<_>>());
     }
 
-    /// Verifies that available models neither falls back to all.
+    /// Missing both executable probes keeps the full recovery pool visible.
     #[test]
     fn test_available_models_neither_falls_back_to_all() {
         let mut app = app_default();
@@ -654,7 +675,7 @@ mod tests {
         assert_eq!(app.available_models().len(), all_models_vec().len());
     }
 
-    /// Verifies that cycle skips Codex when unavailable.
+    /// Cycling omits every Codex model when the Codex CLI is unavailable.
     #[test]
     fn test_cycle_skips_codex_when_unavailable() {
         let mut app = app_default();
@@ -669,7 +690,7 @@ mod tests {
         assert_eq!(app.backend, Backend::Claude);
     }
 
-    /// Verifies that cycle skips Claude when unavailable.
+    /// Cycling remains inside the Codex pool when Claude is unavailable.
     #[test]
     fn test_cycle_skips_claude_when_unavailable() {
         let mut app = app_default();
@@ -677,21 +698,21 @@ mod tests {
         app.selected_model = Some(first_codex_model().unwrap().to_string());
         app.backend = Backend::Codex;
         // Should cycle only through Codex models and never land on Claude
-        for _ in 0..OPENAI_FRONTIER_MODELS.len() {
+        for _ in 0..codex_models().count() {
             app.cycle_model();
             assert!(app.display_model_name().starts_with("gpt-"));
             assert_eq!(app.backend, Backend::Codex);
         }
     }
 
-    /// Verifies that first available model defaults GPT-5.6 sol.
+    /// The preferred available model is GPT-5.6 Sol when Codex exists.
     #[test]
     fn test_first_available_model_defaults_gpt_5_6_sol() {
         let app = app_default();
         assert_eq!(app.first_available_model(), "gpt-5.6-sol");
     }
 
-    /// Verifies that first available model Claude unavailable.
+    /// A Codex-only installation still starts on the preferred Codex model.
     #[test]
     fn test_first_available_model_claude_unavailable() {
         let mut app = app_default();
@@ -701,7 +722,7 @@ mod tests {
 
     // ── display_model_name ──
 
-    /// Verifies that display model none defaults GPT-5.6 sol.
+    /// Missing selection state displays the GPT-5.6 Sol fallback.
     #[test]
     fn test_display_model_none_defaults_gpt_5_6_sol() {
         let mut app = App::new();
@@ -709,7 +730,7 @@ mod tests {
         assert_eq!(app.display_model_name(), "gpt-5.6-sol");
     }
 
-    /// Verifies that display model set value.
+    /// An explicit selection is displayed without rewriting its model ID.
     #[test]
     fn test_display_model_set_value() {
         let mut app = App::new();
@@ -719,49 +740,52 @@ mod tests {
 
     // ── Unified model pool ──
 
-    /// Verifies that all models count matches segments.
+    /// The unified pool contains every Claude alias and de-duplicated Codex entry.
     #[test]
     fn test_all_models_count_matches_segments() {
         assert_eq!(
             all_models_vec().len(),
-            CLAUDE_MODELS.len() + OPENAI_FRONTIER_MODELS.len()
+            CLAUDE_MODELS.len() + codex_models().count()
         );
     }
 
-    /// Verifies that all models contains default.
+    /// The configured default always appears in the switcher pool.
     #[test]
     fn test_all_models_contains_default() {
         assert!(all_models_vec().contains(&default_model()));
     }
 
-    /// Verifies that all models Claude then Codex.
+    /// The pool groups Claude aliases before models routed to Codex.
     #[test]
     fn test_all_models_claude_then_codex() {
         for &m in CLAUDE_MODELS {
             assert_eq!(backend_for_model(m), Backend::Claude);
         }
-        for &m in OPENAI_FRONTIER_MODELS {
+        for m in codex_models() {
             assert_eq!(backend_for_model(m), Backend::Codex);
         }
     }
 
-    /// Verifies that model color Claude.
+    /// Claude aliases retain their established accent colors.
     #[test]
     fn test_model_color_claude() {
         assert_eq!(model_color("sonnet"), Color::Cyan);
     }
 
-    /// Verifies that model color frontier family.
+    /// Known GPT families receive their family-specific accent colors.
     #[test]
     fn test_model_color_frontier_family() {
-        assert_eq!(model_color("gpt-5.6-sol"), Color::LightCyan);
+        assert_eq!(
+            model_color(crate::codex::GPT_5_6_SOL_MODEL),
+            Color::LightCyan
+        );
         assert_eq!(model_color("gpt-5.5"), Color::Green);
         assert_eq!(model_color("gpt-5.4-mini"), Color::LightGreen);
         assert_eq!(model_color("gpt-5"), Color::LightBlue);
         assert_eq!(model_color("gpt-4.1"), Color::Blue);
     }
 
-    /// Verifies that model color unknown.
+    /// Unknown model names use a subdued fallback color.
     #[test]
     fn test_model_color_unknown() {
         assert_eq!(model_color("x"), Color::DarkGray);
@@ -791,7 +815,7 @@ mod tests {
         app
     }
 
-    /// Verifies that token badge none without store.
+    /// No store or session state produces no context-usage badge.
     #[test]
     fn test_token_badge_none_without_store() {
         let mut app = App::new();
@@ -799,7 +823,7 @@ mod tests {
         assert!(app.token_badge_cache.is_none());
     }
 
-    /// Verifies that token badge none without session id.
+    /// A store without an active session produces no usage badge.
     #[test]
     fn test_token_badge_none_without_session_id() {
         use crate::app::session_store::SessionStore;
@@ -810,7 +834,7 @@ mod tests {
         assert!(app.token_badge_cache.is_none());
     }
 
-    /// Verifies that token badge green low usage.
+    /// Low context usage renders a green percentage badge.
     #[test]
     fn test_token_badge_green_low_usage() {
         // 100k chars out of 400k = 25%
@@ -821,7 +845,7 @@ mod tests {
         assert!(text.contains("25"));
     }
 
-    /// Verifies that token badge yellow medium usage.
+    /// Medium context usage renders a yellow badge.
     #[test]
     fn test_token_badge_yellow_medium_usage() {
         // 280k chars out of 400k = 70%
@@ -831,7 +855,7 @@ mod tests {
         assert_eq!(color, ratatui::style::Color::Yellow);
     }
 
-    /// Verifies that token badge red high usage.
+    /// High context usage renders a red badge.
     #[test]
     fn test_token_badge_red_high_usage() {
         // 380k chars out of 400k = 95%
@@ -842,7 +866,7 @@ mod tests {
         assert!(app.context_pct_high);
     }
 
-    /// Verifies that token badge capped at 100.
+    /// Usage beyond the compaction threshold is capped at 100 percent.
     #[test]
     fn test_token_badge_capped_at_100() {
         // 500k chars out of 400k — should cap at 100%
@@ -853,7 +877,7 @@ mod tests {
         assert!(text.contains("100"));
     }
 
-    /// Verifies that token badge zero chars.
+    /// An active empty session still renders a zero-percent badge.
     #[test]
     fn test_token_badge_zero_chars() {
         let mut app = app_with_store_chars(0);
@@ -862,7 +886,7 @@ mod tests {
         assert!(text.contains("0"));
     }
 
-    /// Verifies that token badge ignores session token metadata.
+    /// The badge derives from stored characters rather than legacy token metadata.
     #[test]
     fn test_token_badge_ignores_session_token_metadata() {
         let mut app = app_with_store_chars(500_000);
@@ -874,7 +898,7 @@ mod tests {
         assert!(text.contains("100"));
     }
 
-    /// Verifies that token badge compaction resets pct.
+    /// Compaction resets the usage badge to the post-boundary character count.
     #[test]
     fn test_token_badge_compaction_resets_pct() {
         use crate::app::session_store::SessionStore;
@@ -908,7 +932,7 @@ mod tests {
         assert_eq!(color, ratatui::style::Color::Green);
     }
 
-    /// Verifies that token badge live does not double count loaded display events.
+    /// Live badge refreshes use the authoritative counter without recounting loaded events.
     #[test]
     fn test_token_badge_live_does_not_double_count_loaded_display_events() {
         use crate::events::DisplayEvent;

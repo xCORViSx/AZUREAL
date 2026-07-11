@@ -6,10 +6,10 @@ The Codex backend wraps the **OpenAI Codex CLI** (`codex` command) to execute pr
 
 ## Command Structure
 
-Every Codex invocation follows this pattern:
+The default GPT-5.6 Sol invocation follows this pattern, with the prompt read from standard input:
 
 ```sh
-codex exec --json "<prompt>"
+codex exec --json --model gpt-5.6-sol --config 'model_reasoning_effort="ultra"' -
 ```
 
 Like the Claude backend, AZUREAL does **not** use the Codex CLI's native `resume` mechanism. Conversation continuity is handled entirely through context injection from the SQLite session store. Each prompt spawns a fresh process with the full context prepended.
@@ -18,6 +18,9 @@ Like the Claude backend, AZUREAL does **not** use the Codex CLI's native `resume
 |-----------------|---------|
 | `exec` | Non-interactive execution mode. |
 | `--json` | Emits structured JSON output for machine parsing. |
+| `--model gpt-5.6-sol` | Selects Azureal's default Codex model. |
+| `--config 'model_reasoning_effort="ultra"'` | Enables Sol's maximum reasoning mode with automatic task delegation. |
+| `-` | Reads the context-injected prompt from standard input. |
 
 ---
 
@@ -36,7 +39,7 @@ Codex CLI supports two permission modes:
 ### Dangerously Bypass Approvals and Sandbox
 
 ```sh
-codex exec --json --dangerously-bypass-approvals-and-sandbox "<prompt>"
+codex exec --json --model gpt-5.6-sol --config 'model_reasoning_effort="ultra"' --dangerously-bypass-approvals-and-sandbox -
 ```
 
 This flag disables all approval prompts and sandbox restrictions. The agent can read files, write files, execute commands, and perform any action without confirmation. This is the Codex equivalent of Claude's `--dangerously-skip-permissions` flag.
@@ -44,7 +47,7 @@ This flag disables all approval prompts and sandbox restrictions. The agent can 
 ### Full Auto
 
 ```sh
-codex exec --json --full-auto "<prompt>"
+codex exec --json --model gpt-5.6-sol --config 'model_reasoning_effort="ultra"' --full-auto -
 ```
 
 Full auto mode allows the agent to operate autonomously while still respecting sandbox boundaries. The agent can proceed without manual approval for standard operations, but destructive or out-of-scope actions may still be restricted. This is a middle ground between fully restricted and fully unrestricted operation.
@@ -53,10 +56,15 @@ Full auto mode allows the agent to operate autonomously while still respecting s
 
 ## Model Selection
 
-The Codex backend serves the OpenAI frontier models:
+The Codex backend serves the pinned GPT-5.6 family, with Sol as the default,
+plus the OpenAI frontier catalog:
 
 | Model | Alias |
 |-------|-------|
+| GPT-5.6 Sol | `gpt-5.6-sol` |
+| GPT-5.6 Terra | `gpt-5.6-terra` |
+| GPT-5.6 Luna | `gpt-5.6-luna` |
+| GPT-5.2 | `gpt-5.2` |
 | GPT-5.5 | `gpt-5.5` |
 | GPT-5.5 Pro | `gpt-5.5-pro` |
 | GPT-5.4 | `gpt-5.4` |
@@ -68,7 +76,19 @@ The Codex backend serves the OpenAI frontier models:
 | GPT-5 | `gpt-5` |
 | GPT-4.1 | `gpt-4.1` |
 
-All models with names starting with `gpt-` are automatically routed to the Codex backend. See [Model Switcher](./model-switcher.md) for the full model cycle.
+All models with names starting with `gpt-` are automatically routed to the Codex backend. Bare GPT-5.6 Sol keeps the explicit `ultra` default; `model:effort` entries pass their suffix as `model_reasoning_effort` after stripping it from the `--model` value.
+
+### Reasoning Effort Entries
+
+The switcher exposes supported effort suffixes as `model:effort` entries:
+
+| Codex models | Efforts |
+|--------------|---------|
+| GPT-5.6 Sol, GPT-5.6 Terra | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| GPT-5.6 Luna | `low`, `medium`, `high`, `xhigh`, `max` |
+| GPT-5.2, GPT-5.5, GPT-5.4, GPT-5.4 Mini | `low`, `medium`, `high`, `xhigh` |
+
+For example, `gpt-5.6-sol:xhigh` launches with `--model gpt-5.6-sol` and `model_reasoning_effort="xhigh"`. See [Model Switcher](./model-switcher.md) for the full cycle.
 
 ---
 

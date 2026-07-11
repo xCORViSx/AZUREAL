@@ -31,11 +31,13 @@ model:
 
 | Model Pattern | Backend | Command |
 |---------------|---------|---------|
-| `gpt-*` | Codex | `codex exec --ephemeral` |
+| `gpt-*` | Codex | `codex exec --ephemeral --model <selected-model>` |
 | All others | Claude | `claude -p` |
 
 The `--no-session-persistence` flag is passed to Claude to prevent the creation
-of `.jsonl` session files for these ephemeral generation requests.
+of `.jsonl` session files for these ephemeral generation requests. When GPT-5.6
+Sol is selected, the Codex command also includes
+`--config 'model_reasoning_effort="ultra"'`, matching normal agent launches.
 
 ### Cross-Backend Fallback
 

@@ -25,7 +25,7 @@ mode, or active filter/search inputs).
 | `Ctrl+D` | Debug dump | Opens naming dialog, then writes state snapshot to file |
 | `Ctrl+C` / `Alt+C` | Cancel agent | Kills the active agent in the current slot. macOS uses `Ctrl+C`; Windows/Linux uses `Alt+C` |
 | `Cmd+C` / `Ctrl+C` | Copy selection | Copies from whichever pane has an active text selection. macOS uses `Cmd+C`; Windows/Linux uses `Ctrl+C` |
-| `Ctrl+M` | Cycle model | Rotates through available models: opus, sonnet, haiku, gpt-5.4, and others |
+| `Ctrl+M` | Cycle model | Rotates through available models and Codex `model:effort` entries such as gpt-5.6-sol:xhigh |
 | `?` | Help overlay | Opens the help overlay showing all keybindings for the current context |
 | `p` | Enter prompt mode | Focuses the input area for typing a prompt. Closes the terminal if it is open |
 | `T` | Toggle terminal | Opens or closes the embedded terminal pane |

@@ -11,7 +11,7 @@ Two backends exist:
 | Backend | CLI Tool | Triggered By |
 |---------|----------|--------------|
 | `Backend::Claude` | Claude Code CLI | Any non-`gpt-*` model (opus, sonnet, haiku) |
-| `Backend::Codex` | Codex CLI | Any `gpt-*` model (gpt-5.5, gpt-5.4, etc.) |
+| `Backend::Codex` | Codex CLI | Any `gpt-*` model or `model:effort` entry (for example, gpt-5.6-sol:xhigh) |
 
 The `AgentProcess` struct holds both a `ClaudeProcess` and a `CodexProcess`. At spawn time, the active model determines which backend handles the request. You never configure the backend directly -- switching models with `Ctrl+M` is all it takes.
 

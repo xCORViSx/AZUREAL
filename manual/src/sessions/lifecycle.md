@@ -28,7 +28,7 @@ Both backends receive context injection identically -- neither uses a CLI-native
 A new CLI process is spawned based on the active backend:
 
 - **Claude**: `claude -p "<context + prompt>" --verbose --output-format stream-json`
-- **Codex**: `codex exec --json "<context + prompt>"`
+- **Codex**: `codex exec --json --model gpt-5.6-sol --config 'model_reasoning_effort="ultra"' -` (context and prompt via standard input)
 
 The process runs in the worktree's directory, so all file operations performed by the agent are scoped to the correct working tree. The process's PID is registered as a new session slot (see [Multi-Agent Concurrency](./multi-agent.md)).
 

@@ -12,7 +12,7 @@ use crate::app::App;
 use crate::backend::Backend;
 use crate::git::{Git, SquashMergeResult};
 use std::sync::atomic::{AtomicU64, Ordering};
-
+/// Monotonic suffix that keeps concurrent union-merge temporary files distinct.
 static UNION_MERGE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Rebase outcome for the UI to display
@@ -28,20 +28,20 @@ pub(crate) enum RebaseOutcome {
     },
     Failed(String),
 }
-
+/// Format the selected model for the commit-message generator status label.
 fn commit_message_generator_label(model: Option<&str>) -> String {
     model
         .map(str::to_string)
         .unwrap_or_else(|| "default model".to_string())
 }
-
+/// Remove optional Markdown fences from an agent-generated commit message.
 fn strip_commit_message_fences(raw: &str) -> String {
     let msg = raw.trim();
     let msg = msg.strip_prefix("```").unwrap_or(msg);
     let msg = msg.strip_suffix("```").unwrap_or(msg);
     msg.trim().to_string()
 }
-
+/// Allocate a process-specific temporary path for Codex's final message output.
 fn codex_commit_message_output_path() -> std::path::PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -53,7 +53,7 @@ fn codex_commit_message_output_path() -> std::path::PathBuf {
         nanos
     ))
 }
-
+/// Run a one-shot Claude process and return its normalized commit message.
 fn generate_commit_message_with_claude(
     executable: &str,
     working_dir: &std::path::Path,
@@ -100,7 +100,7 @@ fn generate_commit_message_with_claude(
     }
     result
 }
-
+/// Run a one-shot Codex process and return its normalized commit message.
 fn generate_commit_message_with_codex(
     executable: &str,
     working_dir: &std::path::Path,
@@ -114,7 +114,7 @@ fn generate_commit_message_with_codex(
     cmd.arg("--ephemeral");
     cmd.args(["--color", "never"]);
     if let Some(model) = model {
-        cmd.args(["--model", model]);
+        cmd.args(crate::codex::codex_model_args(model));
     }
     cmd.arg("-o");
     cmd.arg(&output_path);
@@ -993,7 +993,7 @@ pub(crate) fn refresh_commit_log(panel: &mut GitActionsPanel) {
     panel.commits_behind_remote = rb;
     panel.commits_ahead_remote = ra;
 }
-
+/// Regression tests for Git operation outcomes, parsing, overlays, and summaries.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1003,18 +1003,21 @@ mod tests {
     //  RebaseOutcome enum
     // ══════════════════════════════════════════════════════════════════
 
+    /// The rebased outcome remains distinguishable from every other result.
     #[test]
     fn rebase_outcome_rebased() {
         let outcome = RebaseOutcome::Rebased;
         assert!(matches!(outcome, RebaseOutcome::Rebased));
     }
 
+    /// The up-to-date outcome remains distinguishable from every other result.
     #[test]
     fn rebase_outcome_up_to_date() {
         let outcome = RebaseOutcome::UpToDate;
         assert!(matches!(outcome, RebaseOutcome::UpToDate));
     }
 
+    /// Conflict outcomes preserve their conflicted and auto-merged file lists.
     #[test]
     fn rebase_outcome_conflict() {
         let outcome = RebaseOutcome::Conflict {
@@ -1025,12 +1028,14 @@ mod tests {
         assert!(matches!(outcome, RebaseOutcome::Conflict { .. }));
     }
 
+    /// Failure outcomes preserve their diagnostic message.
     #[test]
     fn rebase_outcome_failed() {
         let outcome = RebaseOutcome::Failed("error".into());
         assert!(matches!(outcome, RebaseOutcome::Failed(_)));
     }
 
+    /// Conflict pattern matching exposes every stored field.
     #[test]
     fn rebase_outcome_conflict_fields() {
         let outcome = RebaseOutcome::Conflict {
@@ -1050,6 +1055,7 @@ mod tests {
         }
     }
 
+    /// Failure pattern matching returns the original error text.
     #[test]
     fn rebase_outcome_failed_message() {
         let outcome = RebaseOutcome::Failed("fatal: invalid upstream".into());
@@ -1062,6 +1068,7 @@ mod tests {
     //  parse_conflict_files
     // ══════════════════════════════════════════════════════════════════
 
+    /// Conflict parsing recognizes a standard merge-conflict line.
     #[test]
     fn parse_conflict_files_basic_conflict() {
         let text = "CONFLICT (content): Merge conflict in src/main.rs\nAuto-merging Cargo.lock";
@@ -1071,6 +1078,7 @@ mod tests {
         assert_eq!(auto_merged, vec!["Cargo.lock"]);
     }
 
+    /// Conflict parsing returns empty lists for unrelated output.
     #[test]
     fn parse_conflict_files_no_conflicts() {
         // When no CONFLICT lines, parse_conflict_files returns empty (Git::get_conflicted_files
@@ -1081,6 +1089,7 @@ mod tests {
         assert_eq!(auto_merged, vec!["Cargo.lock"]);
     }
 
+    /// Conflict parsing preserves multiple conflicted paths.
     #[test]
     fn parse_conflict_files_multiple_conflicts() {
         let text = "CONFLICT (content): Merge conflict in a.rs\nCONFLICT (content): Merge conflict in b.rs";
@@ -1088,6 +1097,7 @@ mod tests {
         assert_eq!(conflicted, vec!["a.rs", "b.rs"]);
     }
 
+    /// Conflict parsing preserves multiple auto-merged paths.
     #[test]
     fn parse_conflict_files_multiple_auto_merged() {
         let text = "Auto-merging x.rs\nAuto-merging y.rs";
@@ -1095,6 +1105,7 @@ mod tests {
         assert_eq!(auto_merged, vec!["x.rs", "y.rs"]);
     }
 
+    /// Conflict parsing handles empty command output.
     #[test]
     fn parse_conflict_files_empty_text() {
         let text = "";
@@ -1107,6 +1118,7 @@ mod tests {
         let _ = conflicted;
     }
 
+    /// Conflict parsing recognizes conflict lines without a merge prefix.
     #[test]
     fn parse_conflict_files_conflict_without_merge_prefix() {
         // Lines starting with CONFLICT but without "Merge conflict in"
@@ -1120,6 +1132,7 @@ mod tests {
     //  try_auto_resolve_conflicts — logic checks (no git)
     // ══════════════════════════════════════════════════════════════════
 
+    /// Auto-resolution declines to run when no files are conflicted.
     #[test]
     fn auto_resolve_empty_conflicted_returns_none() {
         let conflicted: Vec<String> = vec![];
@@ -1129,6 +1142,7 @@ mod tests {
         assert!(!all_resolvable);
     }
 
+    /// Auto-resolution accepts conflicts fully covered by the configured list.
     #[test]
     fn auto_resolve_all_in_list() {
         let conflicted = vec!["Cargo.lock".to_string()];
@@ -1138,6 +1152,7 @@ mod tests {
         assert!(all_resolvable);
     }
 
+    /// Auto-resolution rejects conflicts not fully covered by configuration.
     #[test]
     fn auto_resolve_not_all_in_list() {
         let conflicted = vec!["Cargo.lock".to_string(), "src/main.rs".to_string()];
@@ -1147,6 +1162,7 @@ mod tests {
         assert!(!all_resolvable);
     }
 
+    /// Auto-resolution rejects conflicts when no files are configured.
     #[test]
     fn auto_resolve_empty_ar_files() {
         let conflicted = vec!["a.rs".to_string()];
@@ -1160,6 +1176,7 @@ mod tests {
     //  GitConflictOverlay construction
     // ══════════════════════════════════════════════════════════════════
 
+    /// Rebase conflict overlays retain their expected initial state.
     #[test]
     fn conflict_overlay_construction_rebase() {
         let ov = GitConflictOverlay {
@@ -1172,6 +1189,7 @@ mod tests {
         assert!(!ov.continue_with_merge);
     }
 
+    /// Merge conflict overlays retain their expected initial state.
     #[test]
     fn conflict_overlay_construction_merge() {
         let ov = GitConflictOverlay {
@@ -1188,6 +1206,7 @@ mod tests {
     //  GitCommitOverlay construction
     // ══════════════════════════════════════════════════════════════════
 
+    /// New commit overlays start empty, generating, and unscrolled.
     #[test]
     fn commit_overlay_initial_state() {
         let ov = GitCommitOverlay {
@@ -1206,6 +1225,7 @@ mod tests {
     //  GitChangedFile construction
     // ══════════════════════════════════════════════════════════════════
 
+    /// Changed-file construction preserves Git status metadata.
     #[test]
     fn changed_file_from_tuple() {
         let (path, status, add, del) = ("src/lib.rs".to_string(), 'M', 5usize, 3usize);
@@ -1225,6 +1245,7 @@ mod tests {
     //  Pull/Push message formatting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Pull summaries use the first output line.
     #[test]
     fn pull_message_summary_first_line() {
         let msg = "Already up to date.\nSome details";
@@ -1232,6 +1253,7 @@ mod tests {
         assert_eq!(summary, "Already up to date.");
     }
 
+    /// Push summaries use the first output line.
     #[test]
     fn push_message_summary_first_line() {
         let msg = "Everything up-to-date";
@@ -1239,6 +1261,7 @@ mod tests {
         assert_eq!(summary, "Everything up-to-date");
     }
 
+    /// Pull result messages retain their user-facing prefix.
     #[test]
     fn pull_message_format() {
         let summary = "Updated main";
@@ -1246,6 +1269,7 @@ mod tests {
         assert_eq!(result, "Pulled: Updated main");
     }
 
+    /// Push result messages retain their user-facing prefix.
     #[test]
     fn push_message_format() {
         let summary = "To origin";
@@ -1257,6 +1281,7 @@ mod tests {
     //  selected_file bounds adjustment
     // ══════════════════════════════════════════════════════════════════
 
+    /// File selection clamps when refreshed results shrink.
     #[test]
     fn selected_file_clamp_when_list_shrinks() {
         let mut selected = 5usize;
@@ -1267,6 +1292,7 @@ mod tests {
         assert_eq!(selected, 2);
     }
 
+    /// File selection remains stable while its index is valid.
     #[test]
     fn selected_file_stays_when_in_bounds() {
         let mut selected = 2usize;
@@ -1277,6 +1303,7 @@ mod tests {
         assert_eq!(selected, 2);
     }
 
+    /// File selection safely saturates for an empty result list.
     #[test]
     fn selected_file_empty_list_saturating() {
         let new_len = 0usize;
@@ -1288,6 +1315,7 @@ mod tests {
     //  Commit prompt diff trimming
     // ══════════════════════════════════════════════════════════════════
 
+    /// Short staged diffs pass through commit prompting intact.
     #[test]
     fn diff_trimmed_under_max() {
         let diff = "short diff";
@@ -1296,6 +1324,7 @@ mod tests {
         assert_eq!(trimmed, "short diff");
     }
 
+    /// Oversized staged diffs are capped for commit prompting.
     #[test]
     fn diff_trimmed_over_max() {
         let diff = "x".repeat(40_000);
@@ -1312,6 +1341,7 @@ mod tests {
     //  log_main computation for feature vs main
     // ══════════════════════════════════════════════════════════════════
 
+    /// Main-branch commit logs omit a separate comparison branch.
     #[test]
     fn log_main_none_for_main_branch() {
         let is_on_main = true;
@@ -1320,6 +1350,7 @@ mod tests {
         assert!(log_main.is_none());
     }
 
+    /// Feature-branch commit logs retain the main comparison branch.
     #[test]
     fn log_main_some_for_feature_branch() {
         let is_on_main = false;
@@ -1332,6 +1363,7 @@ mod tests {
     //  PostMergeDialog construction
     // ══════════════════════════════════════════════════════════════════
 
+    /// Post-merge dialogs preserve branch and worktree metadata.
     #[test]
     fn post_merge_dialog_construction() {
         let pmd = PostMergeDialog {
@@ -1349,6 +1381,7 @@ mod tests {
     //  Result message formatting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Successful rebase output maps to the success status text.
     #[test]
     fn rebase_success_message() {
         let push_note = " -> pushed";
@@ -1356,12 +1389,14 @@ mod tests {
         assert_eq!(msg, "Rebased onto main -> pushed");
     }
 
+    /// No-op rebase output maps to the up-to-date status text.
     #[test]
     fn rebase_up_to_date_message() {
         let msg = "Already up to date with main".to_string();
         assert!(msg.contains("up to date"));
     }
 
+    /// Failed rebase output maps to the failure status text.
     #[test]
     fn rebase_failed_message() {
         let err = "fatal: error";
@@ -1373,6 +1408,7 @@ mod tests {
     //  parse_conflict_files — additional edge cases
     // ══════════════════════════════════════════════════════════════════
 
+    /// Conflict parsing separates conflicts from auto-merged paths in mixed output.
     #[test]
     fn parse_conflict_files_mixed_lines() {
         let text = "Some output\nCONFLICT (content): Merge conflict in foo.rs\nAuto-merging bar.rs\nOther output";
@@ -1382,6 +1418,7 @@ mod tests {
         assert!(auto_merged.contains(&"bar.rs".to_string()));
     }
 
+    /// Auto-merged-only output reports no conflicts.
     #[test]
     fn parse_conflict_files_only_auto_merged_no_conflict() {
         let text = "Auto-merging Cargo.lock\nAuto-merging Cargo.toml";
@@ -1391,6 +1428,7 @@ mod tests {
         assert!(auto_merged.contains(&"Cargo.toml".to_string()));
     }
 
+    /// Auto-merged paths are trimmed before display.
     #[test]
     fn parse_conflict_files_auto_merge_trim_whitespace() {
         let text = "Auto-merging   spaced_file.rs  ";
@@ -1399,6 +1437,7 @@ mod tests {
         assert!(!auto_merged.is_empty());
     }
 
+    /// Conflicted paths are trimmed before display.
     #[test]
     fn parse_conflict_conflict_trim_whitespace() {
         let text = "CONFLICT (content): Merge conflict in   trimmed.rs  ";
@@ -1412,6 +1451,7 @@ mod tests {
     //  Auto-resolve logic — boundary conditions
     // ══════════════════════════════════════════════════════════════════
 
+    /// Auto-resolution accepts multiple conflicts when all are configured.
     #[test]
     fn auto_resolve_multiple_all_in_list() {
         let conflicted = vec!["Cargo.lock".to_string(), "Cargo.toml".to_string()];
@@ -1421,6 +1461,7 @@ mod tests {
         assert!(all_resolvable);
     }
 
+    /// One unconfigured conflict prevents automatic resolution.
     #[test]
     fn auto_resolve_single_extra_file_not_in_list() {
         let conflicted = vec!["Cargo.lock".to_string(), "src/lib.rs".to_string()];
@@ -1430,6 +1471,7 @@ mod tests {
         assert!(!all_resolvable);
     }
 
+    /// Auto-resolution requires exact configured path matches.
     #[test]
     fn auto_resolve_exact_match_required() {
         let conflicted = vec!["Cargo.lock.bak".to_string()];
@@ -1443,6 +1485,7 @@ mod tests {
     //  GitConflictOverlay — field-level tests
     // ══════════════════════════════════════════════════════════════════
 
+    /// Conflict overlays start at the top of their file list.
     #[test]
     fn conflict_overlay_scroll_starts_at_zero() {
         let ov = GitConflictOverlay {
@@ -1456,6 +1499,7 @@ mod tests {
         assert_eq!(ov.selected, 0);
     }
 
+    /// Conflict overlays preserve the conflicted-file list.
     #[test]
     fn conflict_overlay_conflicted_files_list() {
         let files = vec!["src/a.rs".to_string(), "src/b.rs".to_string()];
@@ -1469,6 +1513,7 @@ mod tests {
         assert_eq!(ov.conflicted_files, files);
     }
 
+    /// Conflict overlays preserve the auto-merged-file list.
     #[test]
     fn conflict_overlay_auto_merged_files_list() {
         let files = vec!["Cargo.lock".to_string()];
@@ -1486,6 +1531,7 @@ mod tests {
     //  GitCommitOverlay — cursor and scroll
     // ══════════════════════════════════════════════════════════════════
 
+    /// New commit overlays place the cursor at the start.
     #[test]
     fn commit_overlay_cursor_zero() {
         let ov = GitCommitOverlay {
@@ -1498,6 +1544,7 @@ mod tests {
         assert_eq!(ov.cursor, 0);
     }
 
+    /// Commit overlays retain an existing editable message.
     #[test]
     fn commit_overlay_with_message() {
         let msg = "fix: resolve issue #42".to_string();
@@ -1512,6 +1559,7 @@ mod tests {
         assert_eq!(ov.cursor, msg.len());
     }
 
+    /// Completed commit overlays can represent a non-generating state.
     #[test]
     fn commit_overlay_not_generating() {
         let ov = GitCommitOverlay {
@@ -1524,6 +1572,7 @@ mod tests {
         assert!(!ov.generating);
     }
 
+    /// Commit generator labels show the exact selected model.
     #[test]
     fn commit_message_generator_label_shows_selected_model() {
         assert_eq!(commit_message_generator_label(Some("opus")), "opus");
@@ -1531,10 +1580,23 @@ mod tests {
         assert_eq!(commit_message_generator_label(None), "default model");
     }
 
+    /// Commit-message launches share Sol's explicit Ultra reasoning arguments.
+    #[test]
+    fn commit_message_sol_model_args_include_ultra() {
+        let args = crate::codex::codex_model_args(crate::codex::GPT_5_6_SOL_MODEL);
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--model", crate::codex::GPT_5_6_SOL_MODEL]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--config", r#"model_reasoning_effort="ultra""#]));
+    }
+
     // ══════════════════════════════════════════════════════════════════
     //  GitChangedFile — additional field tests
     // ══════════════════════════════════════════════════════════════════
 
+    /// Added-file rows preserve additions and staging state.
     #[test]
     fn changed_file_added_status() {
         let f = GitChangedFile {
@@ -1548,6 +1610,7 @@ mod tests {
         assert_eq!(f.deletions, 0);
     }
 
+    /// Deleted-file rows preserve deletions and staging state.
     #[test]
     fn changed_file_deleted_status() {
         let f = GitChangedFile {
@@ -1565,6 +1628,7 @@ mod tests {
     //  Commit prompt strip_prefix / strip_suffix markdown fence
     // ══════════════════════════════════════════════════════════════════
 
+    /// Commit message normalization removes Markdown fences.
     #[test]
     fn commit_msg_strip_backtick_prefix() {
         let raw = "```feat: add thing\nbody here```";
@@ -1574,6 +1638,7 @@ mod tests {
         );
     }
 
+    /// Unfenced commit messages remain unchanged.
     #[test]
     fn commit_msg_no_backtick_unchanged() {
         let raw = "feat: add thing\nbody here";
@@ -1587,6 +1652,7 @@ mod tests {
     //  PostMergeDialog — selected index
     // ══════════════════════════════════════════════════════════════════
 
+    /// Post-merge dialogs select their first action initially.
     #[test]
     fn post_merge_dialog_selected_starts_at_zero() {
         let pmd = PostMergeDialog {
@@ -1598,6 +1664,7 @@ mod tests {
         assert_eq!(pmd.selected, 0);
     }
 
+    /// Post-merge dialogs retain the branch display name.
     #[test]
     fn post_merge_dialog_display_name() {
         let pmd = PostMergeDialog {
@@ -1613,12 +1680,14 @@ mod tests {
     //  Divergence text formatting
     // ══════════════════════════════════════════════════════════════════
 
+    /// Successful squash merges may omit a push note.
     #[test]
     fn squash_merge_push_note_empty() {
         let branch_push_note = String::new();
         assert!(branch_push_note.is_empty());
     }
 
+    /// Failed squash-merge pushes retain their error note.
     #[test]
     fn squash_merge_push_note_error() {
         let e = "Network unreachable";

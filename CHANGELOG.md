@@ -2,6 +2,13 @@
 
 All notable changes to Azureal will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Codex effort levels are selectable in the model switcher** — Added supported `model:effort` entries for low, medium, high, xhigh, max, and ultra. The CLI now separates the model ID from the selected `model_reasoning_effort` config while preserving bare Sol's Ultra default.
+- **Added current Codex catalog models to the switcher** — `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, and `gpt-5.2` are now available together with the existing frontier models; Sol remains the default and receives the Ultra reasoning override.
+- **GPT-5.6 Sol is the default Codex model with Ultra reasoning** — Added `gpt-5.6-sol` at the front of the unified model switcher, made it the default for new and empty sessions when Codex is installed, and shared a model-specific `model_reasoning_effort="ultra"` override across normal agents and commit-message generation. Existing Codex models retain their configured reasoning effort. Modified: `src/app/state/app/model.rs`, `src/codex.rs`, `src/tui/input_git_actions/operations.rs`, `README.md`, `CLAUDE.md`, and the user manual.
+
 ## [1.0.87] — 2026-05-11
 
 ### Changed

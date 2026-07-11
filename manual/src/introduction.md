@@ -66,7 +66,7 @@ Switch between multiple projects without leaving the application. Agent processe
 
 ### Dual-Backend Support (Claude + Codex)
 
-Cycle between Claude models (Opus, Sonnet, Haiku) and Codex models (GPT-5.4, GPT-5.3-codex, GPT-5.2-codex, and others) with a single keybinding. The backend is derived automatically from the selected model -- no manual configuration required. A single session can span prompts to both backends.
+Cycle between Claude models (Opus, Sonnet, Haiku) and Codex models (GPT-5.6 Sol, GPT-5.5, GPT-5.4, and others) with a single keybinding. GPT-5.6 Sol is the default Codex model and launches with Ultra reasoning. The backend is derived automatically from the selected model -- no manual configuration required. A single session can span prompts to both backends.
 
 ### Session Store with Context Injection
 

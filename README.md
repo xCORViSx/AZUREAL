@@ -42,7 +42,7 @@
 - **Clickable Tables** — Click any table to expand it in a full-width popup
 - **Todo Widget** — Live task progress from Claude's TodoWrite calls (checkboxes with subagent nesting)
 - **Context Meter** — Color-coded session store usage on the session border (chars / 400k compaction threshold)
-- **Model Switcher** — Cycle between backend models with `⌃m` / `Ctrl+M` (fallback: `⌥m` on macOS, `Alt+M` on Linux) (Claude: opus/sonnet/haiku; Codex: gpt-5.6-sol/gpt-5.6-terra/gpt-5.6-luna/gpt-5.5/gpt-5.5-pro/gpt-5.4/gpt-5.4-pro/gpt-5.4-mini/gpt-5.4-nano); defaults new/empty sessions to gpt-5.6-sol with ultra reasoning when Codex is available; only shows models whose backend CLI is installed; restores each session's last-used model on switch
+- **Model Switcher** — Cycle between backend models and supported Codex effort variants with `⌃m` / `Ctrl+M` (fallback: `⌥m` on macOS, `Alt+M` on Linux). Codex entries use `model:effort` labels such as `gpt-5.6-sol:xhigh`; available efforts are low/medium/high/xhigh/max/ultra where supported. New sessions default to bare `gpt-5.6-sol` with Ultra reasoning when Codex is available; only shows entries whose backend CLI is installed; restores each session's last-used selection on switch
 - **Session Search** — `/` to search text in the current session; `/` in the session list to filter or `//` to search across all sessions
 - **Session Rename** — `r` in the session list to rename the selected session (persisted in SQLite store)
 - **AskUserQuestion** — Numbered options box for responding to Claude's questions

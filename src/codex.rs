@@ -14,6 +14,69 @@ use crate::claude::{AgentEvent, AgentOutput};
 use crate::config::{Config, PermissionMode};
 use crate::models::OutputType;
 
+/// Canonical Codex CLI model identifier for GPT-5.6 Sol, Azureal's default.
+pub const GPT_5_6_SOL_MODEL: &str = "gpt-5.6-sol";
+
+/// Canonical Codex CLI model identifier for the balanced GPT-5.6 Terra model.
+pub const GPT_5_6_TERRA_MODEL: &str = "gpt-5.6-terra";
+
+/// Canonical Codex CLI model identifier for the fast GPT-5.6 Luna model.
+pub const GPT_5_6_LUNA_MODEL: &str = "gpt-5.6-luna";
+
+/// Canonical Codex CLI model identifier for the GPT-5.2 model.
+pub const GPT_5_2_MODEL: &str = "gpt-5.2";
+
+/// Model-switcher entries for current Codex catalog models and their supported efforts.
+///
+/// Bare model IDs preserve the existing aliases and defaults. Entries using the
+/// `model:effort` syntax select an explicit `model_reasoning_effort` value when
+/// Azureal builds the Codex command line.
+pub(crate) const CODEX_SWITCHER_MODELS: &[&str] = &[
+    GPT_5_6_SOL_MODEL,
+    "gpt-5.6-sol:low",
+    "gpt-5.6-sol:medium",
+    "gpt-5.6-sol:high",
+    "gpt-5.6-sol:xhigh",
+    "gpt-5.6-sol:max",
+    "gpt-5.6-sol:ultra",
+    GPT_5_6_TERRA_MODEL,
+    "gpt-5.6-terra:low",
+    "gpt-5.6-terra:medium",
+    "gpt-5.6-terra:high",
+    "gpt-5.6-terra:xhigh",
+    "gpt-5.6-terra:max",
+    "gpt-5.6-terra:ultra",
+    GPT_5_6_LUNA_MODEL,
+    "gpt-5.6-luna:low",
+    "gpt-5.6-luna:medium",
+    "gpt-5.6-luna:high",
+    "gpt-5.6-luna:xhigh",
+    "gpt-5.6-luna:max",
+    GPT_5_2_MODEL,
+    "gpt-5.2:low",
+    "gpt-5.2:medium",
+    "gpt-5.2:high",
+    "gpt-5.2:xhigh",
+    "gpt-5.5",
+    "gpt-5.5:low",
+    "gpt-5.5:medium",
+    "gpt-5.5:high",
+    "gpt-5.5:xhigh",
+    "gpt-5.4",
+    "gpt-5.4:low",
+    "gpt-5.4:medium",
+    "gpt-5.4:high",
+    "gpt-5.4:xhigh",
+    "gpt-5.4-mini",
+    "gpt-5.4-mini:low",
+    "gpt-5.4-mini:medium",
+    "gpt-5.4-mini:high",
+    "gpt-5.4-mini:xhigh",
+];
+
+/// CLI configuration override that enables Sol's Ultra reasoning mode.
+const GPT_5_6_SOL_REASONING_CONFIG: &str = r#"model_reasoning_effort="ultra""#;
+
 /// Maximum Codex prompt payload Azureal sends after context injection.
 ///
 /// Codex reads the prompt from stdin, so this is not an argv limit. The cap is a
@@ -26,12 +89,6 @@ const CODEX_CONTEXT_TRUNCATION_NOTICE: &str = "\n[Azureal omitted older raw sess
 
 /// Transcript marker that separates a compaction summary from raw recent events.
 const CONVERSATION_CONTINUES_MARKER: &str = "[Conversation continues]\n\n";
-
-/// GPT-5.6 Sol model slug that supports Codex's ultra reasoning mode.
-const GPT_5_6_SOL_MODEL: &str = "gpt-5.6-sol";
-
-/// Per-invocation Codex config override for maximum reasoning with delegation.
-const GPT_5_6_SOL_REASONING_CONFIG: &str = "model_reasoning_effort=\"ultra\"";
 
 /// Extract a Codex session/thread id from a JSONL event line.
 fn extract_codex_session_id(line: &str) -> Option<String> {
@@ -54,7 +111,36 @@ fn extract_codex_session_id(line: &str) -> Option<String> {
     }
 }
 
-/// Build Codex CLI arguments that read the prompt from stdin.
+/// Build the shared model and effort arguments used by every Codex launch path.
+///
+/// Bare GPT-5.6 Sol keeps its legacy Ultra default. Switcher entries with a
+/// `model:effort` suffix pass the model ID separately from the effort config.
+pub(crate) fn codex_model_args(model: &str) -> Vec<String> {
+    let (model_id, effort) = split_codex_model_effort(model);
+    let mut args = vec!["--model".into(), model_id.into()];
+    if let Some(effort) = effort {
+        args.push("--config".into());
+        args.push(format!(r#"model_reasoning_effort="{}""#, effort));
+    } else if model_id == GPT_5_6_SOL_MODEL {
+        args.push("--config".into());
+        args.push(GPT_5_6_SOL_REASONING_CONFIG.into());
+    }
+    args
+}
+
+/// Split a known switcher entry into its CLI model ID and reasoning effort.
+fn split_codex_model_effort(selection: &str) -> (&str, Option<&str>) {
+    let Some((model_id, effort)) = selection.split_once(':') else {
+        return (selection, None);
+    };
+    if CODEX_SWITCHER_MODELS.contains(&selection) {
+        (model_id, Some(effort))
+    } else {
+        (selection, None)
+    }
+}
+
+/// Build Codex CLI arguments for stdin, including Sol's Ultra reasoning override.
 fn build_codex_exec_args(
     config: &Config,
     resume_session_id: Option<&str>,
@@ -65,14 +151,8 @@ fn build_codex_exec_args(
     args.push("exec".into());
     args.push("--json".into());
 
-    if model == Some(GPT_5_6_SOL_MODEL) {
-        args.push("--config".into());
-        args.push(GPT_5_6_SOL_REASONING_CONFIG.into());
-    }
-
     if let Some(m) = model {
-        args.push("--model".into());
-        args.push(m.into());
+        args.extend(codex_model_args(m));
     }
 
     match config.default_permission_mode {
@@ -175,7 +255,8 @@ impl CodexProcess {
 
     /// Spawn Codex with the given prompt
     /// resume_session_id: Codex thread_id from previous prompt (for `exec resume`)
-    /// model: optional model override (e.g. "gpt-5.6-sol", "gpt-5.4-mini") — passed as --model flag
+    /// model: optional model override (for example, "gpt-5.6-sol") passed as `--model`;
+    /// Sol also receives the model-specific Ultra reasoning configuration.
     pub fn spawn(
         &self,
         working_dir: &Path,
@@ -405,23 +486,34 @@ mod tests {
         let args = build_codex_exec_args(&Config::default(), None, Some("gpt-5.5"));
         assert_eq!(args.last().map(String::as_str), Some("-"));
         assert!(args.windows(2).any(|pair| pair == ["--model", "gpt-5.5"]));
+        assert!(!args
+            .iter()
+            .any(|arg| arg.starts_with("model_reasoning_effort=")));
         assert!(!args.iter().any(|arg| arg.contains("visible prompt")));
     }
 
-    /// GPT-5.6 Sol launches with Codex's ultra reasoning and delegation setting.
+    /// GPT-5.6 Sol receives the explicit Ultra reasoning override.
     #[test]
-    fn codex_exec_args_enable_ultra_for_gpt_5_6_sol() {
+    fn codex_exec_args_sol_force_ultra_reasoning() {
         let args = build_codex_exec_args(&Config::default(), None, Some(GPT_5_6_SOL_MODEL));
         assert!(args
             .windows(2)
-            .any(|pair| pair == ["--config", GPT_5_6_SOL_REASONING_CONFIG]));
+            .any(|pair| pair == ["--model", GPT_5_6_SOL_MODEL]));
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair == ["--config", GPT_5_6_SOL_REASONING_CONFIG] }));
     }
 
-    /// Other Codex models preserve the caller's configured reasoning effort.
+    /// Explicit switcher effort entries become model and config arguments.
     #[test]
-    fn codex_exec_args_do_not_override_reasoning_for_other_models() {
-        let args = build_codex_exec_args(&Config::default(), None, Some("gpt-5.5"));
-        assert!(!args.iter().any(|arg| arg == GPT_5_6_SOL_REASONING_CONFIG));
+    fn codex_exec_args_explicit_effort() {
+        let args = build_codex_exec_args(&Config::default(), None, Some("gpt-5.6-sol:xhigh"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--model", GPT_5_6_SOL_MODEL]));
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair == ["--config", r#"model_reasoning_effort="xhigh""#] }));
     }
 
     /// Resume args keep the session id while still reading the prompt from stdin.
