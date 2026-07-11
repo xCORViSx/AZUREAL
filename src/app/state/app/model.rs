@@ -268,6 +268,19 @@ impl App {
     /// Also updates self.backend to match the new model and injects a
     /// `ModelSwitch` tag into the session store for persistence.
     pub fn cycle_model(&mut self) {
+        self.cycle_model_in_direction(false);
+    }
+
+    /// Cycle the selected model backward through the available model pool.
+    ///
+    /// This mirrors [`Self::cycle_model`] while selecting the preceding model,
+    /// including backend updates and session-store persistence.
+    pub fn cycle_model_backward(&mut self) {
+        self.cycle_model_in_direction(true);
+    }
+
+    /// Select and persist the adjacent available model in the requested direction.
+    fn cycle_model_in_direction(&mut self, backward: bool) {
         let pool = self.available_models();
         if pool.is_empty() {
             return;
@@ -278,7 +291,16 @@ impl App {
             .position(|&m| m == current)
             .or_else(|| pool.iter().position(|&m| m == default_model()))
             .unwrap_or(0);
-        let next = pool[(idx + 1) % pool.len()];
+        let next_idx = if backward {
+            if idx == 0 {
+                pool.len() - 1
+            } else {
+                idx - 1
+            }
+        } else {
+            (idx + 1) % pool.len()
+        };
+        let next = pool[next_idx];
         self.selected_model = Some(next.to_string());
         let new_backend = backend_for_model(next);
         if new_backend != self.backend {
@@ -563,6 +585,28 @@ mod tests {
         app.selected_model = Some(last_codex_model().unwrap().to_string());
         app.backend = Backend::Codex;
         app.cycle_model();
+        assert_eq!(app.display_model_name(), "opus");
+        assert_eq!(app.backend, Backend::Claude);
+    }
+
+    /// Verifies that reverse cycling from the first model wraps to the last model.
+    #[test]
+    fn test_cycle_backward_opus_wraps_to_last_codex() {
+        let mut app = app_default();
+        app.selected_model = Some("opus".to_string());
+        app.backend = Backend::Claude;
+        app.cycle_model_backward();
+        assert_eq!(app.display_model_name(), last_codex_model().unwrap());
+        assert_eq!(app.backend, Backend::Codex);
+    }
+
+    /// Verifies that reverse cycling selects the immediately preceding model.
+    #[test]
+    fn test_cycle_backward_sonnet_to_opus() {
+        let mut app = app_default();
+        app.selected_model = Some("sonnet".to_string());
+        app.backend = Backend::Claude;
+        app.cycle_model_backward();
         assert_eq!(app.display_model_name(), "opus");
         assert_eq!(app.backend, Backend::Claude);
     }

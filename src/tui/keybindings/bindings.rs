@@ -22,9 +22,11 @@ pub use panes::{EDIT_MODE, FILE_TREE, GLOBAL, INPUT, SESSION, TERMINAL, VIEWER, 
 
 #[cfg(test)]
 mod tests {
+    use super::super::lookup::{lookup_action, KeyContext};
     use super::super::types::{Action, Keybinding};
     use super::keys::*;
     use super::*;
+    use crate::app::Focus;
     use crossterm::event::{KeyCode, KeyModifiers};
     use std::collections::HashSet;
 
@@ -60,9 +62,10 @@ mod tests {
     //  Array lengths
     // ══════════════════════════════════════════════════════════════════
 
+    /// Verifies that the global binding table contains every expected shortcut.
     #[test]
     fn global_length() {
-        assert_eq!(GLOBAL.len(), 19);
+        assert_eq!(GLOBAL.len(), 20);
     }
 
     #[test]
@@ -512,6 +515,40 @@ mod tests {
     #[test]
     fn global_has_cycle_model() {
         assert!(GLOBAL.iter().any(|b| b.action == Action::CycleModel));
+    }
+
+    /// Verifies that adding Shift to Ctrl+M reverses model cycling.
+    #[test]
+    fn global_ctrl_shift_m_cycles_model_backward() {
+        let ctx = KeyContext {
+            focus: Focus::Worktrees,
+            prompt_mode: false,
+            edit_mode: false,
+            terminal_mode: false,
+            help_open: false,
+            stt_recording: false,
+            paste_guard: false,
+        };
+        for (modifiers, code) in [
+            (
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                KeyCode::Char('M'),
+            ),
+            (
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                KeyCode::Char('m'),
+            ),
+            (KeyModifiers::CONTROL, KeyCode::Char('M')),
+        ] {
+            assert_eq!(
+                lookup_action(&ctx, modifiers, code),
+                Some(Action::CycleModelBackward)
+            );
+        }
+        assert_eq!(
+            lookup_action(&ctx, KeyModifiers::CONTROL, KeyCode::Char('m')),
+            Some(Action::CycleModel)
+        );
     }
 
     #[test]

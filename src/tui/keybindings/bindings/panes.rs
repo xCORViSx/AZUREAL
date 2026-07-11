@@ -8,7 +8,7 @@ use super::keys::*;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 /// Global keybindings (always active, checked first).
-pub static GLOBAL: [Keybinding; 19] = [
+pub static GLOBAL: [Keybinding; 20] = [
     Keybinding::new(
         KeyCombo::ctrl(KeyCode::Char('q')),
         "Quit azureal",
@@ -29,6 +29,14 @@ pub static GLOBAL: [Keybinding; 19] = [
         &ALT_CYCLE_MODEL,
         "Cycle model",
         Action::CycleModel,
+    ),
+    Keybinding::new(
+        KeyCombo::new(
+            KeyModifiers::CONTROL.union(KeyModifiers::SHIFT),
+            KeyCode::Char('M'),
+        ),
+        "Cycle model backward",
+        Action::CycleModelBackward,
     ),
     Keybinding::new(
         KeyCombo::plain(KeyCode::Char('?')),

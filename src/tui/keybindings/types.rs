@@ -246,6 +246,7 @@ pub enum Action {
     CycleFocusForward,
     CycleFocusBackward,
     CycleModel,
+    CycleModelBackward,
 
     // Navigation (shared across contexts)
     NavDown,
