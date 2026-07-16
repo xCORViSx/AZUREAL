@@ -38,6 +38,7 @@ use std::sync::mpsc::Receiver;
 use portable_pty::{Child as PtyChild, MasterPty};
 
 use super::project_snapshot::ProjectSnapshot;
+use super::scroll::PendingSessionBubbleJump;
 use super::AgentEvent;
 use super::DisplayEvent;
 use crate::app::prompt_draft::PromptInputDraft;
@@ -327,6 +328,10 @@ pub struct App {
     /// Start index of deferred render (events before this are not yet rendered).
     /// 0 means everything is rendered. >0 means we skipped early events for fast initial load.
     pub rendered_events_start: usize,
+    /// Deferred event offset represented by the currently visible line cache.
+    pub(crate) rendered_cache_events_start: usize,
+    /// Previous-bubble navigation waiting for deferred session history to render.
+    pub(crate) pending_session_bubble_jump: Option<PendingSessionBubbleJump>,
     /// Tool indicator positions (line_idx, span_idx, tool_use_id) for draw-time status patching.
     /// Tracks ALL tool calls (not just pending) so indicators update in real-time when tools
     /// complete or fail, without waiting for a full re-render.
@@ -824,6 +829,8 @@ impl App {
             rendered_events_count: 0,
             rendered_content_line_count: 0,
             rendered_events_start: 0,
+            rendered_cache_events_start: 0,
+            pending_session_bubble_jump: None,
             animation_line_indices: Vec::new(),
             tool_status_generation: 0,
             render_thread: RenderThread::spawn(),
