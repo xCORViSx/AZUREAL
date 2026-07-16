@@ -133,12 +133,19 @@ pub fn process_input_event(
                     *needs_redraw = true;
                 }
             }
-            MouseEventKind::Drag(MouseButton::Left)
-                if handle_mouse_drag(app, mouse.column, mouse.row) =>
-            {
-                *needs_redraw = true;
+            MouseEventKind::Drag(MouseButton::Left) => {
+                let had_input_selection = app.has_input_selection();
+                if handle_mouse_drag(app, mouse.column, mouse.row) {
+                    // macOS prompt typing can bypass Ratatui for immediate
+                    // feedback, leaving its backing buffer older than the
+                    // physical terminal. The first selection frame must clear
+                    // that stale buffer before Ratatui paints highlight spans.
+                    if !had_input_selection && app.has_input_selection() {
+                        app.force_full_redraw = true;
+                    }
+                    *needs_redraw = true;
+                }
             }
-            MouseEventKind::Drag(MouseButton::Left) => {}
             MouseEventKind::Up(MouseButton::Left) => {
                 app.mouse_drag_start = None;
             }
@@ -394,5 +401,43 @@ mod tests {
 
         assert!(!app.auto_prompt.is_enabled_for(target.key()));
         assert!(had_key_event);
+    }
+
+    /// Starting a prompt drag preserves its text and requests buffer reconciliation.
+    #[test]
+    fn prompt_drag_selection_forces_clean_redraw_without_mutating_input() {
+        let mut app = App::new();
+        app.prompt_mode = true;
+        app.focus = Focus::Input;
+        app.input = "alpha beta gamma delta".to_string();
+        app.input_cursor = app.input.chars().count();
+        app.input_area = ratatui::layout::Rect::new(10, 5, 14, 4);
+        let original_input = app.input.clone();
+
+        let (_down_redraw, down_had_key) = dispatch_event(
+            &mut app,
+            Event::Mouse(crossterm::event::MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 12,
+                row: 6,
+                modifiers: KeyModifiers::NONE,
+            }),
+        );
+        let (drag_redraw, drag_had_key) = dispatch_event(
+            &mut app,
+            Event::Mouse(crossterm::event::MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 21,
+                row: 7,
+                modifiers: KeyModifiers::NONE,
+            }),
+        );
+
+        assert_eq!(app.input, original_input);
+        assert!(app.has_input_selection());
+        assert!(app.force_full_redraw);
+        assert!(drag_redraw);
+        assert!(!down_had_key);
+        assert!(!drag_had_key);
     }
 }

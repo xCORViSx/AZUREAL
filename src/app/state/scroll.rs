@@ -2,6 +2,12 @@
 
 use super::App;
 
+/// Deferred previous-bubble navigation across live render replacements.
+#[path = "session_bubble_navigation.rs"]
+mod session_bubble_navigation;
+pub(crate) use session_bubble_navigation::PendingSessionBubbleJump;
+
+/// Session and viewer viewport navigation operations.
 impl App {
     /// Natural bottom position: last line at bottom of viewport
     pub(crate) fn session_natural_bottom(&self) -> usize {
@@ -53,12 +59,13 @@ impl App {
         let old = self.session_scroll;
         self.session_scroll = self.session_scroll.saturating_sub(lines);
         // If we hit the top and early events were deferred, trigger full render
-        if self.session_scroll == 0 && self.rendered_events_start > 0 {
+        if self.session_scroll == 0 && self.visible_session_events_start() > 0 {
             self.rendered_lines_dirty = true;
         }
         self.session_scroll != old
     }
 
+    /// Re-engage bottom-following mode for the session pane.
     pub fn scroll_session_to_bottom(&mut self) {
         self.session_scroll = usize::MAX;
     }
@@ -154,19 +161,23 @@ impl App {
                 return;
             }
         }
+        if self.defer_previous_bubble_jump(include_assistant) {
+            return;
+        }
         // No previous bubbles, scroll to top
         self.session_scroll = 0;
         // If early events were deferred (not yet rendered), trigger a full render
         // so the user can continue navigating upward through the entire conversation.
         // Without this, rendered_lines_dirty stays false and submit_render_request
         // never re-checks the deferred expansion condition.
-        if self.rendered_events_start > 0 {
+        if self.visible_session_events_start() > 0 {
             self.rendered_lines_dirty = true;
         }
     }
 }
 
 #[cfg(test)]
+/// Tests for session and viewer scroll behavior.
 mod tests {
     use super::*;
 

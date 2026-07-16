@@ -101,7 +101,8 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
     // Track this with a flag so the deferred_start calculation below does NOT
     // re-trigger deferred rendering (which would create an infinite loop where
     // expansion resets counters → deferred check re-fires → expansion again).
-    let expanding_deferred = app.rendered_events_start > 0 && app.session_scroll == 0;
+    let expanding_deferred = app.visible_session_events_start() > 0
+        && (app.session_scroll == 0 || app.pending_session_bubble_jump.is_some());
     if expanding_deferred {
         app.rendered_lines_dirty = true;
         app.rendered_events_start = 0;
@@ -155,10 +156,9 @@ pub fn submit_render_request(app: &mut App, session_width: u16) {
             seq: 0,
         }
     } else {
-        // Only defer on INITIAL load (fresh session, never rendered).
-        // When expanding (user scrolled to top), force deferred_start=0 for full render.
+        // Defer fresh and replacement full renders so active reparses stay
+        // responsive. Explicit history expansion always renders from event 0.
         let deferred_start = if !expanding_deferred
-            && app.rendered_events_start == 0
             && app.rendered_events_count == 0
             && event_count > DEFERRED_RENDER_TAIL
         {
@@ -265,12 +265,14 @@ pub fn poll_render_result(app: &mut App) -> bool {
         app.message_bubble_positions = result.bubble_positions;
         app.clickable_paths = result.clickable_paths;
         app.clickable_tables = result.clickable_tables;
+        app.complete_pending_session_bubble_jump();
     }
 
     app.rendered_lines_width = result.width;
     app.rendered_events_count = result.events_count;
     app.rendered_content_line_count = app.rendered_lines_cache.len();
     app.rendered_events_start = result.events_start;
+    app.rendered_cache_events_start = result.events_start;
     app.render_seq_applied = result.seq;
     app.render_in_flight = false;
     // Content shifted — stale highlight would point at wrong position
@@ -280,6 +282,11 @@ pub fn poll_render_result(app: &mut App) -> bool {
     app.session_viewport_scroll = usize::MAX;
     true
 }
+
+#[cfg(test)]
+#[path = "render_submit_live_tests.rs"]
+/// Regressions for navigation while live session renders are being replaced.
+mod live_tests;
 
 #[cfg(test)]
 /// Tests for render request submission and render result polling.
@@ -1197,8 +1204,8 @@ mod tests {
         app.session_scroll = 0;
         app.rendered_lines_dirty = true;
         submit_render_request(&mut app, 80);
-        // After expansion, rendered_events_start should be reset to 0
         assert_eq!(app.rendered_events_start, 0);
+        assert!(app.render_in_flight);
     }
 
     // ── 43. pre_scan: exit_plan then user then exit_plan resets user flag ──
@@ -1363,8 +1370,8 @@ mod tests {
         app.rendered_lines_width = 78;
         // Trigger expansion by setting scroll=0 and rendered_events_start > 0
         submit_render_request(&mut app, 80);
-        // After expansion: start=0, count reset to 0, dirty set true then cleared
         assert_eq!(app.rendered_events_start, 0);
+        assert_eq!(app.rendered_events_count, 0);
     }
 
     // ── 51. expansion with >200 events does NOT re-defer ──
@@ -1395,12 +1402,23 @@ mod tests {
 
         submit_render_request(&mut app, 80);
 
-        // Expansion should have reset to full render (start=0)
         assert_eq!(app.rendered_events_start, 0);
         assert_eq!(app.rendered_events_count, 0);
         // The render was submitted (dirty cleared, in_flight set)
         assert!(!app.rendered_lines_dirty);
         assert!(app.render_in_flight);
+
+        for _ in 0..100 {
+            if poll_render_result(&mut app) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // The completed expansion renders from event zero instead of
+        // re-deferring the large session tail.
+        assert_eq!(app.rendered_events_start, 0);
+        assert!(!app.render_in_flight);
     }
 
     /// Verifies submit does not render inline edit patch preview.

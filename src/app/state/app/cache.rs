@@ -21,10 +21,15 @@ impl App {
         self.invalidate_render_cache_from_start();
     }
 
-    /// Reset render bookkeeping after `display_events` has been replaced or
-    /// reordered, while keeping the old rendered lines visible until a fresh
-    /// full render result arrives.
+    /// Reset incremental render bookkeeping after `display_events` changes.
+    ///
+    /// The visible cache and its deferred-start offset remain authoritative
+    /// until a fresh full render lands, so navigation never interprets a
+    /// deferred tail as though it represented the complete session.
     pub(crate) fn invalidate_render_cache_from_start(&mut self) {
+        if !self.rendered_lines_cache.is_empty() && self.rendered_cache_events_start == 0 {
+            self.rendered_cache_events_start = self.rendered_events_start;
+        }
         self.rendered_lines_dirty = true;
         self.rendered_events_count = 0;
         self.rendered_content_line_count = 0;
@@ -32,6 +37,16 @@ impl App {
         self.render_in_flight = false;
         self.render_seq_applied = self.render_thread.current_seq();
         self.session_viewport_scroll = usize::MAX;
+    }
+
+    /// Return the deferred event offset represented by visible session lines.
+    pub(crate) fn visible_session_events_start(&self) -> usize {
+        if self.rendered_lines_cache.is_empty() {
+            self.rendered_events_start
+        } else {
+            self.rendered_cache_events_start
+                .max(self.rendered_events_start)
+        }
     }
 
     /// Mark sidebar cache as dirty after worktree or selection changes.
@@ -120,6 +135,7 @@ mod tests {
         assert_eq!(app.rendered_events_count, 0);
         assert_eq!(app.rendered_content_line_count, 0);
         assert_eq!(app.rendered_events_start, 0);
+        assert_eq!(app.rendered_cache_events_start, 5);
         assert!(!app.render_in_flight);
         assert_eq!(app.session_viewport_scroll, usize::MAX);
         assert_eq!(app.rendered_lines_cache.len(), 1);
